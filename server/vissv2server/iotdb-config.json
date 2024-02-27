@@ -1,0 +1,8 @@
+{
+	"host": "iotdb-service",
+	"port": "6667",
+	"username": "root",
+	"password": "root",
+	"queryPrefixPath": "root.test2.dev1",
+	"queryTimeout(ms)": 5000
+}
