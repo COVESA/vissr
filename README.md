@@ -5,8 +5,8 @@
 
 All files and artifacts in this repository are licensed under the provisions of the license provided by the LICENSE file in this repository.
 
-# W3C Automotive Interface Implementation - WAII (pronounced wy-ee)
-This project implements the W3C VISS v2 specification under development at <a href="https://github.com/w3c/automotive">W3C Automotive Working Group</a>.
+# COVESA VISS Reference Implementation - VISSR 
+This project implements the COVESA VISS v2 specification under development at [https://github.com/COVESA/vehicle-information-service-specification](https://github.com/COVESA/vehicle-information-service-specification).
 
 # Tutorial
 A tutorial can be found <a href="https://w3c.github.io/automotive-viss2/">here</a>.
