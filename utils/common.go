@@ -52,6 +52,7 @@ type UdsReg struct {
 	RootName     string `json:"root"`
 	ServerFeeder string `json:"serverFeeder"`
 	Redis        string `json:"redis"`
+	Memcache        string `json:"memcache"`
 	History      string `json:"history"`
 }
 
@@ -83,7 +84,7 @@ func GetUdsConn(path string, connectionName string) net.Conn {
 
 func GetUdsPath(path string, connectionName string) string {
 	root := ExtractRootName(path)
-	Info.Printf("GetUdsPath:root=%s, connectionName=%s", root, connectionName)
+//	Info.Printf("GetUdsPath:root=%s, connectionName=%s", root, connectionName)
 	for i := 0; i < len(udsRegList); i++ {
 		if root == udsRegList[i].RootName {
 			return getSocketPath(i, connectionName)
@@ -99,6 +100,8 @@ func getSocketPath(listIndex int, connectionName string) string {
 		return udsRegList[listIndex].ServerFeeder
 	case "redis":
 		return udsRegList[listIndex].Redis
+	case "memcache":
+		return udsRegList[listIndex].Memcache
 	case "history":
 		return udsRegList[listIndex].History
 	default:
@@ -325,7 +328,7 @@ func FileExists(filename string) bool {
 func ExtractRootName(path string) string {
 	dotDelimiter := strings.Index(path, ".")
 	if dotDelimiter == -1 {
-		Info.Print("ExtractRootName():Could not find root node name in path=%s", path)
+		Info.Print("ExtractRootName():Dot limited segments not found in path=%s", path)
 		return path
 	}
 	return path[:dotDelimiter]

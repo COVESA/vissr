@@ -19,6 +19,7 @@ import (
 	"github.com/apache/iotdb-client-go/client"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/w3c/automotive-viss2/utils"
 	"io"
 	"net"
@@ -72,6 +73,7 @@ var errorResponseMap = map[string]interface{}{
 var dbHandle *sql.DB
 var dbErr error
 var redisClient *redis.Client
+var memcacheClient *memcache.Client
 var stateDbType string
 var historySupport bool
 
@@ -472,19 +474,19 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		rows.Next()
 		err = rows.Scan(&value, &timestamp)
 		if err != nil {
-			utils.Warning.Printf("Data not found: %s for path=%s\n", err, path)
+			utils.Warning.Printf("Data not found: %s for path=%s", err, path)
 			return `{"value":"Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 		}
 		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
 	case "redis":
-		utils.Info.Printf(path)
+//		utils.Info.Printf(path)
 		dp, err := redisClient.Get(path).Result()
 		if err != nil {
 			if err.Error() != "redis: nil" {
-				utils.Error.Printf("Job failed. Error()=%s\n", err.Error())
+				utils.Error.Printf("Job failed. Error()=%s", err.Error())
 				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 			} else {
-				utils.Warning.Printf("Data not found.\n")
+				utils.Warning.Printf("Data not found.")
 				return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
 			}
 		} else {
@@ -515,6 +517,19 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 			return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
 		}
 		return `{"value":"` + value + `", "ts":"` + ts + `"}`
+	case "memcache":
+		mcItem, err := memcacheClient.Get(path)
+		if err != nil {
+			if err.Error() != "memcache: cache miss" {
+				utils.Error.Printf("Job failed. Error()=%s", err.Error())
+				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
+			} else {
+				utils.Warning.Printf("Data not found.")
+				return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
+			}
+		} else {
+			return string(mcItem.Value)
+		}
 	case "none":
 		return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
@@ -538,15 +553,8 @@ func setVehicleData(path string, value string) string {
 			return ""
 		}
 		return ts
+	case "memcache": fallthrough
 	case "redis":
-		/*		dp := `{"val":"` + value + `", "ts":"` + ts + `"}`
-				dPath := path + ".D" // path to "desired" dp. Must be created identically by feeder reading it.
-				err := redisClient.Set(dPath, dp, time.Duration(0)).Err()
-				if err != nil {
-					utils.Error.Printf("Could not update statestorage. Err=%s\n", err)
-					return ""
-				}
-				return ts*/
 		udsConn := utils.GetUdsConn(path, "serverFeeder")
 		if udsConn == nil {
 			utils.Error.Printf("setVehicleData:Failed to UDS connect to feeder for path = %s", path)
@@ -945,16 +953,21 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 		}
 	case "redis":
 		addr := utils.GetUdsPath("Vehicle", "redis")
+		if len(addr) == 0 {
+			utils.Error.Printf("redis-server socket address not found.")
+			// os.Exit(1) should terminate the process
+			return
+		}
 		utils.Info.Printf(addr)
 		redisClient = redis.NewClient(&redis.Options{
 			Network:  "unix",
-			Addr:     addr, //TODO replace with check and exit if not defined.
+			Addr:     addr,
 			Password: "",
 			DB:       1,
 		})
 		err := redisClient.Ping().Err()
 		if err != nil {
-			utils.Error.Printf("redis-server ,ping err = %s", err)
+			utils.Info.Printf("Redis-server not started. Trying to start it.")
 			if utils.FileExists("redis.log") {
 				os.Remove("redis.log")
 			}
@@ -977,6 +990,26 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			os.Exit(1)
 		}
 		defer IoTDBsession.Close()
+	case "memcache":
+		addr := utils.GetUdsPath("Vehicle", "memcache")
+		if len(addr) == 0 {
+			utils.Error.Printf("memcache socket address not found.")
+			// os.Exit(1) should terminate the process
+			return
+		}
+		memcacheClient = memcache.New(addr)
+		err := memcacheClient.Ping()
+		if err != nil {
+			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
+				cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
+				err := cmd.Run()
+				if err != nil {
+					utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+					// os.Exit(1) should terminate the process
+					return
+				}
+		}
+		utils.Info.Printf("Memcache daemon alive.")
 	default:
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 	}

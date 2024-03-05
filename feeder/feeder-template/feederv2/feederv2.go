@@ -13,10 +13,12 @@ import (
 	"github.com/akamensky/argparse"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/w3c/automotive-viss2/utils"
 	"math/rand"
 	"net"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +41,7 @@ type FeederMap struct {
 var scalingDataList []string
 
 var redisClient *redis.Client
+var memcacheClient *memcache.Client
 var dbHandle *sql.DB
 var stateDbType string
 
@@ -175,6 +178,14 @@ func statestorageSet(path string, val string, ts string) int {
 	case "redis":
 		dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
 		err := redisClient.Set(path, dp, time.Duration(0)).Err()
+		if err != nil {
+			utils.Error.Printf("Job failed. Err=%s", err)
+			return -1
+		}
+		return 0
+	case "memcache":
+		dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
+		err := memcacheClient.Set(&memcache.Item{Key: path, Value: []byte(dp)})
 		if err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
 			return -1
@@ -384,8 +395,8 @@ func main() {
 		Required: false,
 		Help:     "changes log output level",
 		Default:  "info"})
-	stateDB := parser.Selector("d", "statestorage", []string{"sqlite", "redis", "none"}, &argparse.Options{Required: false,
-		Help: "Statestorage must be either sqlite, redis, or none", Default: "redis"})
+	stateDB := parser.Selector("d", "statestorage", []string{"sqlite", "redis", "memcache", "none"}, &argparse.Options{Required: false,
+		Help: "Statestorage must be either sqlite, redis, memcache, or none", Default: "redis"})
 	dbFile := parser.String("f", "dbfile", &argparse.Options{
 		Required: false,
 		Help:     "statestorage database filename",
@@ -427,6 +438,19 @@ func main() {
 		} else {
 			utils.Info.Printf("Redis state storage initialised.")
 		}
+	case "memcache":
+		memcacheClient = memcache.New("/var/tmp/vissv2/memcacheDB.sock")
+		err := memcacheClient.Ping()
+		if err != nil {
+			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
+				cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
+				err := cmd.Run()
+				if err != nil {
+					utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+					os.Exit(1)
+				}
+		}
+		utils.Info.Printf("Memcache daemon alive.")
 	default:
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 		os.Exit(1)
