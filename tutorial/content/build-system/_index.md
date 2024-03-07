@@ -49,11 +49,23 @@ There are multiple Software components on this repo, such as feeders, simulators
 If it is forgotten to be mentiond in the README, one way of determining whether a separate build is needed or not is to check the package statement in the source code.
 If it says "package main" it is a separate executable and shall then be built and run as described above.
 
-### Loggging
+### Logging
 Logging can be command line configured at startup.
 * logging level can be set to either of [trace, debug, info, warn, error, fatal, panic].
 * logging output destination. It can either be written to file, or directed to standard output.
 The levels currently used are mainly info, warn, error. Info is appropriate during testing and debugging, while error is appropriate when performance is important.
+
+### Transport protocols
+Besides the transport protocols
+* HTTP
+* Websocke
+* MQTT
+that the specification lists, this server also supports
+* gRPC
+They are all except MQTT activated by the server per default.
+To enable MQTT, or disable any other, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
+separate threads by the main server process, and these can be commented in or out before building the server.
+For the server to be operationable, the service manager, and at least one transport protocol must not be commented out.
 
 ### Go modules
 Go modules are used in multiple places in this project, below follows some commands that may be helpful in managing  this.

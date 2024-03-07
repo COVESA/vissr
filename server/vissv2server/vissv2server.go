@@ -793,8 +793,8 @@ func main() {
 		Default:  "info"})
 	dryRun := parser.Flag("", "dryrun", &argparse.Options{Required: false, Help: "dry run to generate vsspathlist file", Default: false})
 	vssJson := parser.String("", "vssJson", &argparse.Options{Required: false, Help: "path and name vssPathlist json file", Default: "../vsspathlist.json"})
-	stateDB := parser.Selector("s", "statestorage", []string{"sqlite", "redis", "apache-iotdb", "none"}, &argparse.Options{Required: false,
-		Help: "Statestorage must be either sqlite, redis, apache-iotdb, or none", Default: "redis"})
+	stateDB := parser.Selector("s", "statestorage", []string{"sqlite", "redis", "memcache", "apache-iotdb", "none"}, &argparse.Options{Required: false,
+		Help: "Statestorage must be either sqlite, redis, memcache, apache-iotdb, or none", Default: "redis"})
 	historySupport := parser.Flag("j", "history", &argparse.Options{Required: false, Help: "Support for historic data requests", Default: false})
 	dbFile := parser.String("", "dbfile", &argparse.Options{
 		Required: false,

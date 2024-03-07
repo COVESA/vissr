@@ -29,8 +29,9 @@ func (pathList *PathList) VssPathListHandler(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(bytes)
-	truncatedIndex := min(len(bytes), 101)
-	utils.Info.Printf("initVssPathListServer():Response=%s...(truncated to %d bytes)", truncatedIndex-1, bytes[0:truncatedIndex])
+//	truncatedIndex := min(len(bytes), 101)
+//	utils.Info.Printf("initVssPathListServer():Response=%s...(truncated to %d bytes)", truncatedIndex-1, bytes[0:truncatedIndex])
+	utils.Info.Printf("initVssPathListServer():Response length=%d", len(bytes))
 }
 
 func min(a, b int) int {

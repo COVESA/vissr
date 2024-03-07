@@ -3,7 +3,8 @@
     "root":"Vehicle",
     "serverFeeder":"/tmp/docker/server-feeder-channel.sock",
     "redis": "/tmp/docker/redisDB.sock",
-    "history": "/var/tmp/vissv2/histctrlserver.sock"
+    "memcache": "/tmp/docker/memcacheDB.sock",
+    "history": "/tmp/docker/histctrlserver.sock"
   }
 
 ]
