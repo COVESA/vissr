@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en" class="js csstransforms3d">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="description" content="">
+
+
+    <link rel="shortcut icon" href="/automotive-viss2/images/fav.png" type="image/x-icon" />
+
+    <title>Categories :: W3C VISSv2 Reference Implementation</title>
+
+    
+    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    
+    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    
+    
+
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+
+    <style>
+      :root #header + #content > #left > #rlblock_left{
+          display:none !important;
+      }
+      
+        :not(pre) > code + span.copy-to-clipboard {
+            display: none;
+        }
+      
+    </style>
+    
+  </head>
+  <body class="" data-url="/automotive-viss2/categories/">
+    <nav id="sidebar" class="">
+
+
+
+  <div id="header-wrapper">
+    <div id="header">
+      <a id="logo" href="https://w3c.github.io/automotive-viss2/">
+  <img src="/automotive-viss2/images/vissv2.png">
+</a>
+
+    </div>
+    
+        <div class="searchbox">
+    <label for="search-by"><i class="fas fa-search"></i></label>
+    <input data-search-input id="search-by" type="search" placeholder="Search...">
+    <span data-search-clear=""><i class="fas fa-times"></i></span>
+</div>
+
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript">
+    
+        var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
+    
+</script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+
+    
+  </div>
+  
+
+    <div class="highlightable">
+    <ul class="topics">
+
+        
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/client/" title="VISSv2 Clients" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/client/">
+          VISSv2 Clients
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/docker-step-by-step/" title="VISSv2 Docker" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/docker-step-by-step/">
+          VISSv2 Docker
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/peripheral-components/">
+          VISSv2 peripheral components
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/" title="VISSv2 Server" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/server/">
+          VISSv2 Server
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/access-control-servers/" title="VISSv2 Access Control Servers" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/server/access-control-servers/">
+          VISSv2 Access Control Servers
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/build-system/" title="WAII Build System" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/build-system/">
+          WAII Build System
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/" title="WAII Data Storage" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/">
+          WAII Data Storage
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/redis/" title="WAII Redis" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/redis/">
+          WAII Redis
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/sqlite/" title="WAII SQLite" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/sqlite/">
+          WAII SQLite
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/feeder/" title="WAII Feeders" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/feeder/">
+          WAII Feeders
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/" title="WAII POCs" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/">
+          WAII POCs
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc2/" title="Next POC..." class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc2/">
+          Next POC...
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc1/" title="Vehicle.Speed subscription example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc1/">
+          Vehicle.Speed subscription example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/tools/" title="WAII Tools" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/tools/">
+          WAII Tools
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+        
+    </ul>
+
+    
+    
+      <section id="shortcuts">
+        <h3>More</h3>
+        <ul>
+          
+              <li>
+                  <a class="padding" href="https://github.com/w3c/automotive-viss2"><i class='fab fa-github'></i> Github repo</a>
+              </li>
+          
+        </ul>
+      </section>
+    
+
+    
+    <section id="footer">
+      <p>Built with <a href="https://github.com/matcornic/hugo-theme-learn"><i class="fas fa-heart"></i></a> from <a href="https://getgrav.org">Grav</a> and <a href="https://gohugo.io/">Hugo</a></p>
+
+    </section>
+  </div>
+</nav>
+
+
+
+
+        <section id="body">
+        <div id="overlay"></div>
+        <div class="padding highlightable">
+              
+              <div>
+                <div id="top-bar">
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            <a href='/automotive-viss2/'>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > Categories
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
+        <div id="head-tags">
+        
+        </div>
+        
+        <div id="body-inner">
+          
+            <h1>
+              
+                category ::
+              
+              Categories
+            </h1>
+          
+
+        
+
+
+
+
+
+<ul>
+	
+</ul>
+
+
+<footer class=" footline" >
+	
+</footer>
+
+        
+        </div>
+        
+
+      </div>
+
+    <div id="navigation">
+        
+        
+
+        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+
+        
+
+
+	 
+	 
+		
+		
+			<a class="nav nav-next" href="/automotive-viss2/client/" title="VISSv2 Clients" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+	
+    </div>
+
+    </section>
+
+    <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
+      <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
+    </div>
+    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
+    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    
+        
+            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+        
+        <script>
+            mermaid.initialize({ startOnLoad: true });
+        </script>
+    
+    
+
+  </body>
+</html>

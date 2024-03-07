@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en" class="js csstransforms3d">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="description" content="">
+
+
+    <link rel="shortcut icon" href="/automotive-viss2/images/fav.png" type="image/x-icon" />
+
+    <title>VISSv2 Access Control Servers :: W3C VISSv2 Reference Implementation</title>
+
+    
+    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    
+    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    
+    
+
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+
+    <style>
+      :root #header + #content > #left > #rlblock_left{
+          display:none !important;
+      }
+      
+        :not(pre) > code + span.copy-to-clipboard {
+            display: none;
+        }
+      
+    </style>
+    
+  </head>
+  <body class="" data-url="/automotive-viss2/server/access-control-servers/">
+    <nav id="sidebar" class="">
+
+
+
+  <div id="header-wrapper">
+    <div id="header">
+      <a id="logo" href="https://w3c.github.io/automotive-viss2/">
+  <img src="/automotive-viss2/images/vissv2.png">
+</a>
+
+    </div>
+    
+        <div class="searchbox">
+    <label for="search-by"><i class="fas fa-search"></i></label>
+    <input data-search-input id="search-by" type="search" placeholder="Search...">
+    <span data-search-clear=""><i class="fas fa-times"></i></span>
+</div>
+
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript">
+    
+        var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
+    
+</script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+
+    
+  </div>
+  
+
+    <div class="highlightable">
+    <ul class="topics">
+
+        
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/client/" title="VISSv2 Clients" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/client/">
+          VISSv2 Clients
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/docker-step-by-step/" title="VISSv2 Docker" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/docker-step-by-step/">
+          VISSv2 Docker
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/peripheral-components/">
+          VISSv2 peripheral components
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/" title="VISSv2 Server" class="dd-item
+        parent
+        
+        
+        ">
+      <a href="/automotive-viss2/server/">
+          VISSv2 Server
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/access-control-servers/" title="VISSv2 Access Control Servers" class="dd-item
+        
+        active
+        
+        ">
+      <a href="/automotive-viss2/server/access-control-servers/">
+          VISSv2 Access Control Servers
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/build-system/" title="WAII Build System" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/build-system/">
+          WAII Build System
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/" title="WAII Data Storage" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/">
+          WAII Data Storage
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/redis/" title="WAII Redis" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/redis/">
+          WAII Redis
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/sqlite/" title="WAII SQLite" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/sqlite/">
+          WAII SQLite
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/feeder/" title="WAII Feeders" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/feeder/">
+          WAII Feeders
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/" title="WAII POCs" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/">
+          WAII POCs
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc2/" title="Next POC..." class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc2/">
+          Next POC...
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc1/" title="Vehicle.Speed subscription example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc1/">
+          Vehicle.Speed subscription example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/tools/" title="WAII Tools" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/tools/">
+          WAII Tools
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+        
+    </ul>
+
+    
+    
+      <section id="shortcuts">
+        <h3>More</h3>
+        <ul>
+          
+              <li>
+                  <a class="padding" href="https://github.com/w3c/automotive-viss2"><i class='fab fa-github'></i> Github repo</a>
+              </li>
+          
+        </ul>
+      </section>
+    
+
+    
+    <section id="footer">
+      <p>Built with <a href="https://github.com/matcornic/hugo-theme-learn"><i class="fas fa-heart"></i></a> from <a href="https://getgrav.org">Grav</a> and <a href="https://gohugo.io/">Hugo</a></p>
+
+    </section>
+  </div>
+</nav>
+
+
+
+
+        <section id="body">
+        <div id="overlay"></div>
+        <div class="padding highlightable">
+              
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/w3c/automotive-viss2/edit/master/tutorial/content/server/Access-control-servers/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            
+            
+          
+          
+            <a href='/automotive-viss2/'>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > <a href='/automotive-viss2/server/'>VISSv2 Server</a> > VISSv2 Access Control Servers
+          
+        
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li>
+      <ul>
+        <li><a href="#access-grant-server">Access Grant server</a></li>
+        <li><a href="#access-token-server">Access Token server</a></li>
+        <li><a href="#server-configuration">Server configuration</a></li>
+        <li><a href="#viss-web-client-submodule">VISS web client submodule</a></li>
+        <li><a href="#consent-support">Consent support</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
+        <div id="head-tags">
+        
+        </div>
+        
+        <div id="body-inner">
+          
+            <h1>
+              
+              VISSv2 Access Control Servers
+            </h1>
+          
+
+        
+
+
+
+	<p>The <a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-model">VISSv2 access control model</a> specifies two authorization servers:</p>
+<ul>
+<li>Access Grant server</li>
+<li>Access Token server</li>
+</ul>
+<h3 id="access-grant-server">Access Grant server</h3>
+<p>This server is in a typical scenario running in the cloud. It is built as a separate executable in the WAII/server/agt_server directory</p>
+<p>$ go build</p>
+<p>and run by</p>
+<p>$ ./agt_server</p>
+<p>It exposes an HTTP API according to the VISSv2 specification. However it is currently not TLS protected (which is a must in non-development scenario).
+What is also missing in the AGS implementation is authentication of the client, which according to the specification should be an AGT task.</p>
+<h3 id="access-token-server">Access Token server</h3>
+<p>This server runs as a thread within the vissv2 server, so it is built by the vissv2 build command.
+For it to be built, it is necessary to make sure that the &ldquo;atServer&rdquo; line in the serverComponents array in the vissv2server.go code is uncommented:</p>
+<pre tabindex="0"><code>var serverComponents []string = []string{
+	&#34;serviceMgr&#34;,
+	&#34;httpMgr&#34;,
+	&#34;wsMgr&#34;,
+	&#34;mqttMgr&#34;,
+	&#34;grpcMgr&#34;,
+	&#34;atServer&#34;,
+}
+</code></pre><p>If it is part of the vissv2server build, and if a VSS node is access control tagged,
+the server will then forward the access token received in the client request to the ATS for validation.</p>
+<p>The ATS will as part of the validation also use the VISSv2 specified policy documents if they are found in the working directory.</p>
+<p>The ATS suports caching of access tokens, and returning a token handle to the client if cached. The cache is configured to hold max 10 tokens.
+If the cache is full, caching of one more is rejected until a cached token becomes expired, or pre-emptied by other reasons.</p>
+<h3 id="server-configuration">Server configuration</h3>
+<p>The configuration available for the servers is whether the protocols that they implement to expose their APIS are TLS protected or not.
+The same framework that is used for generating credentials for the client-server communication described <a href="https://github.com/w3c/automotive-viss2/tree/master/testCredGen/">here</a>
+can be used in this case also.
+These credentials should however to follow good security practises be separate from what is used in the client-server communication.
+The different port number for the respective servers are shown below.</p>
+<table>
+<thead>
+<tr>
+<th>Server</th>
+<th>Port number: No TLS</th>
+<th>Port number: TLS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AGTS</td>
+<td>7500</td>
+<td>7443</td>
+</tr>
+<tr>
+<td>ATS</td>
+<td>8600</td>
+<td>8443</td>
+</tr>
+</tbody>
+</table>
+<h3 id="viss-web-client-submodule">VISS web client submodule</h3>
+<p>This submodule implements a <a href="https://github.com/nicslabdev/viss-web-client/">VISSv2 web client</a>
+that exposes a UI that is considerably more sophisticated than what other clients on the WAII repo exposes,
+and it is particularly helpful when it comes to the client interactions with access control involved.
+Check out the README on both repos for more information.</p>
+<h3 id="consent-support">Consent support</h3>
+<p>The VISSv2 specification provides support for requesting consent from a data owner before allowing a client to access the data.
+The model for this is that the process for obtaining the owner consent is delegated to an External Consent framework (ECF),
+and the details ofthis process is out-of-scope in relation to the VISSv2 specification.
+What is in scope is a high-level description of the protocol between the VISSv2 server and the ECF, see the
+<a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#consent-support">VISSv2 consent support</a> chapter.
+To configure the VISSv2 server to try to connect to an ECF, it must be started with the command parameter -c&quot;.</p>
+<p>The figure below shows the the different steps in the dataflow that is necessary when a client wants to initiate a subscription of data that is
+access controlled and require consent from the data owner.
+<img src="/automotive-viss2/images/VISSv2-consent-subscribe-dataflow.jpg?width=40pc" alt="VISSv2 consent subscribe dataflow">
+The dataflow describes a scenario when the client successfully subscribes to data the require both access control and consent by the data owner.
+Consent can only be required in combination with requiring access control, please see the
+<a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-model">Access Control Model</a> chapter.</p>
+<ol>
+<li>The client issues a request to the Access Grant Token server (AGTS).</li>
+</ol>
+<p>1.1 The AGTS verifies the client request and returns an Access Grant Token (AGT).</p>
+<ol start="2">
+<li>The client issues a request to the Access Token server (ATS).</li>
+</ol>
+<p>2.1 The ATS writes the data in the client request to the Pending list, associating a reference Id to it.</p>
+<p>2.2 The ATS issues a request to obtain consent to the ECF, including the reference Id.</p>
+<p>2.3 The ATS sends a response to the client containing a reference to the entry in the Pending list.</p>
+<p>2.4 The ECF has obtained (a positive) consent and issues a message to the ATS containing the consent and the reference Id.
+The ATS updates the consent info in the Pending list (initially set to NOT_SET).</p>
+<p>2.5 The client issues an inquiry request to the ATS containing the reference Id.</p>
+<p>2.6 The entry on the Pending list is used to generate the AT, is then deleted, and a new entry containing the AT, keeping the same reference Id, is created on the Active list.</p>
+<p>2.7 A response containing the AT is returned to the client. If the inquiry request 2.5 happened before 2.4 then the ATS returns the same reference Id without executing 2.6,
+but if 2.4 happened before, so that the consent no longer has the value NOT_SET, then if the consent was set to YES,
+the ATS generates the Access Token (AT), and returns it to the client. If the consent was set to NO, the consent data is returned without the AT.</p>
+<ol start="3">
+<li>The client issues the subscribe request to the VISSv2 server containing the AT. The AT in the client request my be represented by a handle instead of the entire AT,
+see the <a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#protected-resource-request">Protected Resource Request</a> chapter.</li>
+</ol>
+<p>3.1 The VISSv2 server issues an AT validation request to the ATS. The ATS finds it on the Active list, and validates the AT.</p>
+<p>3.2 The ATS returns the validation result to the VISSv2 server, and the reference Id from the matching entry on the Active list.</p>
+<p>3.3 Assuming a positive AT validation, the VISSv server forwards the client subscribe request, and the reference Id, to the service manager.</p>
+<p>3.4 The service manager creates an entry on the subscription list containing the required data for being able to issue event messages to the client containing the
+requested signals. The reference Id is also saved.</p>
+<p>3.5 and 3.6 The service manager creates the response message associated to the request in 3.</p>
+<p>From this point on the servicemanager will when the event described in the filter data from the client request is triggered issue event messges to the client.
+This will continue until any of the following happens:</p>
+<p>A. The client issues an unsubscribe request.</p>
+<p>B. The ECF issues a consent cancellation request to the ATS.</p>
+<p>C. The AT expiry time is reached.</p>
+<p>Alternative A:
+The service manager will delete the entry on the subscription list. The corresponding entry on the Active list will remain.</p>
+<p>Alternative B:
+The ATS will delete the entry on the Active list, and issue a request to the service manager to delete the entry on the subscription list corresponding to the
+reference Id from its deleted entry.</p>
+<p>Alternative C:
+The ATS will delete the entry on the Active list correspnding to the reference Id received from the ECF,
+and issue a request to the service manager to delete the entry on the subscription list corresponding to the reference Id.</p>
+<h4 id="payload-syntax-for-the-messages-in-the-client-to-atgs-communication">Payload syntax for the messages in the client-to-ATGS communication:</h4>
+<p>AGT request: {“action”: “agt-request”, &ldquo;vin&rdquo;:&ldquo;pseudo-vin&rdquo;, &ldquo;context&rdquo;:&ldquo;triplet-sub-roles-see-spec&rdquo;, &ldquo;proof&rdquo;:&ldquo;ABC&rdquo;, &ldquo;key&rdquo;:&ldquo;DEF&rdquo;}</p>
+<p>AGT response: {“action”: “agt-request”, &ldquo;token&rdquo;:&ldquo;x.y.z&rdquo;}  // if successful validation</p>
+<p>Error response: {“action”: “agt-request”, &ldquo;error&rdquo;:&ldquo;error-reason&rdquo;}  // if unsuccessful validation</p>
+<h4 id="payload-syntax-for-the-messages-in-the-client-to-ats-communication">Payload syntax for the messages in the client-to-ATS communication:</h4>
+<p>AT request: {“action”: “at-request”, &ldquo;agToken&rdquo;:&ldquo;x.y.z&rdquo;, &ldquo;purpose&rdquo;:&ldquo;purpose-description&rdquo;, &ldquo;pop&rdquo;:&quot;&quot;}  // pop shall be an empty string for access control short term flow.</p>
+<p>AT response 1: {“action”: “at-request”, &ldquo;aToken&rdquo;:&ldquo;x.y.z&rdquo;} ATS-&gt;Client // Consent is not required.</p>
+<p>AT response 2: {“action”: “at-request”, &ldquo;sessionId &ldquo;:&ldquo;reference-Id&rdquo;, “consent”:”NOT_SET”} // Consent is required, and consent reply not obtained yet from ECF.</p>
+<p>AT inquiry request: {“action”: “at-inquiry”, &ldquo;sessionId&rdquo;:&ldquo;reference-Id&rdquo;}  // may need to be issued multiple times until consent is provided by ECF.</p>
+<p>AT inquiry response 1: {“action”: “at-inquiry”, &ldquo;aToken&rdquo;:&ldquo;x.y.z&rdquo;, “consent”:”YES”} ATS-&gt;Client // ECF has provided a positive consent.</p>
+<p>AT inquiry response 2: {“action”: “at-inquiry”, &ldquo;sessionId &ldquo;:&ldquo;reference-Id&rdquo;, “consent”:”NOT_SET”} // Reply is not obtained yet from ECF.</p>
+<p>AT inquiry response 3: {“action”: “at-inquiry”, “consent”:”NO”} // ECF has provided a negative consent.</p>
+<p>Error response: {“action”: “same-as-in-request”, &ldquo;error&rdquo;:&ldquo;error-reason&rdquo;}</p>
+<h4 id="payload-syntax-for-the-messages-in-the-ats-to-ecf-communication">Payload syntax for the messages in the ATS-to-ECF communication:</h4>
+<p>Consent request: {“action”: “consent-ask”, “user-roles”: “triplet-sub-roles-see-spec”, “purpose”: “purpose-description”, &ldquo;signal_access&rdquo;: [{},..{}], “messageId”: ”reference-Id”}</p>
+<p>Consent reply request: {“action”: “consent-reply”, “consent”: “YES/NO”, “messageId”: ”reference-Id”}</p>
+<p>Consent cancellation request: {“action”: “consent-cancel”, “messageId”: ”reference-Id”}</p>
+<p>Response to above requests: {“action”: “same-as-in-request”, “status”: “200-OK/404-Not found/401-Bad request”} // Status is one of the three examples shown.</p>
+<p>See the specification chapter<a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#purpose-list">Purpose list</a> for the definition of the signal_access object.</p>
+
+
+
+
+
+<footer class=" footline" >
+	
+</footer>
+
+        
+        </div>
+        
+
+      </div>
+
+    <div id="navigation">
+        
+        
+
+        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+
+        
+
+
+	 
+	 
+		
+			<a class="nav nav-prev" href="/automotive-viss2/server/" title="VISSv2 Server"> <i class="fa fa-chevron-left"></i></a>
+		
+		
+			<a class="nav nav-next" href="/automotive-viss2/build-system/" title="WAII Build System" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+	
+    </div>
+
+    </section>
+
+    <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
+      <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
+    </div>
+    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
+    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    
+        
+            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+        
+        <script>
+            mermaid.initialize({ startOnLoad: true });
+        </script>
+    
+    
+
+  </body>
+</html>

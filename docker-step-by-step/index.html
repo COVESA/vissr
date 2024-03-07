@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en" class="js csstransforms3d">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="description" content="">
+
+
+    <link rel="shortcut icon" href="/automotive-viss2/images/fav.png" type="image/x-icon" />
+
+    <title>VISSv2 Docker :: W3C VISSv2 Reference Implementation</title>
+
+    
+    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    
+    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    
+    
+
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+
+    <style>
+      :root #header + #content > #left > #rlblock_left{
+          display:none !important;
+      }
+      
+        :not(pre) > code + span.copy-to-clipboard {
+            display: none;
+        }
+      
+    </style>
+    
+  </head>
+  <body class="" data-url="/automotive-viss2/docker-step-by-step/">
+    <nav id="sidebar" class="">
+
+
+
+  <div id="header-wrapper">
+    <div id="header">
+      <a id="logo" href="https://w3c.github.io/automotive-viss2/">
+  <img src="/automotive-viss2/images/vissv2.png">
+</a>
+
+    </div>
+    
+        <div class="searchbox">
+    <label for="search-by"><i class="fas fa-search"></i></label>
+    <input data-search-input id="search-by" type="search" placeholder="Search...">
+    <span data-search-clear=""><i class="fas fa-times"></i></span>
+</div>
+
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript">
+    
+        var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
+    
+</script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+
+    
+  </div>
+  
+
+    <div class="highlightable">
+    <ul class="topics">
+
+        
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/client/" title="VISSv2 Clients" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/client/">
+          VISSv2 Clients
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/docker-step-by-step/" title="VISSv2 Docker" class="dd-item
+        
+        active
+        
+        ">
+      <a href="/automotive-viss2/docker-step-by-step/">
+          VISSv2 Docker
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/peripheral-components/">
+          VISSv2 peripheral components
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/" title="VISSv2 Server" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/server/">
+          VISSv2 Server
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/access-control-servers/" title="VISSv2 Access Control Servers" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/server/access-control-servers/">
+          VISSv2 Access Control Servers
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/build-system/" title="WAII Build System" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/build-system/">
+          WAII Build System
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/" title="WAII Data Storage" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/">
+          WAII Data Storage
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/redis/" title="WAII Redis" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/redis/">
+          WAII Redis
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/sqlite/" title="WAII SQLite" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/sqlite/">
+          WAII SQLite
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/feeder/" title="WAII Feeders" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/feeder/">
+          WAII Feeders
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/" title="WAII POCs" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/">
+          WAII POCs
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc2/" title="Next POC..." class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc2/">
+          Next POC...
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc1/" title="Vehicle.Speed subscription example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc1/">
+          Vehicle.Speed subscription example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/tools/" title="WAII Tools" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/tools/">
+          WAII Tools
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+        
+    </ul>
+
+    
+    
+      <section id="shortcuts">
+        <h3>More</h3>
+        <ul>
+          
+              <li>
+                  <a class="padding" href="https://github.com/w3c/automotive-viss2"><i class='fab fa-github'></i> Github repo</a>
+              </li>
+          
+        </ul>
+      </section>
+    
+
+    
+    <section id="footer">
+      <p>Built with <a href="https://github.com/matcornic/hugo-theme-learn"><i class="fas fa-heart"></i></a> from <a href="https://getgrav.org">Grav</a> and <a href="https://gohugo.io/">Hugo</a></p>
+
+    </section>
+  </div>
+</nav>
+
+
+
+
+        <section id="body">
+        <div id="overlay"></div>
+        <div class="padding highlightable">
+              
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/w3c/automotive-viss2/edit/master/tutorial/content/docker-step-by-step/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            <a href='/automotive-viss2/'>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > VISSv2 Docker
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#intro">Intro</a></li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
+        <div id="head-tags">
+        
+        </div>
+        
+        <div id="body-inner">
+          
+            <h1>
+              
+              VISSv2 Docker
+            </h1>
+          
+
+        
+
+
+
+	<h2 id="intro">Intro</h2>
+<p>This is a guide to setup and run the vissv2 server together with the remotiveLabs broker with recorded vehicle data.
+The data set is residing the remotiveLabs cloud - <!-- raw HTML omitted -->. There are some configuration files that needs to be set and
+pushed to the docker images. The docker-compose-rl.yml is depending on the Dockerfile(for building) also located in the
+project root. A docker directory is reserved for adding different docker setups with different data providers.</p>
+<p><strong>1. feeder-rl</strong></p>
+<p>The feeder-rl has two basic commands which lets you switch dataprovider. We have &ndash;dataprovider remotive or
+&ndash;dataprovider sim. This guide will focus on using &ndash;dataprovider remotive.</p>
+<p>Visit <a href="https://console.demo.remotivelabs.com/p/demo/recordings">remotive labs cloud demo</a></p>
+<ul>
+<li>Select the <em><strong>Turning Torso Drivecycle</strong></em>, and the vss configuration.</li>
+<li>Select <em><strong>Play</strong></em>, and choose <em><strong>select broker</strong></em>, choose <em><strong>My personal broker</strong></em> and then <em><strong>Upload</strong></em>.</li>
+<li>Select <em><strong>Go to broker</strong></em></li>
+<li>In the left down corner select <em><strong>Broker details</strong></em> and copy the url and the api-key, we need them for the feeder
+configuration</li>
+<li>keep the page open in the browser  (we will not press start yet)</li>
+<li>Edit the <em><strong>config.json</strong></em> in the <em><strong>feeder-rl</strong></em> directory, replace url and api key.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;tls&#34;</span>: <span style="color:#e6db74">&#34;yes&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;cert_path_name&#34;</span>: <span style="color:#e6db74">&#34;certificate.pem&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;name_spaces&#34;</span>: [<span style="color:#e6db74">&#34;vss&#34;</span>],
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;broker_url&#34;</span>: <span style="color:#e6db74">&#34;&lt;broker url&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;port&#34;</span>:<span style="color:#e6db74">&#34;443&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;client_id&#34;</span> : <span style="color:#e6db74">&#34;volvo-go-client&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;api_key&#34;</span>: <span style="color:#e6db74">&#34;&lt;api key&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;vss_tree_path&#34;</span>: <span style="color:#e6db74">&#34;../vss/vss-flat-json/normalized-json/vss_n.json&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;signalfilter&#34;</span>: [<span style="color:#e6db74">&#34;Vehicle.Speed&#34;</span>,<span style="color:#e6db74">&#34;Vehicle.Body.Lights.IsLeftIndicatorOn&#34;</span>,<span style="color:#e6db74">&#34;Vehicle.VehicleIdentification.VIN&#34;</span>,<span style="color:#e6db74">&#34;Vehicle.CurrentLocation.Latitude&#34;</span>,<span style="color:#e6db74">&#34;Vehicle.CurrentLocation.Longitude&#34;</span>,<span style="color:#e6db74">&#34;Vehicle.Chassis.Accelerator.PedalPosition&#34;</span>]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><ul>
+<li>The <em><strong>signalfilter</strong></em> element contains the signals that we would like the broker to filter our for us.</li>
+<li>Save the file.</li>
+</ul>
+<p><strong>NOTE:</strong></p>
+<p>The feeder uses the redis state storage database to handle incoming datapoints. The location of the database and its
+server socket communication file.</p>
+<p>running feeder-rl example:</p>
+<pre tabindex="0"><code>feeder-rl --dataprovider remotive --rdb /tmp/docker/redisDB.sock --fch /tmp/docker/server-feeder-channel.sock
+</code></pre><p>For further details view the <em><strong>docker-compose-rl.yml</strong></em> located in the project root.</p>
+<p><strong>2. server configuration</strong></p>
+<p>The server needs to know where it should forward its requests for writing or reading datapoints.</p>
+<ul>
+<li>Edit the file <strong>feeder-registration.json</strong></li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>[
+</span></span><span style="display:flex;"><span>  {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;root&#34;</span>:<span style="color:#e6db74">&#34;Vehicle&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;fname&#34;</span>:<span style="color:#e6db74">&#34;/tmp/docker/server-feeder-channel.sock&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;db&#34;</span>: <span style="color:#e6db74">&#34;/tmp/docker/redisDB.sock&#34;</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>]
+</span></span></code></pre></div><ul>
+<li>set the <strong>fname</strong> element to where the feeder channel socket file should reside.</li>
+<li>set the <strong>db</strong> element to where the redis database should reside.</li>
+</ul>
+<p>NOTE:
+The above file paths and file names are correct. Changing the location of these will require changes in the
+docker-compose yml.</p>
+<p><strong>3. build and run</strong></p>
+<ul>
+<li>locate the <em><strong>docker-compose-rl.yml</strong></em> file in the project root</li>
+<li>build the docker containers:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">docker</span> <span style="color:#960050;background-color:#1e0010">compose</span> <span style="color:#960050;background-color:#1e0010">-f</span> <span style="color:#960050;background-color:#1e0010">docker-compose-rl.yml</span> <span style="color:#960050;background-color:#1e0010">build</span> 
+</span></span></code></pre></div><ul>
+<li>revisit the browser from step 1, press the start button, the recorded data playback starts.</li>
+<li>run the docker-compose:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">docker</span> <span style="color:#960050;background-color:#1e0010">compose</span> <span style="color:#960050;background-color:#1e0010">-f</span> <span style="color:#960050;background-color:#1e0010">docker-compose-rl.yml</span> <span style="color:#960050;background-color:#1e0010">up</span>
+</span></span></code></pre></div><p>If you get the following output to the docker console you have succesfully connected and started the vissv2server:</p>
+<pre tabindex="0"><code>feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.240000000000002&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:13Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.32&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Chassis.Accelerator.PedalPosition, Value=15.600000000000001&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.399999999999999&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.480000000000004&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.560000000000002&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&#34;info&#34;,&#34;msg&#34;:&#34;Data written to statestorage: Name=Vehicle.Speed, Value=10.64&#34;,&#34;time&#34;:&#34;2023-11-01T11:36:14Z&#34;}
+</code></pre>
+
+
+
+
+<footer class=" footline" >
+	
+</footer>
+
+        
+        </div>
+        
+
+      </div>
+
+    <div id="navigation">
+        
+        
+
+        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+
+        
+
+
+	 
+	 
+		
+			<a class="nav nav-prev" href="/automotive-viss2/client/" title="VISSv2 Clients"> <i class="fa fa-chevron-left"></i></a>
+		
+		
+			<a class="nav nav-next" href="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+	
+    </div>
+
+    </section>
+
+    <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
+      <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
+    </div>
+    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
+    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    
+        
+            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+        
+        <script>
+            mermaid.initialize({ startOnLoad: true });
+        </script>
+    
+    
+
+  </body>
+</html>

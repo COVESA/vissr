@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>WAII Feeders on W3C VISSv2 Reference Implementation</title>
+    <link>https://w3c.github.io/automotive-viss2/feeder/</link>
+    <description>Recent content in WAII Feeders on W3C VISSv2 Reference Implementation</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language><atom:link href="https://w3c.github.io/automotive-viss2/feeder/index.xml" rel="self" type="application/rss+xml" />
+  </channel>
+</rss>

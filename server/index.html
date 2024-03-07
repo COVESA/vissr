@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en" class="js csstransforms3d">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="description" content="">
+
+
+    <link rel="shortcut icon" href="/automotive-viss2/images/fav.png" type="image/x-icon" />
+
+    <title>VISSv2 Server :: W3C VISSv2 Reference Implementation</title>
+
+    
+    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    
+    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    
+    
+
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+
+    <style>
+      :root #header + #content > #left > #rlblock_left{
+          display:none !important;
+      }
+      
+        :not(pre) > code + span.copy-to-clipboard {
+            display: none;
+        }
+      
+    </style>
+    
+  </head>
+  <body class="" data-url="/automotive-viss2/server/">
+    <nav id="sidebar" class="">
+
+
+
+  <div id="header-wrapper">
+    <div id="header">
+      <a id="logo" href="https://w3c.github.io/automotive-viss2/">
+  <img src="/automotive-viss2/images/vissv2.png">
+</a>
+
+    </div>
+    
+        <div class="searchbox">
+    <label for="search-by"><i class="fas fa-search"></i></label>
+    <input data-search-input id="search-by" type="search" placeholder="Search...">
+    <span data-search-clear=""><i class="fas fa-times"></i></span>
+</div>
+
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript">
+    
+        var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
+    
+</script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+
+    
+  </div>
+  
+
+    <div class="highlightable">
+    <ul class="topics">
+
+        
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/client/" title="VISSv2 Clients" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/client/">
+          VISSv2 Clients
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/docker-step-by-step/" title="VISSv2 Docker" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/docker-step-by-step/">
+          VISSv2 Docker
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/peripheral-components/">
+          VISSv2 peripheral components
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/" title="VISSv2 Server" class="dd-item
+        
+        active
+        
+        ">
+      <a href="/automotive-viss2/server/">
+          VISSv2 Server
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/server/access-control-servers/" title="VISSv2 Access Control Servers" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/server/access-control-servers/">
+          VISSv2 Access Control Servers
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/build-system/" title="WAII Build System" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/build-system/">
+          WAII Build System
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/" title="WAII Data Storage" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/">
+          WAII Data Storage
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/redis/" title="WAII Redis" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/redis/">
+          WAII Redis
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/sqlite/" title="WAII SQLite" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/sqlite/">
+          WAII SQLite
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/feeder/" title="WAII Feeders" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/feeder/">
+          WAII Feeders
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/" title="WAII POCs" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/">
+          WAII POCs
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc2/" title="Next POC..." class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc2/">
+          Next POC...
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/pocs/poc1/" title="Vehicle.Speed subscription example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/pocs/poc1/">
+          Vehicle.Speed subscription example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/tools/" title="WAII Tools" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/tools/">
+          WAII Tools
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+        
+    </ul>
+
+    
+    
+      <section id="shortcuts">
+        <h3>More</h3>
+        <ul>
+          
+              <li>
+                  <a class="padding" href="https://github.com/w3c/automotive-viss2"><i class='fab fa-github'></i> Github repo</a>
+              </li>
+          
+        </ul>
+      </section>
+    
+
+    
+    <section id="footer">
+      <p>Built with <a href="https://github.com/matcornic/hugo-theme-learn"><i class="fas fa-heart"></i></a> from <a href="https://getgrav.org">Grav</a> and <a href="https://gohugo.io/">Hugo</a></p>
+
+    </section>
+  </div>
+</nav>
+
+
+
+
+        <section id="body">
+        <div id="overlay"></div>
+        <div class="padding highlightable">
+              
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/w3c/automotive-viss2/edit/master/tutorial/content/server/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            <a href='/automotive-viss2/'>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > VISSv2 Server
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li>
+      <ul>
+        <li><a href="#build-the-server">Build the server</a></li>
+        <li><a href="#configure-the-server">Configure the server</a></li>
+        <li><a href="#pathlist-file-generation">Pathlist file generation</a></li>
+        <li><a href="#history-control">History control</a></li>
+        <li><a href="#ignition-life-cycle">Ignition life cycle</a></li>
+        <li><a href="#experimental-compression">Experimental compression</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
+        <div id="head-tags">
+        
+        </div>
+        
+        <div id="body-inner">
+          
+            <h1>
+              
+              VISSv2 Server
+            </h1>
+          
+
+        
+
+
+
+	<p>The VISSv2 server is the Sw component that implements the interface that is exposed to the clients, and that must conform to the W3C VISSv2 specification.</p>
+<h3 id="build-the-server">Build the server</h3>
+<p>Please check the chapter <a href="/automotive-viss2/build-system">VISSv2 Build System</a> for general Golang information.</p>
+<p>To build the server, open a erminal and go to the WAII/server/vissv2 directory and issue the command:</p>
+<p>$ go build</p>
+<h3 id="configure-the-server">Configure the server</h3>
+<h4 id="vss-tree-configuration">VSS tree configuration</h4>
+<p>The server has a copy of the VSS tree that it uses to verify that client requsts are valid -
+that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token, etc.
+The tree parser that is used expects the tre to have the &lsquo;binary format&rsquo; that one of the VSS-Tools genertes from the vspec files.
+To generate this the <a href="https://github.com/COVESA/vehicle_signal_specification">VSS repo</a> must be cloned including the VSS-Tools submodule,
+and a file containing the binary representation must be created, which is done with the following command issued in the root directory.</p>
+<p>$ make binary</p>
+<p>This generates a file with a name like &lsquo;vss_rel_4.1-dev.binary&rsquo;,
+which then needs to be renamed to &lsquo;vss_vissv2.binary&rsquo; and stored in the WAII/server/vissv2server directory.</p>
+<p>If you want to configure the tree to include access control, access control tags as described in the
+<a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-selection">VISSv2 - Access Control Selection chapter</a> needs to be added to appropriate tree nodes.
+This can either be done by editing vspec files directly, or using the <a href="https://github.com/covesa/vss-tools">VSS-Tools</a> overlay mechanism.</p>
+<h4 id="command-line-configuration">Command line configuration</h4>
+<p>The server has the following command line configurations:</p>
+<ul>
+<li>Data storage implementation. Select either to use an SQLite implementation (-s sqlite) or a Redis implementation (-s redis). Default is SQLite.</li>
+<li>Data storage file name (&ndash;dbfile &lsquo;file-name&rsquo;). Only relevant for SQLite configuration. Default is &ldquo;serviceMgr/statestorage.db&rdquo;.</li>
+<li>Request the server to generate a pathlist file, then terminate (&ndash;dryrun). Default is not to terminate after generating it.</li>
+<li>Pathlist file name (&ndash;vssjson &lsquo;file-name&rsquo;. Default is &ldquo;../vsspathlist.json&rdquo;.</li>
+<li>UDS path for history control (&ndash;uds &lsquo;file-name&rsquo;). Name of the Unix domain socket file. Default is &ldquo;/var/tmp/vissv2/histctrlserver.sock&rdquo;.</li>
+<li>Level of logging (&ndash;loglevel levelx). Levelx is one of [trace, debug, info, warn, error, fatal, panic]. Default is &ldquo;info&rdquo;.</li>
+<li>Whether logging should end up in standard output (false) or in a log file (true) (&ndash;logfile false/true). The default is &lsquo;false&rsquo;.</li>
+</ul>
+<h4 id="data-storage-configuration">Data storage configuration</h4>
+<p>Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
+However, to get it up and running there are other preparations lso needed, please see the <a href="/automotive-viss2/datastore">VISSv2 Data Storage</a> chapter.</p>
+<h4 id="protocol-support-configuration">Protocol support configuration</h4>
+<p>The server supports the following protocols:</p>
+<ul>
+<li>HTTP</li>
+<li>Websockets</li>
+<li>MQTT (with the VISSv2 specific application protocol on top)</li>
+<li>gRPC</li>
+</ul>
+<p>The message payload is identical for all protocols at the client application level (after protocol specific payload modifications are restored).
+HTTP differs in that it does not support subscribe requests.</p>
+<p>The code is structured to make it reasonably easy to remove any of the protocols if that is desired for reducing the code footprint.
+Similarly it should be reasonably straight forward to add new protocols, given that the payload format transformation is not too complicated.</p>
+<p>The Websocket protocol manager terminates subscriptions if a client terminats the session without first terminating its ongoing subscriptions.</p>
+<h5 id="tls-configuration">TLS configuration</h5>
+<p>The server, and several of the clients, can be configured to apply TLS to the protocols (MQTT uses it integrated model for this).
+The first step in applying TLS is to generate the credentials needed, which is done by running the testCredGen.sh script found <a href="https://github.com/w3c/automotive-viss2/tree/master/testCredGen/">here</a>.</p>
+<p>For details about it, please look at the README in that directory.
+As described there, the generated credentials must then be copied into the appropriate directories for both the server and the client.
+And the key-value &ldquo;transportSec&rdquo; in the transportSec.json file must be set to &ldquo;yes&rdquo; on both sides.</p>
+<p>Reverting to non-TLS use only requires the &ldquo;yes&rdquo; to be changed to &ldquo;no&rdquo;,
+on both the server and the client side.
+Clients must also change to the non-TLS port number according to the list below.</p>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Port number: No TLS</th>
+<th>Port number: TLS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTTP</td>
+<td>8888</td>
+<td>443</td>
+</tr>
+<tr>
+<td>WebSocket</td>
+<td>8080</td>
+<td>6443</td>
+</tr>
+<tr>
+<td>MQTT</td>
+<td>1883</td>
+<td>8883</td>
+</tr>
+<tr>
+<td>gRPC</td>
+<td>5000</td>
+<td>5443</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pathlist-file-generation">Pathlist file generation</h3>
+<p>Some software components that are used in the overall context to setup and run a VISSv2 based communication tech stack needs a list of all the leaf node paths of the VSS tree being used y the server.
+The server generates such a list at startup, in the form of a sorted list in JSON format, having a default name &ldquo;vsspathlist.json&rdquo;.
+As this file may need to be copied and used in other preparations before starting the entire tech stack, it is possible to run the server to only generate this file and then terminate.
+SwCs that use this file:</p>
+<ul>
+<li>SQLite state storage manager.</li>
+<li>The server itself if started to apply path encoding using some of the experimental compression schemes, and the corresponding client.</li>
+<li>The protobuf encoding scheme.</li>
+<li>The live simulator.</li>
+</ul>
+<h3 id="history-control">History control</h3>
+<p>The VISSv2 specification provides a capability for clients to issue a request for <a href="https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#history-filter-operation">historic data</a>.
+This server supports temporary recording of data that can then be requested by a client using a history filter.
+The model used in the implementation of this is that it is not the server that decides when to start or stop a recording, or how long to keep the recorded data,
+but it is controlled by some other vehicle system via a Unix domain socket based API.
+For more information, please see the <a href="https://github.com/w3c/automotive-viss2/tree/master/server/vissv2server/serviceMgr">service manager</a> README.</p>
+<p>To test this functionality there is a rudimentary <a href="https://github.com/w3c/automotive-viss2/blob/master/server/hist_ctrl_client.go">history control client</a>
+that can be used to instruct the server to start/stop/delete recording of signals.
+To reduce the amount of data that is recorded the server only saves a data value if it has changed compared to the latest captured,
+so to record more than a start and stop value the signals should be dynamic during a test.</p>
+<h3 id="ignition-life-cycle">Ignition life cycle</h3>
+<p>Dynamic data handled by the server, such as subscriptions, and access token caching, does not survive between ignition cycles (restart of the server).</p>
+<h3 id="experimental-compression">Experimental compression</h3>
+<p>VISSv2 uses JSON as the payload format, and as JSON is a textbased format there is a potential to reduce the payload size by using compression.</p>
+<p>A first attempt on applying compression built on a proprietary algorithm that took advantage of knowing the VISSv2 payload format.
+This yielded compressions rates around 5 times (500%), but due to its strong dependence on the payload format it was hard to keep stable when the payload format evolved.
+The <a href="/automotive-viss2/client#compression-client">compression client</a> can be used to test it out, but some payoads will likely crash it.</p>
+<p>A later compression solution was built on protobuf, using the VISSv2messages.proto file found <a href="https://github.com/w3c/automotive-viss2/tree/master/protobuf">here</a>.
+For more details, see the  <a href="/automotive-viss2/client#compression-client">compression client</a>.</p>
+<p>The gRPC protocol implementation, which requires that payloads are protobuf encoded, uses the VISSv2.proto file found <a href="https://github.com/w3c/automotive-viss2/tree/master/grpc_pb">here</a>.</p>
+
+
+
+
+
+<footer class=" footline" >
+	
+</footer>
+
+        
+        </div>
+        
+
+      </div>
+
+    <div id="navigation">
+        
+        
+
+        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+
+        
+
+
+	 
+	 
+		
+			<a class="nav nav-prev" href="/automotive-viss2/peripheral-components/" title="VISSv2 peripheral components"> <i class="fa fa-chevron-left"></i></a>
+		
+		
+			<a class="nav nav-next" href="/automotive-viss2/server/access-control-servers/" title="VISSv2 Access Control Servers" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+	
+    </div>
+
+    </section>
+
+    <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
+      <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
+    </div>
+    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
+    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    
+        
+            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+        
+        <script>
+            mermaid.initialize({ startOnLoad: true });
+        </script>
+    
+    
+
+  </body>
+</html>
