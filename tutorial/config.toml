@@ -1,20 +1,20 @@
-baseURL = "https://w3c.github.io/automotive-viss2/"
+baseURL = "https://covesa.github.io/vissr/"
 languageCode = "en-us"
-title = "W3C VISSv2 Reference Implementation"
+title = "COVESA VISSv2 Reference Implementation (vissr)"
 theme = "learn"
 publishDir = "../docs"
 [params]
   # Change default color scheme with a variant one. Can be "red", "blue", "green".
   themeVariant = "blue"
   disableInlineCopyToClipBoard = true
-  editURL = "https://github.com/w3c/automotive-viss2/edit/master/tutorial/content/"
+  editURL = "https://github.com/covesa/vissr/edit/master/tutorial/content/"
   disableLandingPageButton = true
 
 
 [[menu.shortcuts]]
 name = "<i class='fab fa-github'></i> Github repo"
 identifier = "ds"
-url = "https://github.com/w3c/automotive-viss2"
+url = "https://github.com/covesa/vissr"
 weight = 10
 
 # Generation of JSON index to allow search

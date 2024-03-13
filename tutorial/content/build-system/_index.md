@@ -1,5 +1,5 @@
 ---
-title: "WAII Build System"
+title: "VISSR Build System"
 ---
 
 ## Installing Golang
@@ -38,11 +38,11 @@ If there is any calls to the "github.com/akamensky/argparse" lib then it is used
 As the configurations have a default it is always possible to run it without adding any comand line configuration input.
 The configuration possibilities of the different SwCs are described in the respective chapters of this tutorial.
 
-The server consists of several "actors", see the [README](https://github.com/w3c/automotive-viss2) Overview chapter.
+The server consists of several "actors", see the [README](https://github.com/covesa/vissr) Overview chapter.
 These used to be built as separate processes that communicated over the Websockets protocol.
 To simplify the building process of thesesoftware components the script W3CServer.sh was created.
 After the refactoring of these SwCs into one process with ech actor running as a separate thread,
-it became more convenient to build without this script, but it is still [avaliable](https://github.com/w3c/automotive-viss2/blob/master/W3CServer.sh).
+it became more convenient to build without this script, but it is still [avaliable](https://github.com/covesa/vissr/blob/master/W3CServer.sh).
 For more details, see the "Multi-process vs single-process server implementation" chapter in the README.
 
 There are multiple Software components on this repo, such as feeders, simulators, the DCT tool that are to be built as separate excutables.
@@ -89,8 +89,8 @@ For more information see https://github.com/golang/go/wiki/Modules#when-should-i
 
 ## Docker
 
-The server can also be built and launched using docker and docker-compose, see the [Docker README](https://github.com/w3c/automotive-viss2/tree/master/docker).
+The server can also be built and launched using docker and docker-compose, see the [Docker README](https://github.com/covesa/vissr/tree/master/docker).
 Current example builds and runs using the redis state storage together with an implementation of the feeder interfacing 
-the remotiveLabs broker in the cloud.[feeder-rl](https://github.com/w3c/automotive-viss2/tree/master/feeder/feeder-rl) .
+the remotiveLabs broker in the cloud.[feeder-rl](https://github.com/covesa/vissr/tree/master/feeder/feeder-rl) .
 
 

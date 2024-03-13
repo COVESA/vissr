@@ -6,11 +6,11 @@ Here follows a minimal example that goes through all the steps nneeded to set up
 where a client subscribes to Vehicle.Speed, and receives simulated values in return.
 
 It is assumed that the development environment has Golang installed.
-If not, then instruction for installing Golang is found [here](/automotive-viss2/build-system/).
+If not, then instruction for installing Golang is found [here](/vissr/build-system/).
 
 If this repo is not cloned to the development environment, this is done by the command:
 
-$ git clone https://github.com/w3c/automotive-viss2.git
+$ git clone https://github.com/covesa/vissr.git
 
 The POC will be based on the feeder found at the feeder branch, so switching to this branch is done by the command:
 
@@ -31,7 +31,7 @@ $ go build
 
 The server uses a binary formatted copy of the VSS tree to verify client requests, so if the signal of interest, Vehicle.Speed,
 is not in this tree, i is necessary to create a new binary tree containing this signal.
-For informtion on how to get tht done, check out [/automotive-viss2/server#vss-tree-configuration).
+For informtion on how to get that done, check out [VSS tree configuration](/vissr/server#vss-tree-configuration).
 
 Then start the server with the command line configuration for using Redis as statestorage:
 
@@ -42,7 +42,7 @@ To build the feeder, open a new terminal and move the working directory to WAII/
 $ go build
 
 Before strtign it, it needs to be configured for mapping of the Vehicle.Speed signal, and to generate simulated values for it.
-To do this the file [VehicleVssMapData.json](https://github.com/w3c/automotive-viss2/blob/feeder/feeder/VehicleVssMapData.json) needs to be edited
+To do this the file [VehicleVssMapData.json](https://github.com/covesa/vissr/blob/feeder/feeder/VehicleVssMapData.json) needs to be edited
 so that it only contains a mapping for Vehicle.Speed.
 
 [{"vssdata":"Vehicle.Speed","vehicledata":"CurrSpd"}]
@@ -53,9 +53,9 @@ After the feeder is configured it is started:
 $ ./feeder
 
 What is left now is to start a client and issue the subscribe request.
-One solution to this is to write a client, but a quicker solution is to use any of the [existing clients](/automotive-viss2/client).
+One solution to this is to write a client, but a quicker solution is to use any of the [existing clients](/vissr/client).
 
-We will here use the [Javascript based client that uses the Websocket protocol](https://github.com/w3c/automotive-viss2/blob/feeder/client/client-1.0/Javascript/wsclient_uncompressed.html).
+We will here use the [Javascript based client that uses the Websocket protocol](https://github.com/covesa/vissr/blob/feeder/client/client-1.0/Javascript/wsclient_uncompressed.html).
 
 Start it by navigating to the directory using a file browser, then just click on it.
 
@@ -72,7 +72,7 @@ The client should then be connected to the server, which is verified b a printou
 If that is not shown, either the server is not up and running, or the IP address is not the corrt one.
 
 Assuming it got connected, the only thing left is to issue a subscribe request.
-The [appclient_commands.txt](https://github.com/w3c/automotive-viss2/blob/feeder/client/client-1.0/Javascript/appclient_commands.txt) contains many examples of client requests
+The [appclient_commands.txt](https://github.com/covesa/vissr/blob/feeder/client/client-1.0/Javascript/appclient_commands.txt) contains many examples of client requests
 
 From this file, copy the request payload:
 

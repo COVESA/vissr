@@ -11,23 +11,23 @@ A few other software components that can be useful when setting up a VISSv2 comm
 The VISS2 specification describes an access control model involving two authorization servers:
 * Access Grant Token server
 * Access Token server
-For details please read the [VISSv2: Access Control](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-model),
+For details please read the [VISSv2: Access Control](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-model),
 and the [Consent Model]() chapters.
 
 To trigger the access control and consent functionality it is necessary to tag the corresponding VSS nodes as described in the spec.
 This can either be done by editing of the actual vspec files from the [VSS/spec](https://github.com/COVESA/vehicle_signal_specification/tree/master/spec) directory,
 or by creating overlay files and include them as described in [VSS-tools](https://github.com/COVESA/vss-tools),
-and then generate the VSS tree in binary format as described in [VSS tree configuration](https://w3c.github.io/automotive-viss2/server/#vss-tree-configuration).
+and then generate the VSS tree in binary format as described in [VSS tree configuration](https://covesa.github.io/vissr/server/#vss-tree-configuration).
 
 ### Access Grant Token server (AGTS)
-The [AGTS](https://github.com/w3c/automotive-viss2/tree/master/server/agt_server),
+The [AGTS](https://github.com/covesa/vissr/tree/master/server/agt_server),
 which typically will be deployed off-vehicle, in the cloud, is separately built and deployed.
-The file agt_public_key.rsa is generated at startup, which must be copied to the [AT server](https://github.com/w3c/automotive-viss2/tree/master/server/vissv2server/atServer) directory.
+The file agt_public_key.rsa is generated at startup, which must be copied to the [AT server](https://github.com/covesa/vissr/tree/master/server/vissv2server/atServer) directory.
 
 ### Access Token server (ATS)
-The [ATS](https://github.com/w3c/automotive-viss2/tree/master/server/vissv2server/atServer) is deployed on a separate thread within the VISSv2 server,
-to include it make sure it is uncommented in the serverComponents string array in [viss2server.go](https://github.com/w3c/automotive-viss2/blob/master/server/vissv2server/vissv2server.go).
-The ATS uses the [policy documents](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#policy-documents) described in the spec when validating an access token,
+The [ATS](https://github.com/covesa/vissr/tree/master/server/vissv2server/atServer) is deployed on a separate thread within the VISSv2 server,
+to include it make sure it is uncommented in the serverComponents string array in [viss2server.go](https://github.com/covesa/vissr/blob/master/server/vissv2server/vissv2server.go).
+The ATS uses the [policy documents](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#policy-documents) described in the spec when validating an access token,
 examples of these are available in the purposelist.json and scopelist.json files.
 
 ## Open Vehicle Data Set (OVDS)

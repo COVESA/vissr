@@ -1,5 +1,5 @@
 ---
-title: "WAII Redis"
+title: "VISSR Redis"
 ---
 
 ## Redis state storage
