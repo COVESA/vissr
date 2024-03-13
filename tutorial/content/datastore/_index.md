@@ -3,9 +3,9 @@ title: "WAII Data Storage"
 ---
 
 Two realizations of data storage are available on the [COVESA/CCS-components Github](https://github.com/COVESA/ccs-components),
-one using an SQLite database, and the other a Redis database.
+one using an SQLite database, and the other a Redis database. In addition WAII also supports connection to an Apache IoTDB server.
 
-The server implements the APIs to both of these databases, which to use is selected by its command line configuration.
+The server implements the APIs to these databases, which to use is selected by its command line configuration.
 
 The same support should be available on the other SwC that accesses the data storage,
 however the current feeder implementation only implements Redis support, hence it is not merged into the master branch but resides on the feeder branch.

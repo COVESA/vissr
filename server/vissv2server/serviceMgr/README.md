@@ -26,11 +26,13 @@ See the README in the histCtrlSim directory.
 The VISSv2 service manager is started with input on which state storage implementation to use:
 - SQLite (default)
 - Redis
+- Apache IoTDB
 - None
 
 At startup,<br>
 - for SQLite it tries to read a DB file named statestorage.db, located in the same directory.
-- for Redis it tries to instantiate a Redis client for the configured Redis DB. 
+- for Redis it tries to instantiate a Redis client for the configured Redis DB.
+- for Apache IoTDB it uses the IoTDB Go client to create a session connection to the configured IoTDB server.
 - For None, the server will instead of accessing data from a DB, instead generate a dummy integer value, see below.
 
 Dummy values are always an integer, taken from a counter that is incremented every 37 msec, and wrapping to stay within the values 0 to 999.
@@ -53,6 +55,8 @@ where VIN is any string representing the desired VIN.<br>
 
 If the state storage is started using the SQLite DB, the following must be prepared before starting the server.<br>
 - The SQLite DB file must be created and stored in the directory of the service manager. Creating it can be done using the Statestorage manager found at https://github.com/COVESA/ccs-components/tree/master/statestorage/sqlImpl. It must be generated with an identical copy of the vsspathlist.json file that the VISSv2 server creates at startup (from the vss_vissv2.binary file).
+
+Documentation on using Apache IoTDB as the state storage can be found in the VISSv2 online documentation.
 
 
 ## Curve logging

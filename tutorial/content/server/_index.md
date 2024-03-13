@@ -31,7 +31,7 @@ This can either be done by editing vspec files directly, or using the [VSS-Tools
 
 #### Command line configuration
 The server has the following command line configurations:
-* Data storage implementation. Select either to use an SQLite implementation (-s sqlite) or a Redis implementation (-s redis). Default is SQLite.
+* Data storage implementation. Select one of the following options: SQLite (-s sqlite), Redis (-s redis) or Apache IoTDB (-s apache-iotdb). Default is SQLite.
 * Data storage file name (--dbfile 'file-name'). Only relevant for SQLite configuration. Default is "serviceMgr/statestorage.db".
 * Request the server to generate a pathlist file, then terminate (--dryrun). Default is not to terminate after generating it.
 * Pathlist file name (--vssjson 'file-name'. Default is "../vsspathlist.json".
@@ -40,8 +40,8 @@ The server has the following command line configurations:
 * Whether logging should end up in standard output (false) or in a log file (true) (--logfile false/true). The default is 'false'.
 
 #### Data storage configuration
-Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
-However, to get it up and running there are other preparations lso needed, please see the [VISSv2 Data Storage](/automotive-viss2/datastore) chapter.
+Currently the server supports three different databases, SQLite, Redis and Apache IoTDB, which one to use is selected in the command line configuration.
+However, to get it up and running there are other preparations also needed, please see the [VISSv2 Data Storage](/automotive-viss2/datastore) chapter.
 
 #### Protocol support configuration
 
