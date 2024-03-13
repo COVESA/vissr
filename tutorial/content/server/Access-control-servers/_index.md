@@ -2,12 +2,12 @@
 title: "VISSv2 Access Control Servers"
 ---
 
-The [VISSv2 access control model](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-model) specifies two authorization servers:
+The [VISSv2 access control model](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-model) specifies two authorization servers:
 * Access Grant server
 * Access Token server
 
 ### Access Grant server
-This server is in a typical scenario running in the cloud. It is built as a separate executable in the WAII/server/agt_server directory
+This server is in a typical scenario running in the cloud. It is built as a separate executable in the vissr/server/agt_server directory
 
 $ go build
 
@@ -42,7 +42,7 @@ If the cache is full, caching of one more is rejected until a cached token becom
 
 ### Server configuration
 The configuration available for the servers is whether the protocols that they implement to expose their APIS are TLS protected or not.
-The same framework that is used for generating credentials for the client-server communication described [here](https://github.com/w3c/automotive-viss2/tree/master/testCredGen/)
+The same framework that is used for generating credentials for the client-server communication described [here](https://github.com/covesa/vissr/tree/master/testCredGen/)
 can be used in this case also.
 These credentials should however to follow good security practises be separate from what is used in the client-server communication.
 The different port number for the respective servers are shown below.
@@ -54,7 +54,7 @@ The different port number for the respective servers are shown below.
 ### VISS web client submodule
 
 This submodule implements a [VISSv2 web client](https://github.com/nicslabdev/viss-web-client/)
-that exposes a UI that is considerably more sophisticated than what other clients on the WAII repo exposes,
+that exposes a UI that is considerably more sophisticated than what other clients on the VISSR repo exposes,
 and it is particularly helpful when it comes to the client interactions with access control involved.
 Check out the README on both repos for more information.
 
@@ -63,15 +63,15 @@ The VISSv2 specification provides support for requesting consent from a data own
 The model for this is that the process for obtaining the owner consent is delegated to an External Consent framework (ECF),
 and the details ofthis process is out-of-scope in relation to the VISSv2 specification.
 What is in scope is a high-level description of the protocol between the VISSv2 server and the ECF, see the
-[VISSv2 consent support](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#consent-support) chapter.
+[VISSv2 consent support](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#consent-support) chapter.
 To configure the VISSv2 server to try to connect to an ECF, it must be started with the command parameter -c".
 
 The figure below shows the the different steps in the dataflow that is necessary when a client wants to initiate a subscription of data that is
 access controlled and require consent from the data owner.
-![VISSv2 consent subscribe dataflow](/automotive-viss2/images/VISSv2-consent-subscribe-dataflow.jpg?width=40pc)
+![VISSv2 consent subscribe dataflow](/vissr/images/VISSv2-consent-subscribe-dataflow.jpg?width=40pc)
 The dataflow describes a scenario when the client successfully subscribes to data the require both access control and consent by the data owner.
 Consent can only be required in combination with requiring access control, please see the
-[Access Control Model](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#access-control-model) chapter.
+[Access Control Model](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-model) chapter.
 
 1. The client issues a request to the Access Grant Token server (AGTS).
 
@@ -97,7 +97,7 @@ but if 2.4 happened before, so that the consent no longer has the value NOT_SET,
 the ATS generates the Access Token (AT), and returns it to the client. If the consent was set to NO, the consent data is returned without the AT.
 
 3. The client issues the subscribe request to the VISSv2 server containing the AT. The AT in the client request my be represented by a handle instead of the entire AT,
-see the [Protected Resource Request](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#protected-resource-request) chapter.
+see the [Protected Resource Request](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#protected-resource-request) chapter.
 
 3.1 The VISSv2 server issues an AT validation request to the ATS. The ATS finds it on the Active list, and validates the AT.
 
@@ -167,4 +167,4 @@ Consent cancellation request: {“action”: “consent-cancel”, “messageId�
 
 Response to above requests: {“action”: “same-as-in-request”, “status”: “200-OK/404-Not found/401-Bad request”} // Status is one of the three examples shown.
 
-See the specification chapter[Purpose list](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#purpose-list) for the definition of the signal_access object.
+See the specification chapter[Purpose list](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#purpose-list) for the definition of the signal_access object.

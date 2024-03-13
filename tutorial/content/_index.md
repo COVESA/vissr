@@ -1,14 +1,14 @@
 ---
-title: "W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial"
+title: "COVESA Vehicle Information Service Specification ver 2 Reference Implementation Tutorial"
 ---
-## W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial
+## COVESA Vehicle Information Service Specification ver 2 Reference Implementation Tutorial
 
-The W3C VISSv2 specification, soon to become a W3C standard, is developed at the [W3C/automotive github](https://github.com/w3c/automotive).
+The COVESA VISSv2 specification is developed at the [COVESA/automotive github](https://github.com/COVESA/vehicle-information-service-specification).
 A reference implementation in the form of a server that exposes an interface according to the specification is developed on this repo.
 
 Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.
 
-![VISSv2 communication tech stack](/automotive-viss2/images/WAII-tech-stack.jpg?width=40pc)
+![VISSv2 communication tech stack](/vissr/images/WAII-tech-stack.jpg?width=40pc)
 
 These software components (SwCs) can be categorized as follows:
 * server

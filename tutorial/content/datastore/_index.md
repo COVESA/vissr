@@ -1,5 +1,5 @@
 ---
-title: "WAII Data Storage"
+title: "VISSR Data Storage"
 ---
 
 Two realizations of data storage are available on the [COVESA/CCS-components Github](https://github.com/COVESA/ccs-components),
@@ -14,6 +14,6 @@ It may be a bit confusing that sometimes this is referred to as "data store/stor
 The latter name is legacy from a previous COVESA project, the Cloud & Connected Services project, while the former has emerged later in the COVESA architecture group work.
 An argument for keeping both could be to say that the state storage refers to a storage that only keeps the latest value of a signal,
 while the data store refers to a more general database that can also keep time series of values of a signal.
-There are two scenarios where the VISSv2 server operates on time series data, [curve logging](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#curvelog-filter-operation),
-and [historic data](https://raw.githack.com/w3c/automotive/gh-pages/spec/VISSv2_Core.html#history-filter-operation),
+There are two scenarios where the VISSv2 server operates on time series data, [curve logging](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation),
+and [historic data](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation),
 but in this server implementation these data series is temporarily stored within the server, so a "state storage" functionality is sufficient for its needs.

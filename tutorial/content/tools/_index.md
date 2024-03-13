@@ -1,5 +1,5 @@
 ---
-title: "WAII Tools"
+title: "VISSR Tools"
 ---
 
 SwCs categorized as tools are used "off-line" to create artefacts that can then be used by the "on-line" SwCs such as the server or by feeders.
@@ -12,7 +12,7 @@ The input to the DCT are three files:
 * A YAML representation of signals of a northbound domain.
 * A YAML representation of signals of a southbound domain.
 * A YAML representation of pairs of signals from respective domain that the feeder should convert between.
-For more information plese see the README in the [DCT](https://github.com/w3c/automotive-viss2/tree/master/tools/DomainConversionTool) directory.
+For more information plese see the README in the [DCT](https://github.com/covesa/vissr/tree/master/tools/DomainConversionTool) directory.
 
 
 ## VSS-Tools Binary Exporter
@@ -35,4 +35,4 @@ binary:
 ```
 needs to be modified to point to the desired file, i.e. the part "./spec/VehicleSignalSpecification.vspec" needs to be changed.
 
-The tool output, a file with the extension ".binary" will then have to be copied to the WAII server directory, and renamed to "vss_vissv2.binary".
+The tool output, a file with the extension ".binary" will then have to be copied to the VISSR server directory, and renamed to "vss_vissv2.binary".
