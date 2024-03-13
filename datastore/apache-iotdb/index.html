@@ -9,7 +9,7 @@
 
     <link rel="shortcut icon" href="/automotive-viss2/images/fav.png" type="image/x-icon" />
 
-    <title>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial :: W3C VISSv2 Reference Implementation</title>
+    <title>WAII Apache IoTDB :: W3C VISSv2 Reference Implementation</title>
 
     
     <link href="/automotive-viss2/css/nucleus.css?1710332698" rel="stylesheet">
@@ -40,7 +40,7 @@
     </style>
     
   </head>
-  <body class="" data-url="/automotive-viss2/">
+  <body class="" data-url="/automotive-viss2/datastore/apache-iotdb/">
     <nav id="sidebar" class="">
 
 
@@ -244,7 +244,7 @@
   
     
     <li data-nav-id="/automotive-viss2/datastore/" title="WAII Data Storage" class="dd-item
-        
+        parent
         
         
         ">
@@ -274,7 +274,7 @@
     
     <li data-nav-id="/automotive-viss2/datastore/apache-iotdb/" title="WAII Apache IoTDB" class="dd-item
         
-        
+        active
         
         ">
       <a href="/automotive-viss2/datastore/apache-iotdb/">
@@ -517,38 +517,259 @@
         <div id="overlay"></div>
         <div class="padding highlightable">
               
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/w3c/automotive-viss2/edit/master/tutorial/content/datastore/apache-iotdb/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            
+            
+          
+          
+            <a href='/automotive-viss2/'>W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > <a href='/automotive-viss2/datastore/'>WAII Data Storage</a> > WAII Apache IoTDB
+          
+        
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#scope">Scope</a></li>
+    <li><a href="#runtime-notes">Runtime notes</a>
+      <ul>
+        <li><a href="#assumptions">Assumptions</a></li>
+        <li><a href="#database-schema">Database schema</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+        <li><a href="#logging">Logging</a></li>
+      </ul>
+    </li>
+    <li><a href="#quick-start-notes">Quick start notes</a>
+      <ul>
+        <li><a href="#apache-iotdb-images">Apache IoTDB images</a></li>
+        <li><a href="#seeding-the-database-with-vss-data">Seeding the database with VSS data</a></li>
+      </ul>
+    </li>
+    <li><a href="#development-notes">Development notes</a></li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
         <div id="head-tags">
         
         </div>
         
         <div id="body-inner">
           
+            <h1>
+              
+              WAII Apache IoTDB
+            </h1>
+          
 
         
 
-<span id="sidebar-toggle-span">
-<a href="#" id="sidebar-toggle" data-sidebar-toggle=""><i class="fas fa-bars"></i> navigation</a>
-</span>
 
- 
-<h2 id="w3c-vehicle-information-service-specification-ver-2-reference-implementation-tutorial">W3C Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</h2>
-<p>The W3C VISSv2 specification, soon to become a W3C standard, is developed at the <a href="https://github.com/w3c/automotive">W3C/automotive github</a>.
-A reference implementation in the form of a server that exposes an interface according to the specification is developed on this repo.</p>
-<p>Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.</p>
-<p><img src="/automotive-viss2/images/WAII-tech-stack.jpg?width=40pc" alt="VISSv2 communication tech stack"></p>
-<p>These software components (SwCs) can be categorized as follows:</p>
-<ul>
-<li>server</li>
-<li>clients</li>
-<li>data storage</li>
-<li>feeders</li>
-<li>tools</li>
-</ul>
-<p>The tutorial describes each SwC category in a separate chapter.
-It also contains a few Proof of concept (POC) examples, and information about installing,
-building and running Golang based SwCs, a Docker containerization, and about some peripheral components.</p>
+
+	<h2 id="introduction">Introduction</h2>
+<p>Description of Apache IoTDB from <a href="https://iotdb.apache.org/">https://iotdb.apache.org/</a>:</p>
+<p><em>&ldquo;Apache IoTDB (Database for Internet of Things) is an IoT native database with high performance for data management and analysis, deployable on the edge and the cloud. Due to its light-weight architecture, high performance and rich feature set together with its deep integration with Apache Hadoop, Spark and Flink, Apache IoTDB can meet the requirements of massive data storage, high-speed data ingestion and complex data analysis in the IoT industrial fields.&rdquo;</em></p>
+<h2 id="scope">Scope</h2>
+<p>Support for Apache IoTDB as the WAII data store is implemented by connector code in the WAII service manager, which connects WAII to an external Apache IoTDB server. This code uses the IoTDB Go client to maintain a connection session to the IoTDB server, which is then used to get/set vehicle data from the database.</p>
+<p>As WAII and the IoTDB server are separate processes WAII needs to be told where to find the IoTDB server and which storage prefix to use to access the data. The administration of the Apache IoTDB server itself, including startup and shutdown, is out of scope and is handled externally to WAII.</p>
+<h2 id="runtime-notes">Runtime notes</h2>
+<h3 id="assumptions">Assumptions</h3>
+<p>Runtime assumptions:</p>
+<ol>
+<li>IoTDB server lifecycle (e.g. startup and shutdown) is handled externally to WAII</li>
+<li>Management (e.g. creation/deletion) of the IoTDB timeseries containing VSS data is handled externally to WAII.</li>
+<li>Configuration of the connector code is specified in the config file iotdb-config.json. If the config file is not found then build-time defaults are used.</li>
+</ol>
+<p>Handling of IoTDB server and timeseries management is placed outside of WAII to allow flexible deployment through loosely coupled connections.</p>
+<h3 id="database-schema">Database schema</h3>
+<p>The connector assumes a simple key/value pair schema for accessing VSS data in an IoTDB timeseries:</p>
+<ol>
+<li>
+<p>VSS node names (keys) are backtick quoted when stored as measurement keys in the database e.g. <code>`Vehicle.CurrentLocation.Longitude`</code>. This avoids IoTDB interpreting the VSS tree path, here <code>Vehicle.CurrentLocation.</code>, as part of its storage path which also uses a dot notation.</p>
+</li>
+<li>
+<p>VSS data is stored using native (IoTDB) data types rather than strings.</p>
+</li>
+<li>
+<p>That the timeseries containing VSS nodes can be found using the prefix path specified in the config file.</p>
+</li>
+</ol>
+<p>Example timeseries:</p>
+<pre tabindex="0"><code>+------------------------+-----------------------------------------------------+--------+--------+
+|                    Time|                                           Timeseries|   Value|DataType|
++------------------------+-----------------------------------------------------+--------+--------+
+|2024-03-07T17:55:24.514Z|  root.test2.dev1.`Vehicle.CurrentLocation.Longitude`|-42.4567|   FLOAT|
++------------------------+-----------------------------------------------------+--------+--------+
+</code></pre><h3 id="configuration">Configuration</h3>
+<p>The connection code reads its runtime configuration from the JSON formatted file <code>iotdb-config.json</code> located in the vissv2server directory. All values should be specified.</p>
+<h4 id="configuration-file-format">Configuration file format</h4>
+<table>
+<thead>
+<tr>
+<th>Key name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
+<td>String</td>
+<td>Hostname or IP address of the IoTDB server</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>String</td>
+<td>RPC port of the server. Default is 6667</td>
+</tr>
+<tr>
+<td><code>username</code></td>
+<td>String</td>
+<td>Username to access the server. Default is root</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>String</td>
+<td>Password to access the server. Default is root</td>
+</tr>
+<tr>
+<td><code>queryPrefixPath</code></td>
+<td>String</td>
+<td>Timeseries prefix path of VSS data in the database</td>
+</tr>
+<tr>
+<td><code>queryTimeout(ms)</code></td>
+<td>Int</td>
+<td>Query timeout in milliseconds</td>
+</tr>
+</tbody>
+</table>
+<p>Example <code>iotdb-config.json</code>:</p>
+<pre tabindex="0"><code>{
+	&#34;host&#34;: &#34;127.0.0.1&#34;,
+	&#34;port&#34;: &#34;6667&#34;,
+	&#34;username&#34;: &#34;root&#34;,
+	&#34;password&#34;: &#34;root&#34;,
+	&#34;queryPrefixPath&#34;: &#34;root.test2.dev1&#34;,
+	&#34;queryTimeout(ms)&#34;: 5000
+}
+</code></pre><h3 id="logging">Logging</h3>
+<p>The connector writes information, warning and error messages to the WAII server log with the prefix <code>IoTDB</code>. Grepping in the log for that prefix string can help you quickly identify connector messages.</p>
+<h2 id="quick-start-notes">Quick start notes</h2>
+<p>The following notes are intended to help you quickly try out using Apache IoTDB as a data store.</p>
+<p>The Apache IoTDB project <a href="https://iotdb.apache.org/">website</a> has extensive documentation on the IoTDB server.</p>
+<h3 id="apache-iotdb-images">Apache IoTDB images</h3>
+<p>The Apache IoTDB community maintains pre-built server images upstream to <a href="https://iotdb.apache.org/Download/">download</a>. Including containerised Docker images in <a href="https://hub.docker.com/r/apache/iotdb">Docker Hub</a>. IoTDB is available in both standalone (edge) and cluster (cloud) versions. Standalone is suggested as a starting point.</p>
+<p>The <a href="https://github.com/COVESA/cdsp">COVESA Central Data Service Playground</a> provides a Docker deployment that combines an Apache IoTDB server (data store) with the WAII VISS data server.</p>
+<h3 id="seeding-the-database-with-vss-data">Seeding the database with VSS data</h3>
+<p>To seed the database with VSS data the typical steps are:</p>
+<ol>
+<li>Create the database in the server</li>
+<li>Create a timeseries in the database populated with the VSS nodes (keys) you are interested in.</li>
+<li>Add some example data so the VISS Data Server can successfully get data.</li>
+</ol>
+<p>IoTDB has a very extensive collection of integrations, tools, clients and APIs that could be used to achieve this.</p>
+<h4 id="example-using-iotdb-cli-client">Example using IoTDB CLI client</h4>
+<p>The following tutorial shows an example using the <a href="https://iotdb.apache.org/UserGuide/latest/Tools-System/CLI.html">IoTDB CLI client</a>, using two methods. Firstly, in interactive mode where you type the commands and then sending the same commands in batch command mode.</p>
+<ol>
+<li>Connect to the CLI client from your host:</li>
+</ol>
+<pre tabindex="0"><code>$ bash &lt;iotdb path&gt;/sbin/start-cli.sh -h &lt;server hostname/ip&gt;
+</code></pre><ol start="2">
+<li>Create database from CLI command line:</li>
+</ol>
+<pre tabindex="0"><code>IoTDB &gt; create database root.test2.dev1
+</code></pre><ol start="3">
+<li>Create timeseries from CLI command line:</li>
+</ol>
+<pre tabindex="0"><code>IoTDB &gt; CREATE ALIGNED TIMESERIES root.test2.dev1(`Vehicle.CurrentLocation.Longitude` FLOAT, `Vehicle.CurrentLocation.Latitude` FLOAT, `Vehicle.Cabin.Infotainment.HMI.DistanceUnit` TEXT)
+</code></pre><p>4 Add some data into the timeseries:</p>
+<pre tabindex="0"><code>IoTDB&gt; insert into root.test2.dev1(`Vehicle.CurrentLocation.Longitude`, `Vehicle.CurrentLocation.Latitude`, `Vehicle.Cabin.Infotainment.HMI.DistanceUnit`) values(-42.4567, 22.1234, &#39;MILES&#39;)
+</code></pre><ol start="5">
+<li>Display the data just added as a sanity check:</li>
+</ol>
+<pre tabindex="0"><code>IoTDB&gt; select last * from root.test2.dev1
++------------------------+-------------------------------------------------------------+--------+--------+
+|                    Time|                                                   Timeseries|   Value|DataType|
++------------------------+-------------------------------------------------------------+--------+--------+
+|2024-03-07T17:55:24.514Z|          root.test2.dev1.`Vehicle.CurrentLocation.Longitude`|-42.4567|   FLOAT|
+|2024-03-07T17:55:24.514Z|root.test2.dev1.`Vehicle.Cabin.Infotainment.HMI.DistanceUnit`|   MILES|    TEXT|
+|2024-03-07T17:55:24.514Z|           root.test2.dev1.`Vehicle.CurrentLocation.Latitude`| 22.1234|   FLOAT|
++------------------------+-------------------------------------------------------------+--------+--------+
+</code></pre><p>You have now seeded the database with some initial VSS data and can use WAII to query it.</p>
+<p>The CLI client startup script accepts SQL commands using the <code>-e</code> parameter. We can therefore use this to codify the above in a bash script. So the VSS node names (keys) are passed correctly on the command line the backticks must be escaped.</p>
+<p>For example:</p>
+<pre tabindex="0"><code># !/bin/bash
+
+host=127.0.0.1
+rpcPort=6667
+user=root
+pass=root
+
+bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34;create database root.test2.dev1&#34;
+bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34;CREATE ALIGNED TIMESERIES root.test2.dev1(\`Vehicle.CurrentLocation.Longitude\` FLOAT, \`Vehicle.CurrentLocation.Latitude\` FLOAT, \`Vehicle.Cabin.Infotainment.HMI.DistanceUnit\` TEXT)&#34;
+bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34;insert into root.test2.dev1(\`Vehicle.CurrentLocation.Longitude\`, \`Vehicle.CurrentLocation.Latitude\`, \`Vehicle.Cabin.Infotainment.HMI.DistanceUnit\`) values(-42.4567, 22.1234, &#39;MILES&#39;)&#34;
+bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34;select last * from root.test2.dev1&#34;
+</code></pre><p>Of course any of the programming language clients provided by IoTDB, e.g. go, python, C++, Rust, can also be used to achieve the same result.</p>
+<h2 id="development-notes">Development notes</h2>
+<p>Please see the notes in the source commit messages and related Github pull requests for the history of the development of the Apache IoTDB connection code and its integration into the WAII Service Manager component.</p>
+<p>Development followed the patterns set by the existing support for Redis and SQLite.</p>
+<p>The connection code was first developed with Apache IoTDB v1.2.2, using the upstream standalone pre-built image and Apache IoTDB Go Client v1.1.7.</p>
+
+
+
+
+
+<footer class=" footline" >
 	
-  
+</footer>
+
         
         </div>
         
@@ -681,6 +902,7 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
                 
                     
+                    
                 
                 
 
@@ -695,6 +917,7 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
             
                 
+                    
                     
                 
                 
@@ -711,6 +934,9 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
             
                 
+                    
+                        
+                        
                     
                 
                 
@@ -833,8 +1059,10 @@ building and running Golang based SwCs, a Docker containerization, and about som
 	 
 	 
 		
+			<a class="nav nav-prev" href="/automotive-viss2/datastore/" title="WAII Data Storage"> <i class="fa fa-chevron-left"></i></a>
 		
-			<a class="nav nav-next" href="/automotive-viss2/client/" title="VISSv2 Clients" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+			<a class="nav nav-next" href="/automotive-viss2/datastore/redis/" title="WAII Redis" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
@@ -866,4 +1094,3 @@ building and running Golang based SwCs, a Docker containerization, and about som
 
   </body>
 </html>
-

@@ -12,21 +12,21 @@
     <title>VISSv2 Server :: W3C VISSv2 Reference Implementation</title>
 
     
-    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/nucleus.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1710332698" rel="stylesheet">
     
-    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme-blue.css?1710332698" rel="stylesheet">
     
     
 
-    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1710332698"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
-<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1710332698"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1710332698"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
     
 </script>
-<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1710332698"></script>
 
     
   </div>
@@ -262,6 +262,32 @@
           
 
         
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/apache-iotdb/" title="WAII Apache IoTDB" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/apache-iotdb/">
+          WAII Apache IoTDB
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
           
             
             
@@ -594,7 +620,7 @@ This can either be done by editing vspec files directly, or using the <a href="h
 <h4 id="command-line-configuration">Command line configuration</h4>
 <p>The server has the following command line configurations:</p>
 <ul>
-<li>Data storage implementation. Select either to use an SQLite implementation (-s sqlite) or a Redis implementation (-s redis). Default is SQLite.</li>
+<li>Data storage implementation. Select one of the following options: SQLite (-s sqlite), Redis (-s redis) or Apache IoTDB (-s apache-iotdb). Default is SQLite.</li>
 <li>Data storage file name (&ndash;dbfile &lsquo;file-name&rsquo;). Only relevant for SQLite configuration. Default is &ldquo;serviceMgr/statestorage.db&rdquo;.</li>
 <li>Request the server to generate a pathlist file, then terminate (&ndash;dryrun). Default is not to terminate after generating it.</li>
 <li>Pathlist file name (&ndash;vssjson &lsquo;file-name&rsquo;. Default is &ldquo;../vsspathlist.json&rdquo;.</li>
@@ -603,8 +629,8 @@ This can either be done by editing vspec files directly, or using the <a href="h
 <li>Whether logging should end up in standard output (false) or in a log file (true) (&ndash;logfile false/true). The default is &lsquo;false&rsquo;.</li>
 </ul>
 <h4 id="data-storage-configuration">Data storage configuration</h4>
-<p>Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
-However, to get it up and running there are other preparations lso needed, please see the <a href="/automotive-viss2/datastore">VISSv2 Data Storage</a> chapter.</p>
+<p>Currently the server supports three different databases, SQLite, Redis and Apache IoTDB, which one to use is selected in the command line configuration.
+However, to get it up and running there are other preparations also needed, please see the <a href="/automotive-viss2/datastore">VISSv2 Data Storage</a> chapter.</p>
 <h4 id="protocol-support-configuration">Protocol support configuration</h4>
 <p>The server supports the following protocols:</p>
 <ul>
@@ -876,6 +902,22 @@ For more details, see the  <a href="/automotive-viss2/client#compression-client"
             
         
                     
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
             
         
                     
@@ -983,19 +1025,19 @@ For more details, see the  <a href="/automotive-viss2/client#compression-client"
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
-    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script src="/automotive-viss2/js/clipboard.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1710332698"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1710332698"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
-    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
-    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1710332698"></script>
+    <script src="/automotive-viss2/js/learn.js?1710332698"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1710332698"></script>
     
         
-            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+            <script src="/automotive-viss2/mermaid/mermaid.js?1710332698"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

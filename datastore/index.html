@@ -12,21 +12,21 @@
     <title>WAII Data Storage :: W3C VISSv2 Reference Implementation</title>
 
     
-    <link href="/automotive-viss2/css/nucleus.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/fontawesome-all.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/hybrid.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/featherlight.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/auto-complete.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/theme.css?1709823531" rel="stylesheet">
-    <link href="/automotive-viss2/css/hugo-theme.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/nucleus.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/fontawesome-all.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/hybrid.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/featherlight.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/perfect-scrollbar.min.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/auto-complete.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/atom-one-dark-reasonable.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme.css?1710332698" rel="stylesheet">
+    <link href="/automotive-viss2/css/hugo-theme.css?1710332698" rel="stylesheet">
     
-    <link href="/automotive-viss2/css/theme-blue.css?1709823531" rel="stylesheet">
+    <link href="/automotive-viss2/css/theme-blue.css?1710332698" rel="stylesheet">
     
     
 
-    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1709823531"></script>
+    <script src="/automotive-viss2/js/jquery-3.3.1.min.js?1710332698"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1709823531"></script>
-<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/lunr.min.js?1710332698"></script>
+<script type="text/javascript" src="/automotive-viss2/js/auto-complete.js?1710332698"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/w3c.github.io\/automotive-viss2\/";
     
 </script>
-<script type="text/javascript" src="/automotive-viss2/js/search.js?1709823531"></script>
+<script type="text/javascript" src="/automotive-viss2/js/search.js?1710332698"></script>
 
     
   </div>
@@ -262,6 +262,32 @@
           
 
         
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/automotive-viss2/datastore/apache-iotdb/" title="WAII Apache IoTDB" class="dd-item
+        
+        
+        
+        ">
+      <a href="/automotive-viss2/datastore/apache-iotdb/">
+          WAII Apache IoTDB
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
           
             
             
@@ -561,8 +587,8 @@
 
 
 	<p>Two realizations of data storage are available on the <a href="https://github.com/COVESA/ccs-components">COVESA/CCS-components Github</a>,
-one using an SQLite database, and the other a Redis database.</p>
-<p>The server implements the APIs to both of these databases, which to use is selected by its command line configuration.</p>
+one using an SQLite database, and the other a Redis database. In addition WAII also supports connection to an Apache IoTDB server.</p>
+<p>The server implements the APIs to these databases, which to use is selected by its command line configuration.</p>
 <p>The same support should be available on the other SwC that accesses the data storage,
 however the current feeder implementation only implements Redis support, hence it is not merged into the master branch but resides on the feeder branch.</p>
 <p>It may be a bit confusing that sometimes this is referred to as &ldquo;data store/storage&rdquo; and sometimes &ldquo;state storage&rdquo;.
@@ -759,6 +785,22 @@ but in this server implementation these data series is temporarily stored within
             
         
                     
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
             
         
                     
@@ -856,7 +898,7 @@ but in this server implementation these data series is temporarily stored within
 			<a class="nav nav-prev" href="/automotive-viss2/build-system/" title="WAII Build System"> <i class="fa fa-chevron-left"></i></a>
 		
 		
-			<a class="nav nav-next" href="/automotive-viss2/datastore/redis/" title="WAII Redis" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+			<a class="nav nav-next" href="/automotive-viss2/datastore/apache-iotdb/" title="WAII Apache IoTDB" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
@@ -866,19 +908,19 @@ but in this server implementation these data series is temporarily stored within
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/automotive-viss2/js/clipboard.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/jquery.sticky.js?1709823531"></script>
-    <script src="/automotive-viss2/js/featherlight.min.js?1709823531"></script>
-    <script src="/automotive-viss2/js/highlight.pack.js?1709823531"></script>
+    <script src="/automotive-viss2/js/clipboard.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/perfect-scrollbar.jquery.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/jquery.sticky.js?1710332698"></script>
+    <script src="/automotive-viss2/js/featherlight.min.js?1710332698"></script>
+    <script src="/automotive-viss2/js/highlight.pack.js?1710332698"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1709823531"></script>
-    <script src="/automotive-viss2/js/learn.js?1709823531"></script>
-    <script src="/automotive-viss2/js/hugo-learn.js?1709823531"></script>
+    <script src="/automotive-viss2/js/modernizr.custom-3.6.0.js?1710332698"></script>
+    <script src="/automotive-viss2/js/learn.js?1710332698"></script>
+    <script src="/automotive-viss2/js/hugo-learn.js?1710332698"></script>
     
         
-            <script src="/automotive-viss2/mermaid/mermaid.js?1709823531"></script>
+            <script src="/automotive-viss2/mermaid/mermaid.js?1710332698"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
