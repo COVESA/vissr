@@ -2,40 +2,40 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://w3c.github.io/automotive-viss2/categories/</loc>
+    <loc>https://covesa.github.io/vissr/categories/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/pocs/poc2/</loc>
+    <loc>https://covesa.github.io/vissr/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/tags/</loc>
+    <loc>https://covesa.github.io/vissr/pocs/poc2/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/pocs/poc1/</loc>
+    <loc>https://covesa.github.io/vissr/tags/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/server/access-control-servers/</loc>
+    <loc>https://covesa.github.io/vissr/pocs/poc1/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/client/</loc>
+    <loc>https://covesa.github.io/vissr/build-system/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/docker-step-by-step/</loc>
+    <loc>https://covesa.github.io/vissr/datastore/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/peripheral-components/</loc>
+    <loc>https://covesa.github.io/vissr/feeder/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/server/</loc>
+    <loc>https://covesa.github.io/vissr/pocs/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/</loc>
+    <loc>https://covesa.github.io/vissr/datastore/redis/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/datastore/apache-iotdb/</loc>
+    <loc>https://covesa.github.io/vissr/datastore/sqlite/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/build-system/</loc>
+    <loc>https://covesa.github.io/vissr/tools/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/datastore/</loc>
+    <loc>https://covesa.github.io/vissr/server/access-control-servers/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/feeder/</loc>
+    <loc>https://covesa.github.io/vissr/client/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/pocs/</loc>
+    <loc>https://covesa.github.io/vissr/docker-step-by-step/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/datastore/redis/</loc>
+    <loc>https://covesa.github.io/vissr/peripheral-components/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/datastore/sqlite/</loc>
+    <loc>https://covesa.github.io/vissr/server/</loc>
   </url><url>
-    <loc>https://w3c.github.io/automotive-viss2/tools/</loc>
+    <loc>https://covesa.github.io/vissr/datastore/apache-iotdb/</loc>
   </url>
 </urlset>
