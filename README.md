@@ -9,7 +9,7 @@ All files and artifacts in this repository are licensed under the provisions of 
 This project implements the COVESA VISS v2 specification under development at [https://github.com/COVESA/vehicle-information-service-specification](https://github.com/COVESA/vehicle-information-service-specification).
 
 # Tutorial
-A tutorial can be found <a href="https://w3c.github.io/automotive-viss2/">here</a>.
+A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 
 # Starting and building the server
 
