@@ -9,7 +9,7 @@
 
     <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
 
-    <title>VISSR Data Storage :: COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>VISSR Memcached :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
     <link href="/vissr/css/nucleus.css?1710422441" rel="stylesheet">
@@ -40,7 +40,7 @@
     </style>
     
   </head>
-  <body class="" data-url="/vissr/datastore/">
+  <body class="" data-url="/vissr/datastore/memcached/">
     <nav id="sidebar" class="">
 
 
@@ -110,8 +110,8 @@
   
     
     <li data-nav-id="/vissr/datastore/" title="VISSR Data Storage" class="dd-item
+        parent
         
-        active
         
         ">
       <a href="/vissr/datastore/">
@@ -140,7 +140,7 @@
     
     <li data-nav-id="/vissr/datastore/memcached/" title="VISSR Memcached" class="dd-item
         
-        
+        active
         
         ">
       <a href="/vissr/datastore/memcached/">
@@ -550,7 +550,7 @@
                   
                   
                   <div id="top-github-link">
-                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/datastore/_index.md" target="blank">
+                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/datastore/memcached/_index.md" target="blank">
                       <i class="fas fa-code-branch"></i>
                       <span id="top-github-link-text">Edit this page</span>
                     </a>
@@ -577,7 +577,13 @@
             
           
           
-            <a href='/vissr/'>COVESA Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > VISSR Data Storage
+            
+            
+          
+          
+            <a href='/vissr/'>COVESA Vehicle Information Service Specification ver 2 Reference Implementation Tutorial</a> > <a href='/vissr/datastore/'>VISSR Data Storage</a> > VISSR Memcached
+          
+        
           
         
           
@@ -588,7 +594,11 @@
                 
                     <div class="progress">
     <div class="wrapper">
-<nav id="TableOfContents"></nav>
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#memcached-state-storage">Memcached state storage</a></li>
+  </ul>
+</nav>
     </div>
 </div>
 
@@ -604,7 +614,7 @@
           
             <h1>
               
-              VISSR Data Storage
+              VISSR Memcached
             </h1>
           
 
@@ -612,18 +622,19 @@
 
 
 
-	<p>Two realizations of data storage are available on the <a href="https://github.com/COVESA/ccs-components">COVESA/CCS-components Github</a>,
-one using an SQLite database, and the other a Redis database. In addition WAII also supports connection to an Apache IoTDB server.</p>
-<p>The server implements the APIs to these databases, which to use is selected by its command line configuration.</p>
-<p>The same support should be available on the other SwC that accesses the data storage,
-however the current feeder implementation only implements Redis support, hence it is not merged into the master branch but resides on the feeder branch.</p>
-<p>It may be a bit confusing that sometimes this is referred to as &ldquo;data store/storage&rdquo; and sometimes &ldquo;state storage&rdquo;.
-The latter name is legacy from a previous COVESA project, the Cloud &amp; Connected Services project, while the former has emerged later in the COVESA architecture group work.
-An argument for keeping both could be to say that the state storage refers to a storage that only keeps the latest value of a signal,
-while the data store refers to a more general database that can also keep time series of values of a signal.
-There are two scenarios where the VISSv2 server operates on time series data, <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">curve logging</a>,
-and <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation">historic data</a>,
-but in this server implementation these data series is temporarily stored within the server, so a &ldquo;state storage&rdquo; functionality is sufficient for its needs.</p>
+	<h2 id="memcached-state-storage">Memcached state storage</h2>
+<p>Quoting from the <a href="https://memcached.org/">Memcached</a> site, &ldquo;Memcached is an in-memory key-value store for small chunks of arbitrary data (strings, objects)&rdquo;.
+The key is in this context the path, and the value is a JSON string containing the value and the associated time stamp.</p>
+<p>The memcached store is started as a daemon, which is not automatically terminated when the server terminates.
+The commands below can be used to manually terminate the memcached daemon.</p>
+<p>$ ps -A | grep &ldquo;memcached&rdquo;</p>
+<p>then remove it with the command</p>
+<p>$ kill pid</p>
+<p>where pid comes from the result of the first command.</p>
+<p>Communication with the Memcached daemon is for security reasons configured to use Unix domain sockets. This requires that the socket file, and the directory it is stored in exist.
+If not then create it with the commands</p>
+<p>$ makedir path-to-socket-file-directory</p>
+<p>$ touch socket-file-name</p>
 
 
 
@@ -699,8 +710,6 @@ but in this server implementation these data series is temporarily stored within
             
                 
                     
-                        
-                        
                     
                 
                 
@@ -717,6 +726,9 @@ but in this server implementation these data series is temporarily stored within
             
             
                 
+                    
+                        
+                        
                     
                 
                 
@@ -937,10 +949,10 @@ but in this server implementation these data series is temporarily stored within
 	 
 	 
 		
-			<a class="nav nav-prev" href="/vissr/build-system/" title="VISSR Build System"> <i class="fa fa-chevron-left"></i></a>
+			<a class="nav nav-prev" href="/vissr/datastore/" title="VISSR Data Storage"> <i class="fa fa-chevron-left"></i></a>
 		
 		
-			<a class="nav nav-next" href="/vissr/datastore/memcached/" title="VISSR Memcached" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+			<a class="nav nav-next" href="/vissr/datastore/redis/" title="VISSR Redis" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
