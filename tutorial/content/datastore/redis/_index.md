@@ -8,7 +8,7 @@ Instead it is necessary to configure and launch the daemon.
 This is already configured in the redis/redisNative.conf that is used as input in the bash command in the server/viss2server/redisNativeInit.sh file that is called at server startup.
 
 To avoid multiple daemons being started, the server checks if the daemon is already running before starting an instance of it.
-If there is a need to stop a running daemon, first find the daemon pid with the command
+If there is a need to terminate a running daemon, first find the daemon pid with the command
 
 $ ps -A | grep "redis"
 
