@@ -44,3 +44,13 @@ where the Vehicle interface is implemented to connect to a RemotiveLabs broker.
 
 There is also an External Vehicle Interface Client [EVIC](https://github.com/covesa/vissr/tree/master/feeder/feeder-evic)
 feeder that enables the interface client to be implemented in a separate executable.
+
+## Simulated vehicle data sources
+The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.
+
+The one configured by "internal" uses the conversion instructions data as input for which signals to simulate, which are then randomly selected and set to random values.
+
+The other configured by "vssjson" tries to read the file "tripdata.json", which must have a format as found in the example file. s seen in that file it contains an array of signal path names, and for each signal it contains an array of datapoints, i.e. timestamps and values. The data points are replayed at a constant frequency of 1 Hz. To change the frequency the time.Sleep input in the code must be changed and recompiled. This sets the rquirement on the data point arrays that their values must have been captured at this frequency, or recalculated to this frequency. Each data point array must have the same length. The simulator waps around and starts again from the beginning after reaching the end.
+
+The signal names must be VSS paths as they are not processed by the conversion engine.
+Extending the model to instead expect "vehicle domain signals" (like CAN signal data) should be a simple coding exercise for anyone preferring that.
