@@ -12,21 +12,21 @@
     <title>VISSR Feeders :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1710422441" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1710422441" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1710859733" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1710859733" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1710422441" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1710859733" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1710422441"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1710859733"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1710422441"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1710422441"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1710859733"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1710859733"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1710422441"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1710859733"></script>
 
     
   </div>
@@ -588,7 +588,11 @@
                 
                     <div class="progress">
     <div class="wrapper">
-<nav id="TableOfContents"></nav>
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#simulated-vehicle-data-sources">Simulated vehicle data sources</a></li>
+  </ul>
+</nav>
     </div>
 </div>
 
@@ -651,6 +655,12 @@ where the Vehicle interface is implemented to connect to a RemotiveLabs broker.
 <a href="https://remotivelabs.com/">RemotiveLabs</a> has a public cloud version of its broker that can be used to replay trip data available in VSS format.</p>
 <p>There is also an External Vehicle Interface Client <a href="https://github.com/covesa/vissr/tree/master/feeder/feeder-evic">EVIC</a>
 feeder that enables the interface client to be implemented in a separate executable.</p>
+<h2 id="simulated-vehicle-data-sources">Simulated vehicle data sources</h2>
+<p>The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.</p>
+<p>The one configured by &ldquo;internal&rdquo; uses the conversion instructions data as input for which signals to simulate, which are then randomly selected and set to random values.</p>
+<p>The other configured by &ldquo;vssjson&rdquo; tries to read the file &ldquo;tripdata.json&rdquo;, which must have a format as found in the example file. s seen in that file it contains an array of signal path names, and for each signal it contains an array of datapoints, i.e. timestamps and values. The data points are replayed at a constant frequency of 1 Hz. To change the frequency the time.Sleep input in the code must be changed and recompiled. This sets the rquirement on the data point arrays that their values must have been captured at this frequency, or recalculated to this frequency. Each data point array must have the same length. The simulator waps around and starts again from the beginning after reaching the end.</p>
+<p>The signal names must be VSS paths as they are not processed by the conversion engine.
+Extending the model to instead expect &ldquo;vehicle domain signals&rdquo; (like CAN signal data) should be a simple coding exercise for anyone preferring that.</p>
 
 
 
@@ -977,19 +987,19 @@ feeder that enables the interface client to be implemented in a separate executa
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1710422441"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1710422441"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1710422441"></script>
-    <script src="/vissr/js/jquery.sticky.js?1710422441"></script>
-    <script src="/vissr/js/featherlight.min.js?1710422441"></script>
-    <script src="/vissr/js/highlight.pack.js?1710422441"></script>
+    <script src="/vissr/js/clipboard.min.js?1710859733"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1710859733"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1710859733"></script>
+    <script src="/vissr/js/jquery.sticky.js?1710859733"></script>
+    <script src="/vissr/js/featherlight.min.js?1710859733"></script>
+    <script src="/vissr/js/highlight.pack.js?1710859733"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1710422441"></script>
-    <script src="/vissr/js/learn.js?1710422441"></script>
-    <script src="/vissr/js/hugo-learn.js?1710422441"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1710859733"></script>
+    <script src="/vissr/js/learn.js?1710859733"></script>
+    <script src="/vissr/js/hugo-learn.js?1710859733"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1710422441"></script>
+            <script src="/vissr/mermaid/mermaid.js?1710859733"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
