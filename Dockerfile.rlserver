@@ -34,7 +34,7 @@ COPY go.mod go.sum ./
 RUN ls -a etc/
 
 #copy cert info from testCredGen to path expected by w3c server
-COPY testCredGen/ca transport_sec/ca
+#COPY testCredGen/ca transport_sec/ca
 COPY testCredGen/server transport_sec/server
 COPY testCredGen/client transport_sec/client
 

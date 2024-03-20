@@ -49,7 +49,7 @@ func initCommandList() {
 	//commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","requestId":"258"}`
 	commandList[2] = `{"action":"unsubscribe","subscriptionId":"1","requestId":"240"}`
 	commandList[3] = `{"action":"set", "path":"Vehicle/Body/Lights/IsLeftIndicatorOn", "value":"true", "requestId":"245"}`
-	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
+	//commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
 }
 
 // {"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
