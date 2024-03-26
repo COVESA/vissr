@@ -17,9 +17,13 @@ import (
 	"google.golang.org/grpc/credentials"
 	"net"
 	"strings"
+	"strconv"
 )
 
 var grpcCompression utils.Compression
+var grpcMgrId int
+var grpcMgrChan chan string
+
 
 type GrpcRequestMessage struct {
 	VssReq       string
@@ -139,17 +143,18 @@ func RemoveRoutingForwardResponse(response string) {
 		updateRoutingList(response, clientId, isMultipleEvent)
 		grpcRespChan <- trimmedResponse
 	} else {
-		utils.Error.Printf("Missing clientId=%d entry in gRPC routing data", clientId) //TODO:a response to the client should be issued...
+		utils.Error.Printf("Missing clientId=%d entry in gRPC routing data for response=%s", clientId, response)
 	}
 }
 
 func updateRoutingList(resp string, clientId int, isMultipleEvent bool) {
-	if !isMultipleEvent {
-		resetGrpcRoutingData(clientId)
-	} else if isMultipleEvent && strings.Contains(resp, "unsubscribe") {
+utils.Info.Printf("updateRoutingList:message=%s", resp)
+	if strings.Contains(resp, "unsubscribe") {
 		subscribeClientId, subscribeChan := getSubscribeRoutingData(resp)
-		resetGrpcRoutingData(subscribeClientId)
-		subscribeChan <- KILL_MESSAGE
+		subscribeChan <- KILL_MESSAGE + " clientId:" + strconv.Itoa(subscribeClientId)
+		resetGrpcRoutingData(clientId)
+//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
+	} else 	if !isMultipleEvent { // get and set
 		resetGrpcRoutingData(clientId)
 	} else if strings.Contains(resp, "subscribe") { // update routing info with subscriptionId
 		if !strings.Contains(resp, "subscriptionId") { // error
@@ -246,22 +251,45 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 	vssReq := utils.SubscribeRequestPbToJson(in, grpcCompression)
 	grpcResponseChan := make(chan string)
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
-	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,1
+	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub
+	subscribeClientId := -1
 	for {
-		vssResp := <-grpcResponseChan //  and wait for response(s)
-		if strings.Contains(vssResp, KILL_MESSAGE) {
-			break
-		}
-		pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
-		if err := stream.Send(pbResp); err != nil {
-			return err
-		}
+		select {
+			case <-stream.Context().Done():
+				utils.Info.Printf("gRPC subscribe session terminated by client")
+				// issue message to servicemgr about subscription termination
+utils.AddRoutingForwardRequest(`{"action":"internal-killsubscriptions"}`, grpcMgrId, subscribeClientId, grpcMgrChan)
+				resetGrpcRoutingData(subscribeClientId)
+				return nil
+			case vssResp := <-grpcResponseChan: //  forward subscribe response and following events
+				if strings.Contains(vssResp, KILL_MESSAGE) {  //issued by unsubscribe thread
+					clientId := extractClientId(vssResp)
+					resetGrpcRoutingData(clientId)
+					return nil
+				}
+				if subscribeClientId == -1 {
+					subscribeClientId, _ = getSubscribeRoutingData(vssResp)
+				}
+				pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
+				if err := stream.Send(pbResp); err != nil {
+					resetGrpcRoutingData(subscribeClientId)
+					return err
+				}
+			}
 	}
 	return nil
 }
 
+func extractClientId(killMessage string) int {  // mesage contains clientId:xyz
+	delimIndex := strings.Index(killMessage, ":")
+	clientId, _ := strconv.Atoi(killMessage[delimIndex+1:])
+	return clientId
+}
+
 func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.ReadTransportSecConfig()
+	grpcMgrId = mgrId
+	grpcMgrChan = transportMgrChan
 	grpcClientIndexList = make([]bool, MAXGRPCCLIENTS)
 	grpcRoutingDataList = make([]GrpcRoutingData, MAXGRPCCLIENTS)
 	grpcCompression = utils.PB_LEVEL1 // set via viss2server command line param?
