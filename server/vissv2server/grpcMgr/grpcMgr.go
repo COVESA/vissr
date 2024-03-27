@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -116,7 +117,7 @@ func setGrpcRoutingData(clientId int, grpcRespChan chan string, isMultipleEvent 
 }
 
 func resetGrpcRoutingData(clientId int) {
-	//utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
+	utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			grpcRoutingDataList[i].ClientId = -1
@@ -192,7 +193,7 @@ func initGrpcServer() {
 		portNo = utils.SecureConfiguration.GrpcSecPort
 		utils.Info.Printf("initGrpcServer:port number=%s", portNo)
 	} else {
-		server = grpc.NewServer()
+		server = grpc.NewServer(grpc.StatsHandler(&Handler{}))
 		portNo = "8887"
 		utils.Info.Printf("portNo =%s", portNo)
 	}
@@ -248,13 +249,15 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
 	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,1
 	for {
+		utils.Info.Println("SubscribeRequest:waiting for response")
 		vssResp := <-grpcResponseChan //  and wait for response(s)
 		if strings.Contains(vssResp, KILL_MESSAGE) {
 			break
 		}
 		pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
 		if err := stream.Send(pbResp); err != nil {
-			return err
+			utils.Info.Printf("SubscribeRequest:stream.Send error ", err)
+			// return err
 		}
 	}
 	return nil
@@ -277,6 +280,7 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 			RemoveRoutingForwardResponse(respMessage)
 		case reqMessage := <-grpcClientChan[0]:
 			clientId := getClientId()
+			utils.Info.Print("****************** New gRPC client session ************************: " + reqMessage.VssReq + " clientId=" + strconv.Itoa(clientId))
 			if clientId != -1 {
 				isMultipleEvents := false
 				if !strings.Contains(reqMessage.VssReq, "unsubscribe") && strings.Contains(reqMessage.VssReq, "subscribe") {
