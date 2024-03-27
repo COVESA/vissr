@@ -11,10 +11,20 @@
                 ],
                 "device": "Cloud"
             },
-            "signal_access": {
-                "path": "Vehicle.Powertrain.Transmission.TravelledDistance",
-                "access_mode": "read-only"
-            }
+            "signal_access": [
+            	{
+                	"path": "Vehicle.TraveledDistance",
+                	"access_mode": "read-only"
+            	},
+            	{
+                	"path": "Vehicle.CurrentLocation.Longitude",
+                	"access_mode": "read-only"
+            	},
+            	{
+                	"path": "Vehicle.CurrentLocation.Latitude",
+                	"access_mode": "read-only"
+            	}
+            ]
         },
         {
             "short": "pay-how-you-drive",
