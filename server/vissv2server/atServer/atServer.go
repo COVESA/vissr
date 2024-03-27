@@ -13,13 +13,11 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -201,61 +199,54 @@ func initClientComm(atsChannel chan string, muxServer *http.ServeMux) {
 }
 
 func initEcfComm(ecfReceiveChan chan string, ecfSendChan chan string, muxServer *http.ServeMux) {
-	scheme := "ws"
-	portNum := "8445"
-	var addr = flag.String("addr", "localhost:"+portNum, "http service address")
-	dataSessionUrl := url.URL{Scheme: scheme, Host: *addr, Path: ""}
-	dialer := websocket.Dialer{
-		HandshakeTimeout: time.Second,
-		ReadBufferSize:   1024,
-		WriteBufferSize:  1024,
-	}
-	conn := reDialer(dialer, dataSessionUrl)
-	if conn != nil {
-		go ecfClient(conn, ecfSendChan)
-		ecfReceiveChan <- "internal-ecfAvailable"
-		go ecfReceiver(conn, ecfReceiveChan)
-	}
+	ecfHandler := makeEcfHandler(ecfReceiveChan, ecfSendChan)
+	muxServer.HandleFunc("/", ecfHandler)
+	utils.Info.Print(http.ListenAndServe(":8445", muxServer))
 }
 
-func reDialer(dialer websocket.Dialer, sessionUrl url.URL) *websocket.Conn {
-	for i := 0; i < 15; i++ {
-		conn, _, err := dialer.Dial(sessionUrl.String(), nil)
-		if err != nil {
-			utils.Error.Printf("Data session dial error:%s\n", err)
-			time.Sleep(2 * time.Second)
+func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Upgrade") == "websocket" {
+			utils.Info.Printf("Received websocket request: we are upgrading to a websocket connection.\n")
+			Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+			h := http.Header{}
+			conn, err := Upgrader.Upgrade(w, req, h)
+			if err != nil {
+				utils.Error.Print("upgrade error:", err)
+				return
+			}
+			go ecfReceiver(conn, receiveChan)
+			go ecfSender(conn, sendChan)
+			receiveChan <- "internal-ecfAvailable"
 		} else {
-			utils.Info.Printf("ECF dial success.\n")
-			return conn
-		}
-	}
-	utils.Error.Printf("ECF dial failure.\n")
-	return nil
-}
-
-func ecfClient(conn *websocket.Conn, ecfSendChan chan string) {
-	defer conn.Close()
-	for {
-		ecfRequest := <-ecfSendChan
-		err := conn.WriteMessage(websocket.TextMessage, []byte(ecfRequest))
-		if err != nil {
-			utils.Error.Printf("ecfClient:Request write error:%s\n", err)
-			return
+			utils.Info.Printf("Client must set up a Websocket session.\n")
 		}
 	}
 }
 
-func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
+func ecfReceiver(conn *websocket.Conn, receiveChan chan string) {
 	defer conn.Close()
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			utils.Error.Printf("ecfReceiver read error: %s", err)
+			utils.Error.Printf("ECF server read error: %s\n", err)
 			break
 		}
-		message := string(msg)
-		utils.Info.Printf("ECF message: %s", message)
-		ecfReceiveChan <- message
+		request := string(msg)
+//		utils.Info.Printf("ecfReceiver: request: %s\n", request)
+		receiveChan <- request
+	}
+}
+
+func ecfSender(conn *websocket.Conn, sendChan chan string) {
+	defer conn.Close()
+	for {
+		response := <- sendChan
+		err := conn.WriteMessage(websocket.TextMessage, []byte(response))
+		if err != nil {
+			utils.Error.Printf("ecfSender: write error: %s\n", err)
+			break
+		}
 	}
 }
 

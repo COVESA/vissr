@@ -13,6 +13,8 @@ import (
 	"time"
 	"strings"
 	"net/http"
+	"net/url"
+	"flag"
 	"github.com/gorilla/websocket"
 	"encoding/json"
 )
@@ -34,57 +36,65 @@ var cancelTicker *time.Ticker
 var cancelRequest string
 
 func initEcfComm(receiveChan chan string, sendChan chan string, muxServer *http.ServeMux) {
-	ecfHandler := makeEcfHandler(receiveChan, sendChan)
-	muxServer.HandleFunc("/", ecfHandler)
-	fmt.Print(http.ListenAndServe(":8445", muxServer))
+	scheme := "ws"
+	portNum := "8445"
+	var addr = flag.String("addr", "localhost:"+portNum, "http service address")
+	dataSessionUrl := url.URL{Scheme: scheme, Host: *addr, Path: ""}
+	dialer := websocket.Dialer{
+		HandshakeTimeout: time.Second,
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
+	}
+	conn := reDialer(dialer, dataSessionUrl)
+	if conn != nil {
+		go ecfClient(conn, sendChan)
+		go ecfReceiver(conn, receiveChan)
+	}
 }
 
-func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, req *http.Request) {
-		if req.Header.Get("Upgrade") == "websocket" {
-			fmt.Printf("Received websocket request: we are upgrading to a websocket connection.\n")
-			Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-			h := http.Header{}
-			conn, err := Upgrader.Upgrade(w, req, h)
-			if err != nil {
-				fmt.Print("upgrade error:", err)
-				return
-			}
-			go ecfReceiver(conn, receiveChan)
-			go ecfSender(conn, sendChan)
+func reDialer(dialer websocket.Dialer, sessionUrl url.URL) *websocket.Conn {
+	for i := 0; i < 15; i++ {
+		conn, _, err := dialer.Dial(sessionUrl.String(), nil)
+		if err != nil {
+			fmt.Printf("Data session dial error:%s\n", err)
+			time.Sleep(2 * time.Second)
 		} else {
-			fmt.Printf("Client must set up a Websocket session.\n")
+			fmt.Printf("ECF dial success.\n")
+			return conn
+		}
+	}
+	fmt.Printf("ECF dial failure.\n")
+	return nil
+}
+
+func ecfClient(conn *websocket.Conn, sendChan chan string) {
+	defer conn.Close()
+	for {
+		ecfRequest := <-sendChan
+		err := conn.WriteMessage(websocket.TextMessage, []byte(ecfRequest))
+		if err != nil {
+			fmt.Printf("ecfClient:Request write error:%s\n", err)
+			return
 		}
 	}
 }
 
-func ecfReceiver(conn *websocket.Conn, receiveChan chan string) {
+func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
 	defer conn.Close()
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Printf("ECF server read error: %s\n", err)
+			fmt.Printf("ecfReceiver read error: %s\n", err)
 			break
 		}
-		request := string(msg)
-//		fmt.Printf("ecfReceiver: request: %s\n", request)
-		receiveChan <- request
-	}
-}
-
-func ecfSender(conn *websocket.Conn, sendChan chan string) {
-	defer conn.Close()
-	for {
-		response := <- sendChan
-		err := conn.WriteMessage(websocket.TextMessage, []byte(response))
-		if err != nil {
-			fmt.Printf("ecfSender: write error: %s\n", err)
-			break
-		}
+		message := string(msg)
+		fmt.Printf("ECF message: %s\n", message)
+		ecfReceiveChan <- message
 	}
 }
 
 func dispatchResponse(request string, sendChan chan string) {
+fmt.Printf("dispatchResponse: request=%s\n", request)
 	var requestMap map[string]interface{}
 	errorIndex := statusIndex
 	err := json.Unmarshal([]byte(request), &requestMap)
