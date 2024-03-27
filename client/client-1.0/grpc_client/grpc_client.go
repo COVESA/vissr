@@ -21,6 +21,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -37,22 +39,25 @@ var grpcCompression utils.Compression
 var commandList []string
 
 func initCommandList() {
-	commandList = make([]string, 4)
-	//	commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","requestId":"232"}`
-	//commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door","filter":{"type":"paths","parameter":"*.*.IsOpen"},"requestId":"235"}`
-	//	commandList[1] = `{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"timebased","parameter":{"period":"3000"}},"requestId":"246"}`
-	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed","CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
-	commandList[0] = `{"action":"get","path":"Vehicle/Speed","requestId":"232"}`
-	//commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","filter":{"type":"timebased","parameter":{"period":"100"}},"requestId":"246"}`
-	//commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed", "Chassis/Accelerator/PedalPosition"]},{"type":"timebased","parameter":{"period":"100"}}],"requestId":"246"}`
-	//commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis/Accelerator/PedalPosition"]},"requestId":"246"}`
-	//commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","requestId":"258"}`
-	commandList[2] = `{"action":"unsubscribe","subscriptionId":"1","requestId":"240"}`
-	commandList[3] = `{"action":"set", "path":"Vehicle/Body/Lights/IsLeftIndicatorOn", "value":"true", "requestId":"245"}`
-	//commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
-}
+	commandList = make([]string, 4) // 0->GET, 1->SET, 2->SUBSCRIBE, X%10=3->UNSUBSCRIBE
 
-// {"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
+	commandList[0] = `{"action":"get","path":"Vehicle/Speed","requestId":"232"}`
+	commandList[1] = `{"action":"set", "path":"Vehicle/Body/Lights/IsLeftIndicatorOn", "value":"true", "requestId":"245"}`
+	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},{"type":"timebased","parameter":	{"period":"5000"}}],"requestId":"246"}`
+	commandList[3] = `{"action":"unsubscribe","subscriptionId":"X","requestId":"240"}` // X is replaced according to input
+
+	/* different variants
+	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed","CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","filter":{"type":"timebased","parameter":{"period":"100"}},"requestId":"246"}`
+		commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","requestId":"232"}`
+	commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door","filter":{"type":"paths","parameter":"*.*.IsOpen"},"requestId":"235"}`
+		commandList[1] = `{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"timebased","parameter":{"period":"3000"}},"requestId":"246"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","requestId":"258"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
+	commandList[1] = {"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
+	*/
+}
 
 func noStreamCall(commandIndex int) {
 	var conn *grpc.ClientConn
@@ -80,9 +85,10 @@ func noStreamCall(commandIndex int) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	vssRequest := commandList[commandIndex]
+	vssRequest := commandList[commandIndex%10]
 	var vssResponse string
-	if commandIndex == 0 {
+	switch commandIndex % 10 {
+	case 0: //get
 		pbRequest := utils.GetRequestJsonToPb(vssRequest, grpcCompression)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err != nil {
@@ -90,17 +96,20 @@ func noStreamCall(commandIndex int) {
 			return
 		}
 		vssResponse = utils.GetResponsePbToJson(pbResponse, grpcCompression)
-	} else if commandIndex == 2 {
-		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcCompression)
-		pbResponse, _ := client.UnsubscribeRequest(ctx, pbRequest)
-		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcCompression)
-	} else {
+	case 1: // set
 		pbRequest := utils.SetRequestJsonToPb(vssRequest, grpcCompression)
 		pbResponse, _ := client.SetRequest(ctx, pbRequest)
 		vssResponse = utils.SetResponsePbToJson(pbResponse, grpcCompression)
+	case 3: //unsubscribe
+		subIdIndex := strings.Index(vssRequest, "X")
+		vssRequest = vssRequest[:subIdIndex] + strconv.Itoa(commandIndex/10) + vssRequest[subIdIndex+1:]
+		fmt.Printf("Unsubscribe request=:%s\n", vssRequest)
+		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcCompression)
+		pbResponse, _ := client.UnsubscribeRequest(ctx, pbRequest)
+		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcCompression)
 	}
 	if err != nil {
-		fmt.Printf("Error when issuing request=:%s", vssRequest)
+		fmt.Printf("Error when issuing request=:%s\n", vssRequest)
 	} else {
 		fmt.Printf("Received response:%s", vssResponse)
 	}
@@ -134,12 +143,12 @@ func streamCall(commandIndex int) {
 	stream, err := client.SubscribeRequest(ctx, pbRequest)
 	for {
 		pbResponse, err := stream.Recv()
-		vssResponse := utils.SubscribeStreamPbToJson(pbResponse, grpcCompression)
 		if err != nil {
 			fmt.Printf("Error=%v when issuing request=:%s", err, vssRequest)
-		} else {
-			fmt.Printf("Received response:%s\n", vssResponse)
+			break
 		}
+		vssResponse := utils.SubscribeStreamPbToJson(pbResponse, grpcCompression)
+		fmt.Printf("Received response:%s\n", vssResponse)
 	}
 }
 
@@ -169,17 +178,17 @@ func main() {
 	}
 	initCommandList()
 
-	fmt.Printf("Command indicies: 0=GET, 1=SUBSCRIBE, 2=UNSUBSCRIBE, 3=SET, any other value terminates.\n")
+	fmt.Printf("Command indicies: 0->GET, 1->SET, 2->SUBSCRIBE, X%10=3->UNSUBSCRIBE, any other value terminates.\nFor UNSUBSCRIBE X/10 is the subscriptionId.\n\n")
 	var commandIndex int
 	for {
-		fmt.Printf("\nCommand index [0-3]:")
+		fmt.Printf("\nCommand index:")
 		fmt.Scanf("%d", &commandIndex)
-		if commandIndex < 0 || commandIndex > 3 {
+		if commandIndex < 0 || commandIndex%10 > 3 {
 			break
 		}
-		fmt.Printf("Command:%s", commandList[commandIndex])
-		if commandIndex == 1 { // subscribe
-			go streamCall(commandIndex)
+		fmt.Printf("Selected request:%s\n", commandList[commandIndex%10])
+		if commandIndex == 2 { // subscribe
+			go streamCall(commandIndex % 10)
 		} else {
 			go noStreamCall(commandIndex)
 		}

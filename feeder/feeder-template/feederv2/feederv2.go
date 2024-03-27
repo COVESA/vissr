@@ -30,6 +30,19 @@ type DomainData struct {
 	Value string
 }
 
+type DataItem struct {
+	Path string  `json:"path"`
+	Dp []DpItem  `json:"dp"`
+}
+
+type DpItem struct {
+	Ts string    `json:"ts"`
+	Value string `json:"value"`
+}
+
+var tripData []DataItem
+var simulatedSource string
+
 type FeederMap struct {
 	MapIndex     uint16
 	Name         string
@@ -247,6 +260,7 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 	var simCtx simulateDataCtx
 	simCtx.RandomSim = true
 	simCtx.Fmap = fMap
+	dpIndex := 0
 	for {
 		select {
 		case outData := <-outputChan:
@@ -257,8 +271,17 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 			simCtx.Iteration = 0
 
 		default:
-			time.Sleep(3 * time.Second)         // not to overload input channel
-			inputChan <- simulateInput(&simCtx) // simulating signals read from the vehicle interface
+			if simulatedSource == "internal" {
+				time.Sleep(3 * time.Second)         // not to overload input channel
+				inputChan <- simulateInput(&simCtx) // simulating signals read from the vehicle interface
+			} else {
+				time.Sleep(1 * time.Second)         // set to the tripdata "time base"
+				dataPoint := getSimulatedDataPoints(dpIndex)
+				for i := 0; i < len(dataPoint); i++ {
+					inputChan <- dataPoint[i]
+				}
+				dpIndex = incDpIndex(dpIndex)
+			}
 		}
 	}
 }
@@ -306,6 +329,41 @@ func getRandomVssfMapIndex(fMap []FeederMap) int {
 		signalIndex = (signalIndex + 1) % (len(fMap) - 1)
 	}
 	return signalIndex
+}
+
+func readSimulatedData(fname string) []DataItem {
+	if !fileExists(fname) {
+		utils.Error.Printf("readSimulatedData: The file %s does not exist.", fname)
+		return nil
+	}
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		utils.Error.Printf("readSimulatedData:Error reading %s: %s", fname, err)
+		return nil
+	}
+	err = json.Unmarshal([]byte(data), &tripData)
+	if err != nil {
+		utils.Error.Printf("readSimulatedData:Error unmarshal json=%s", err)
+		return nil
+	}
+	return tripData
+}
+
+func getSimulatedDataPoints(dpIndex int) []DomainData {
+	dataPoint := make([]DomainData, len(tripData))
+	for i := 0 ; i < len(tripData); i++ {
+		dataPoint[i].Name = tripData[i].Path
+		dataPoint[i].Value = tripData[i].Dp[dpIndex].Value
+	}
+	return dataPoint
+}
+
+func incDpIndex(index int) int {
+	index++
+	if index == len(tripData[0].Dp) {
+		return 0
+	}
+	return index
 }
 
 func convertDomainData(north2SouthConv bool, inData DomainData, feederMap []FeederMap) DomainData {
@@ -395,6 +453,8 @@ func main() {
 		Required: false,
 		Help:     "changes log output level",
 		Default:  "info"})
+	simSource := parser.Selector("i", "simsource", []string{"vssjson", "internal"}, &argparse.Options{Required: false,
+		Help: "Simulator source must be either vssjson, or internal", Default: "internal"})  // "vehiclejson" could be added for non-converted simulator data
 	stateDB := parser.Selector("d", "statestorage", []string{"sqlite", "redis", "memcache", "none"}, &argparse.Options{Required: false,
 		Help: "Statestorage must be either sqlite, redis, memcache, or none", Default: "redis"})
 	dbFile := parser.String("f", "dbfile", &argparse.Options{
@@ -407,6 +467,7 @@ func main() {
 		utils.Error.Print(parser.Usage(err))
 	}
 	stateDbType = *stateDB
+	simulatedSource = *simSource
 
 	utils.InitLog("feeder-log.txt", "./logs", *logFile, *logLevel)
 
@@ -463,6 +524,13 @@ func main() {
 
 	utils.Info.Printf("Initializing the feeder for mapping file %s.", *mapFile)
 	feederMap := readFeederMap(*mapFile)
+	if simulatedSource != "internal" {
+		tripData = readSimulatedData("tripdata.json")
+		if len(tripData) == 0 {
+			utils.Error.Printf("Tripdata file not found.")
+			os.Exit(1)
+		}
+	}
 	scalingDataList = readscalingDataList(*sclDataFile)
 	go initVSSInterfaceMgr(vssInputChan, vssOutputChan)
 	go initVehicleInterfaceMgr(feederMap, vehicleInputChan, vehicleOutputChan)
@@ -472,7 +540,12 @@ func main() {
 		case vssInData := <-vssInputChan:
 			vehicleOutputChan <- convertDomainData(true, vssInData, feederMap)
 		case vehicleInData := <-vehicleInputChan:
-			vssOutputChan <- convertDomainData(false, vehicleInData, feederMap)
+			if simulatedSource != "vssjson" {
+				vssOutputChan <- convertDomainData(false, vehicleInData, feederMap)
+			} else {
+//utils.Info.Printf("simulatedDataPoints:Path=%s, Value=%s", vehicleInData.Name, vehicleInData.Value)
+				vssOutputChan <- vehicleInData  // conversion not needed
+			}
 		}
 	}
 }

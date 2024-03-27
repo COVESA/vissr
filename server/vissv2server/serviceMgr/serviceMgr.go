@@ -496,7 +496,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		}
 		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
 	case "redis":
-//		utils.Info.Printf(path)
+		utils.Info.Printf(path)
 		dp, err := redisClient.Get(path).Result()
 		if err != nil {
 			if err.Error() != "redis: nil" {
@@ -1181,6 +1181,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				isRemoved := true
 				for isRemoved == true {
 					isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
+utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
 				}
 			case "internal-cancelsubscription":
 				routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))

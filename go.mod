@@ -1,6 +1,6 @@
 module github.com/w3c/automotive-viss2
 
-go 1.21
+go 1.22.1
 
 //example on how to use replace to point to fork or local path
 //replace github.com/w3c/automotive-viss2/utils => github.com/MagnusGun/WAII/utils master
