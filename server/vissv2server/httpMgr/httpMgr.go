@@ -2,14 +2,14 @@
 * (C) 2022 Geotab
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
 package httpMgr
 
 import (
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
 )
 
 // All HTTP app clients share same channel

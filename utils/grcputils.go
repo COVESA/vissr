@@ -2,7 +2,7 @@
 * (C) 2023 Ford Motor Company
 * (C) 2021 Geotab
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -10,7 +10,7 @@ package utils
 
 import (
 	"encoding/json"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
+	pb "github.com/covesa/vissr/grpc_pb"
 	"strconv"
 )
 
@@ -595,7 +595,7 @@ func createUnsubscribeResponsePb(protoMessage *pb.UnsubscribeResponseMessage, me
 	}
 }
 
-//      *******************************Proto to JSON code ***************************************
+// *******************************Proto to JSON code ***************************************
 func populateJsonFromProtoGetReq(protoMessage *pb.GetRequestMessage) string {
 	jsonMessage := "{"
 	jsonMessage += `"action":"get"`

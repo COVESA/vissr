@@ -1,7 +1,7 @@
 /**
 * (C) 2021 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/covesa/vissr/utils"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/w3c/automotive-viss2/utils"
 )
 
 type CLPack struct {

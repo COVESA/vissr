@@ -1,7 +1,7 @@
 /**
 * (C) 2023 Ford Motor Company
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -9,20 +9,20 @@
 package main
 
 import (
-    "os"
-    "bufio"
-    "encoding/json"
-//    "io/ioutil"
-    "sort"
-    "database/sql"
-    "fmt"
-    "strings"
-    "strconv"
-    _ "github.com/mattn/go-sqlite3"
+	"bufio"
+	"encoding/json"
+	"os"
+	//    "io/ioutil"
+	"database/sql"
+	"fmt"
 	"github.com/akamensky/argparse"
+	_ "github.com/mattn/go-sqlite3"
+	"sort"
+	"strconv"
+	"strings"
 )
 
-const MAXUINT16 = 65535  // used to indicate that conversion index is uninitialized
+const MAXUINT16 = 65535 // used to indicate that conversion index is uninitialized
 
 var branchPathList []string
 
@@ -55,11 +55,11 @@ type FeederConversionData struct {
 }
 
 type ToolConversionData struct {
-	Name         string
-	Type         string
-	Datatype     string
-	Unit         string
-	EnumValues   string
+	Name       string
+	Type       string
+	Datatype   string
+	Unit       string
+	EnumValues string
 }
 
 var scaleDataList []string
@@ -81,7 +81,7 @@ type SignalMapElem struct {
 func initDb(dbFile string, db *sql.DB) *sql.DB {
 	var err error
 	db, err = sql.Open("sqlite3", dbFile)
-	if (!fileExists(dbFile)) {
+	if !fileExists(dbFile) {
 		createTables(db)
 	}
 	if err != nil {
@@ -114,13 +114,13 @@ func createDomainTableIfNotExist(db *sql.DB, tableName string) {
 
 func createDomainTable(db *sql.DB, tableName string) {
 	stmt, err := db.Prepare(`CREATE TABLE "` + tableName + `" ("name" TEXT NOT NULL UNIQUE,  "type" TEXT, "datatype" TEXT, "unit" TEXT NOT NULL, "enumValues" TEXT, "min" TEXT, "max" TEXT, "deflt" TEXT, "uid" TEXT, "description" TEXT, "comment" TEXT)`)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when preparing %s table, err = %s\n", tableName, err)
 		os.Exit(1)
 	}
 
 	_, err = stmt.Exec()
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when creating %s table, err = %s\n", tableName, err)
 		os.Exit(1)
 	}
@@ -128,13 +128,13 @@ func createDomainTable(db *sql.DB, tableName string) {
 
 func createConversionDataTable(db *sql.DB) {
 	stmt, err := db.Prepare(`CREATE TABLE "ConversionPreparation" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "name" TEXT NOT NULL, "mapIndex" INTEGER, "type" TEXT, "datatype" TEXT, "conversionIndex" INTEGER)`)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when preparing ConversionPreparation table, err = %s\n", err)
 		os.Exit(1)
 	}
 
 	_, err = stmt.Exec()
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when creating ConversionPreparation table, err = %s\n", err)
 		os.Exit(1)
 	}
@@ -143,13 +143,13 @@ func createConversionDataTable(db *sql.DB) {
 
 func createInternalToolTable(db *sql.DB) {
 	stmt, err := db.Prepare(`CREATE TABLE "InternalTool" ("nbdTableName" TEXT, "sbdTableName" TEXT, "structDef_Go" TEXT, "structDef_C" TEXT)`)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when preparing Internal tool table, err = %s\n", err)
 		os.Exit(1)
 	}
 
 	_, err = stmt.Exec()
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Error when creating Internal tool table, err = %s\n", err)
 		os.Exit(1)
 	}
@@ -252,7 +252,7 @@ func populateTable() {
 	continueScan := true
 	signalCount := 0
 	for continueScan {
-		if (!deferScan) {
+		if !deferScan {
 			continueScan = scanner.Scan()
 			text = scanner.Text()
 		} else {
@@ -264,7 +264,7 @@ func populateTable() {
 				domainName = readValue(text)
 				createDomainTableIfNotExist(db, domainName)
 			}
-		} else if len(text) > 0 && text[len(text)-1] == ':' && text[0] != ' ' {  // signal name
+		} else if len(text) > 0 && text[len(text)-1] == ':' && text[0] != ' ' { // signal name
 			if !firstIteration {
 				if domainName == "" {
 					fmt.Printf("DB table name not found in YAML file, temporary name is nonametable.\n")
@@ -307,7 +307,7 @@ func populateTable() {
 			}
 		} else {
 			if len(domainData.Comment) > 0 {
-				domainData.Comment += readValue(text)  //most likely comments...
+				domainData.Comment += readValue(text) //most likely comments...
 			} else if !isEmptyLine(text) {
 				fmt.Printf("\nRow not saved in DB: %s", text)
 			}
@@ -349,7 +349,7 @@ func createConversionTable() {
 	fmt.Printf("Name of the signal mapping file: ")
 	fmt.Scanf("%s", &fname)
 	northBoundDomain, southBoundDomain, signalMappingList := readSignalMappingFile(fname)
-	if (northBoundDomain == "") {
+	if northBoundDomain == "" {
 		fmt.Printf("%s is not found. Bye.\n")
 		os.Exit(-1)
 	}
@@ -369,17 +369,17 @@ func createConversionTable() {
 	updateInternalToolTableNames(northBoundDomain, southBoundDomain)
 	truncateConversionTable()
 	populateConversionTable(northBoundDomain, southBoundDomain, signalMappingList)
-	writescaleDataList(northBoundDomain, southBoundDomain)  // scaleDataList is populated by populateConversionTable()
+	writescaleDataList(northBoundDomain, southBoundDomain) // scaleDataList is populated by populateConversionTable()
 	nbdNameArray := make([]string, len(signalMappingList))
 	for i := 0; i < len(signalMappingList); i++ {
 		nbdNameArray[i] = signalMappingList[i].North
 	}
 	sort.Strings(nbdNameArray)
-	createMapDatamodel(northBoundDomain, "Datamodel-" + northBoundDomain + "-" + southBoundDomain + ".yaml", nbdNameArray)
+	createMapDatamodel(northBoundDomain, "Datamodel-"+northBoundDomain+"-"+southBoundDomain+".yaml", nbdNameArray)
 }
 
 func domainTable(tableNames []string, name string) bool {
-	for i := 0 ; i < len(tableNames) ; i++ {
+	for i := 0; i < len(tableNames); i++ {
 		if tableNames[i] == name {
 			return true
 		}
@@ -389,7 +389,7 @@ func domainTable(tableNames []string, name string) bool {
 
 func getTableNameList(nameArray []string) string {
 	tableNameList := ""
-	for i := 0 ; i < len(nameArray) ; i++ {
+	for i := 0; i < len(nameArray); i++ {
 		tableNameList += nameArray[i] + ", "
 	}
 	return tableNameList[:len(tableNameList)-2]
@@ -421,7 +421,7 @@ func getDomainTableNames() []string {
 }
 
 func domainTableName(tableName string) bool {
-	for i := 0 ; i < len(otherTables) ; i++ {
+	for i := 0; i < len(otherTables); i++ {
 		if otherTables[i] == tableName {
 			return false
 		}
@@ -430,16 +430,16 @@ func domainTableName(tableName string) bool {
 }
 
 func writescaleDataList(northBoundDomain string, southBoundDomain string) {
-	fileName := "Scaling-" + northBoundDomain + "-" +  southBoundDomain + ".json"
+	fileName := "Scaling-" + northBoundDomain + "-" + southBoundDomain + ".json"
 	treeFp, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0755)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Could not open %s for writing scaling data\n", fileName)
 		return
 	}
 	treeFp.Write([]byte("[\n"))
 	treeFp.Write([]byte(`"{\"false\":\"0\", \"true\":\"1\"}",`))
-	for i := 0 ; i < len(scaleDataList) ; i++ {
-		if i == len(scaleDataList) - 1 {
+	for i := 0; i < len(scaleDataList); i++ {
+		if i == len(scaleDataList)-1 {
 			treeFp.Write([]byte(`"` + insertEscape(scaleDataList[i]) + `"`))
 		} else {
 			treeFp.Write([]byte(`"` + insertEscape(scaleDataList[i]) + `",`))
@@ -452,13 +452,13 @@ func writescaleDataList(northBoundDomain string, southBoundDomain string) {
 
 func insertEscape(jsonString string) string {
 	escapeCount := 0
-	for i := 0 ; i < len(jsonString) ; i++ {
+	for i := 0; i < len(jsonString); i++ {
 		if jsonString[i] == '"' {
 			escapeCount++
 		}
 	}
 	var escapedString string
-	for i := 0 ; i < len(jsonString) ; i++ {
+	for i := 0; i < len(jsonString); i++ {
 		if jsonString[i] == '"' {
 			escapedString += "\\"
 			escapedString += "\""
@@ -547,7 +547,7 @@ func populateConversionTable(nbd string, sbd string, signalMapList []SignalMapEl
 	var nbdToolData ToolConversionData
 	var sbdToolData ToolConversionData
 	numofitems := 0
-	for i := 0 ; i < len(signalMapList) ; i++ {
+	for i := 0; i < len(signalMapList); i++ {
 		nbdToolData = getDomainData(nbd, signalMapList[i].North)
 		sbdToolData = getDomainData(sbd, signalMapList[i].South)
 		if nbdToolData.Name != "" && sbdToolData.Name != "" {
@@ -564,7 +564,7 @@ func getDomainData(tbl string, signalName string) ToolConversionData {
 	var data ToolConversionData
 	sqlQuery := `SELECT "name", "type", "datatype", "unit", "enumValues" FROM "` + tbl + `" WHERE "name"=?`
 	rows, err := db.Query(sqlQuery, signalName)
-//	fmt.Printf("sqlQuery=%s\n", sqlQuery)
+	//	fmt.Printf("sqlQuery=%s\n", sqlQuery)
 	if err != nil {
 		fmt.Printf("getDomainData: SQL query error=%s\n", err)
 		return data
@@ -581,24 +581,24 @@ func getDomainData(tbl string, signalName string) ToolConversionData {
 }
 
 func createFeederConversionData(nbdtData ToolConversionData, sbdtData ToolConversionData, mapIndex int) {
-	conversionIndex := MAXUINT16   
+	conversionIndex := MAXUINT16
 	// hardcoded conversions: 0=no conversion, 1=boolean. For all others see funcIndex.list (funcList.go in feeder code)
-	if sbdtData.Datatype == nbdtData.Datatype  && nbdtData.Datatype == "boolean" {
+	if sbdtData.Datatype == nbdtData.Datatype && nbdtData.Datatype == "boolean" {
 		conversionIndex = 1
-//	} else if sbdtData.Unit == nbdtData.Unit && nbdtData.Datatype != "state_encoded" && nbdtData.EnumValues == "" {
+		//	} else if sbdtData.Unit == nbdtData.Unit && nbdtData.Datatype != "state_encoded" && nbdtData.EnumValues == "" {
 	} else if sbdtData.Unit == nbdtData.Unit && nbdtData.EnumValues == "" {
 		conversionIndex = 0
 	} else if nbdtData.EnumValues != "" && sbdtData.EnumValues != "" {
-		conversionIndex = getConversionTypeForEnum(nbdtData.EnumValues, sbdtData.EnumValues) + 2  // 0 and 1 reserved for none and boolean
+		conversionIndex = getConversionTypeForEnum(nbdtData.EnumValues, sbdtData.EnumValues) + 2 // 0 and 1 reserved for none and boolean
 	} else if nbdtData.Unit != "" && sbdtData.Unit != "" && sbdtData.Unit != nbdtData.Unit {
-		conversionIndex = getConversionTypeForLinear(nbdtData.Unit, sbdtData.Unit) + 2   // 0 and 1 reserved for none and boolean
+		conversionIndex = getConversionTypeForLinear(nbdtData.Unit, sbdtData.Unit) + 2 // 0 and 1 reserved for none and boolean
 	}
 	insertFeederData(nbdtData.Name, nbdtData.Type, nbdtData.Datatype, mapIndex, conversionIndex)
 	insertFeederData(sbdtData.Name, sbdtData.Type, sbdtData.Datatype, mapIndex, conversionIndex)
 }
 
 func insertFeederData(name string, signalType string, datatype string, mapIndex int, conversionIndex int) {
-//	fmt.Printf("insertFeederData(name=%s, type=%s, datatype=%s, mapIndex=%d, conversionIndex=%d\n\n", name, signalType, datatype, mapIndex, conversionIndex)
+	//	fmt.Printf("insertFeederData(name=%s, type=%s, datatype=%s, mapIndex=%d, conversionIndex=%d\n\n", name, signalType, datatype, mapIndex, conversionIndex)
 	sqlString := "INSERT INTO ConversionPreparation (name, type, datatype, mapIndex, conversionIndex) values(?, ?, ?, ?, ?)"
 	stmt, err := db.Prepare(sqlString)
 	if err != nil {
@@ -619,23 +619,23 @@ func getConversionTypeForEnum(nbdEnums string, sbdEnums string) int {
 	err := json.Unmarshal([]byte(nbdEnums), &nbdEnumMap)
 	if err != nil {
 		fmt.Printf("nbdEnumMap:Error unmarshal json=%s\n", err)
-		return 65535-2
+		return 65535 - 2
 	}
 	err = json.Unmarshal([]byte(sbdEnums), &sbdEnumMap)
 	if err != nil {
 		fmt.Printf("sbdEnumMap:Error unmarshal json=%s\n", err)
-		return 65535-2
+		return 65535 - 2
 	}
 	if len(nbdEnumMap) != len(sbdEnumMap) {
 		fmt.Printf("getConversionTypeForEnum:Number of enum values inconsistent. nbt=%d, sbt=%d\n", len(nbdEnumMap), len(sbdEnumMap))
-		return 65535-2
+		return 65535 - 2
 	}
 	enumMap := "{"
-	for i := 0 ; i < len(nbdEnumMap) ; i++ {
+	for i := 0; i < len(nbdEnumMap); i++ {
 		enumMap += `"` + nbdEnumMap[i] + `":"` + sbdEnumMap[i] + `", `
 	}
 	enumMap = enumMap[:len(enumMap)-2] + "}"
-	for i := 0 ; i < len(scaleDataList) ; i++ {
+	for i := 0; i < len(scaleDataList); i++ {
 		if scaleDataList[i] == enumMap {
 			return i
 		}
@@ -646,26 +646,26 @@ func getConversionTypeForEnum(nbdEnums string, sbdEnums string) int {
 
 func getConversionTypeForLinear(nbdUnit string, sbdUnit string) int {
 	var conversionCoefficients string
-	for i := 0 ; i < len(unitScaleList) ; i++ {
-		if unitScaleList[i].Unit1 == nbdUnit && unitScaleList[i].Unit2 == sbdUnit || 
+	for i := 0; i < len(unitScaleList); i++ {
+		if unitScaleList[i].Unit1 == nbdUnit && unitScaleList[i].Unit2 == sbdUnit ||
 			unitScaleList[i].Unit1 == sbdUnit && unitScaleList[i].Unit2 == nbdUnit {
-				if unitScaleList[i].Unit1 == sbdUnit {  // invert the coefficients
-					var A float64
-					var B float64
-					var err error
-					if A, err = strconv.ParseFloat(unitScaleList[i].A, 64); err != nil {
-						fmt.Printf("getConversionTypeForLinear: Coeff A=%s cannot be converted to float.\n", unitScaleList[i].A)
-						return 65535-2
-					}
-					if B, err = strconv.ParseFloat(unitScaleList[i].B, 64); err != nil {
-						fmt.Printf("getConversionTypeForLinear: Coeff B=%s cannot be converted to float.\n", unitScaleList[i].B)
-						return 65535-2
-					}
-					unitScaleList[i].A = strconv.FormatFloat(1/A, 'f', -1, 32)
-					unitScaleList[i].B = strconv.FormatFloat(-B/A, 'f', -1, 32)
+			if unitScaleList[i].Unit1 == sbdUnit { // invert the coefficients
+				var A float64
+				var B float64
+				var err error
+				if A, err = strconv.ParseFloat(unitScaleList[i].A, 64); err != nil {
+					fmt.Printf("getConversionTypeForLinear: Coeff A=%s cannot be converted to float.\n", unitScaleList[i].A)
+					return 65535 - 2
 				}
-				conversionCoefficients = `[` + unitScaleList[i].A + `, ` + unitScaleList[i].B + `]`  // JSON float64 array
-			for j := 0 ; j < len(scaleDataList) ; j++ {
+				if B, err = strconv.ParseFloat(unitScaleList[i].B, 64); err != nil {
+					fmt.Printf("getConversionTypeForLinear: Coeff B=%s cannot be converted to float.\n", unitScaleList[i].B)
+					return 65535 - 2
+				}
+				unitScaleList[i].A = strconv.FormatFloat(1/A, 'f', -1, 32)
+				unitScaleList[i].B = strconv.FormatFloat(-B/A, 'f', -1, 32)
+			}
+			conversionCoefficients = `[` + unitScaleList[i].A + `, ` + unitScaleList[i].B + `]` // JSON float64 array
+			for j := 0; j < len(scaleDataList); j++ {
 				if scaleDataList[j] == conversionCoefficients {
 					return j
 				}
@@ -674,48 +674,78 @@ func getConversionTypeForLinear(nbdUnit string, sbdUnit string) int {
 			return len(scaleDataList) - 1
 		}
 	}
-	return 65535-2
+	return 65535 - 2
 }
 
-func getTypeIndex(VSStype string) int8 {  //TODO: use it when writing the struct array
+func getTypeIndex(VSStype string) int8 { //TODO: use it when writing the struct array
 	switch VSStype {
-		case "sensor": return 0
-		case "actuator": return 1
-		case "attribute": return 2
-		case "not used": return -1  //is ok to happen
+	case "sensor":
+		return 0
+	case "actuator":
+		return 1
+	case "attribute":
+		return 2
+	case "not used":
+		return -1 //is ok to happen
 	}
 	fmt.Printf("getTypeIndex: unknown type=%s\n", VSStype)
 	return -1
 }
 
-func getDatatypeIndex(VSSDatatype string) int8 {  //TODO: use it when writing the struct array
+func getDatatypeIndex(VSSDatatype string) int8 { //TODO: use it when writing the struct array
 	switch VSSDatatype {
-		case "uint8": return 0
-		case "uint16": return 1
-		case "uint32": return 2
-		case "uint64": return 3
-		case "int8": return 4
-		case "int16": return 5
-		case "int32": return 6
-		case "int64": return 7
-		case "float": return 8
-		case "float32": return 8
-		case "double": return 9
-		case "float64": return 9
-		case "boolean": return 10
-		case "string": return 11
-		case "uint8[]": return 12
-		case "uint16[]": return 13
-		case "uint32[]": return 14
-		case "uint64[]": return 15
-		case "int8[]": return 16
-		case "int16[]": return 17
-		case "int32[]": return 18
-		case "int64[]": return 19
-		case "float32[]": return 20
-		case "float64[]": return 21
-		case "boolean[]": return 22
-		case "string[]": return 23
+	case "uint8":
+		return 0
+	case "uint16":
+		return 1
+	case "uint32":
+		return 2
+	case "uint64":
+		return 3
+	case "int8":
+		return 4
+	case "int16":
+		return 5
+	case "int32":
+		return 6
+	case "int64":
+		return 7
+	case "float":
+		return 8
+	case "float32":
+		return 8
+	case "double":
+		return 9
+	case "float64":
+		return 9
+	case "boolean":
+		return 10
+	case "string":
+		return 11
+	case "uint8[]":
+		return 12
+	case "uint16[]":
+		return 13
+	case "uint32[]":
+		return 14
+	case "uint64[]":
+		return 15
+	case "int8[]":
+		return 16
+	case "int16[]":
+		return 17
+	case "int32[]":
+		return 18
+	case "int64[]":
+		return 19
+	case "float32[]":
+		return 20
+	case "float64[]":
+		return 21
+	case "boolean[]":
+		return 22
+	case "string[]":
+		return 23
 	}
 	fmt.Printf("getDatatypeIndex: unknown datatype=%s\n", VSSDatatype)
 	return -1
@@ -729,8 +759,8 @@ func insertTableRow(domainData DomainData, tableName string) {
 		return
 	}
 
-	_, err = stmt.Exec(domainData.Path, domainData.Type, domainData.Datatype, domainData.Unit, domainData.EnumValues, 
-			domainData.Min, domainData.Max, domainData.Default, domainData.Uid, domainData.Description, domainData.Comment)
+	_, err = stmt.Exec(domainData.Path, domainData.Type, domainData.Datatype, domainData.Unit, domainData.EnumValues,
+		domainData.Min, domainData.Max, domainData.Default, domainData.Uid, domainData.Description, domainData.Comment)
 	if err != nil {
 		fmt.Printf("insertTableRow: SQL insert execute error=%s\n", err)
 		return
@@ -754,7 +784,7 @@ func createFeederArray() {
 	var element FeederConversionData
 	var elementType string
 	var elementDataType string
-	
+
 	for rows.Next() {
 
 		err = rows.Scan(&(element.Name), &elementType, &elementDataType, &(element.ConvertIndex), &(element.MapIndex))
@@ -767,31 +797,31 @@ func createFeederArray() {
 		feederMap = append(feederMap, element)
 	}
 	rows.Close()
-//	printArray(feederMap)
+	//	printArray(feederMap)
 	reorderMapIndex(feederMap)
-//	printArray(feederMap)
+	//	printArray(feederMap)
 	nbtTable, sbtTable := getInternalToolNbdTableNames()
-	fmt.Printf("Conversion data file=%s\n", nbtTable + "-" + sbtTable + ".cvt")
-	writeArrayToFile(feederMap, nbtTable + "-" + sbtTable + ".cvt")
+	fmt.Printf("Conversion data file=%s\n", nbtTable+"-"+sbtTable+".cvt")
+	writeArrayToFile(feederMap, nbtTable+"-"+sbtTable+".cvt")
 }
 
 func reorderMapIndex(feederMap []FeederConversionData) {
 	reorderMap := make([]uint16, len(feederMap))
-	for i := 0 ; i < len(feederMap) ; i++ {
+	for i := 0; i < len(feederMap); i++ {
 		reorderMap[i] = getCorrespondingIndex(i, feederMap[i].MapIndex, feederMap)
-		if (reorderMap[i] == MAXUINT16) {
+		if reorderMap[i] == MAXUINT16 {
 			fmt.Printf("Reordering of mapIndex is not possible. Array cannot be constructed.\n")
 			return
 		}
 	}
-	for i := 0 ; i < len(feederMap) ; i++ {
+	for i := 0; i < len(feederMap); i++ {
 		feederMap[i].MapIndex = reorderMap[i]
 	}
 }
 
 func getCorrespondingIndex(thisIndex int, thisMapIndex uint16, feederMap []FeederConversionData) uint16 {
-	for i := 0 ; i < len(feederMap) ; i++ {
-		if (feederMap[i].MapIndex == thisMapIndex && i != thisIndex) {
+	for i := 0; i < len(feederMap); i++ {
+		if feederMap[i].MapIndex == thisMapIndex && i != thisIndex {
 			return (uint16)(i)
 		}
 	}
@@ -801,11 +831,11 @@ func getCorrespondingIndex(thisIndex int, thisMapIndex uint16, feederMap []Feede
 
 func writeArrayToFile(feederMap []FeederConversionData, fileName string) {
 	treeFp, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0755)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Could not open %s for writing map data\n", fileName)
 		return
 	}
-	for i := 0 ; i < len(feederMap) ; i++ {
+	for i := 0; i < len(feederMap); i++ {
 		writeElement(feederMap[i], treeFp)
 	}
 	treeFp.Close()
@@ -826,31 +856,31 @@ func writeElement(mapElement FeederConversionData, treeFp *os.File) {
 }
 
 func serializeUInt(intVal interface{}) []byte {
-    switch intVal.(type) {
-      case uint8:
-        buf := make([]byte, 1)
-        buf[0] = intVal.(byte)
-        return buf
-      case uint16:
-        buf := make([]byte, 2)
-        buf[1] = byte((intVal.(uint16) & 0xFF00)/256)
-        buf[0] = byte(intVal.(uint16) & 0x00FF)
-        return buf
-      case uint32:
-        buf := make([]byte, 4)
-        buf[3] = byte((intVal.(uint32) & 0xFF000000)/16777216)
-        buf[2] = byte((intVal.(uint32) & 0xFF0000)/65536)
-        buf[1] = byte((intVal.(uint32) & 0xFF00)/256)
-        buf[0] = byte(intVal.(uint32) & 0x00FF)
-        return buf
-      default:
-        fmt.Println(intVal, "is of an unknown type")
-        return nil
-    }
+	switch intVal.(type) {
+	case uint8:
+		buf := make([]byte, 1)
+		buf[0] = intVal.(byte)
+		return buf
+	case uint16:
+		buf := make([]byte, 2)
+		buf[1] = byte((intVal.(uint16) & 0xFF00) / 256)
+		buf[0] = byte(intVal.(uint16) & 0x00FF)
+		return buf
+	case uint32:
+		buf := make([]byte, 4)
+		buf[3] = byte((intVal.(uint32) & 0xFF000000) / 16777216)
+		buf[2] = byte((intVal.(uint32) & 0xFF0000) / 65536)
+		buf[1] = byte((intVal.(uint32) & 0xFF00) / 256)
+		buf[0] = byte(intVal.(uint32) & 0x00FF)
+		return buf
+	default:
+		fmt.Println(intVal, "is of an unknown type")
+		return nil
+	}
 }
 
 func printArray(feederMap []FeederConversionData) {
-	for i := 0 ; i < len(feederMap) ; i++ {
+	for i := 0; i < len(feederMap); i++ {
 		fmt.Printf("feederMap[%d].Name=%s, feederMap[%d].MapIndex=%d\n", i, feederMap[i].Name, i, feederMap[i].MapIndex)
 	}
 }
@@ -874,7 +904,7 @@ func createDomainDatamodel() {
 		fmt.Printf("Invalid input%s. Bye.\n", treeContent)
 		return
 	}
-	createYamlFile(nodeArray, treeContent, "Datamodel-" + domainName + ".yaml")
+	createYamlFile(nodeArray, treeContent, "Datamodel-"+domainName+".yaml")
 }
 
 func createMapDatamodel(nbd string, fileName string, mapNameList []string) {
@@ -892,9 +922,9 @@ func createMapDatamodel(nbd string, fileName string, mapNameList []string) {
 func readMapElementDatamodel(nbd string, mapSignalName string) DomainData {
 	sqlQuery := `SELECT "` + nbd + `".name, "` + nbd + `".type, "` + nbd + `".unit, "` + nbd + `".datatype, "` + nbd + `".enumValues, ` +
 		`"` + nbd + `".min, "` + nbd + `".max, "` + nbd + `".deflt, "` + nbd + `".uid, "` + nbd + `".description, "` + nbd + `".comment` +
-		    ` FROM "` + nbd + `" WHERE "` + nbd + `".name = "` + mapSignalName + `";`
+		` FROM "` + nbd + `" WHERE "` + nbd + `".name = "` + mapSignalName + `";`
 
-//	sqlQuery := `SELECT name, type, unit, datatype, enumValues, min, max, deflt, uid, description, comment FROM "` + nbd + `" ORDER BY name ASC;`
+	//	sqlQuery := `SELECT name, type, unit, datatype, enumValues, min, max, deflt, uid, description, comment FROM "` + nbd + `" ORDER BY name ASC;`
 	rows, err := db.Query(sqlQuery)
 	if err != nil {
 		fmt.Printf("readMapElementDatamodel: SQL query error=%s\n", err)
@@ -903,7 +933,7 @@ func readMapElementDatamodel(nbd string, mapSignalName string) DomainData {
 
 	rows.Next()
 	var node DomainData
-	err = rows.Scan(&(node.Path), &(node.Type), &(node.Unit), &(node.Datatype), 
+	err = rows.Scan(&(node.Path), &(node.Type), &(node.Unit), &(node.Datatype),
 		&(node.EnumValues), &(node.Min), &(node.Max), &(node.Default), &(node.Uid), &(node.Description), &(node.Comment))
 	if err != nil {
 		fmt.Printf("readMapElementDatamodel: SQL result scan error=%s\n", err)
@@ -924,7 +954,7 @@ func readDomainDatamodel(nbd string) []DomainData {
 
 	for rows.Next() {
 		var node DomainData
-		err = rows.Scan(&(node.Path), &(node.Type), &(node.Unit), &(node.Datatype), 
+		err = rows.Scan(&(node.Path), &(node.Type), &(node.Unit), &(node.Datatype),
 			&(node.EnumValues), &(node.Min), &(node.Max), &(node.Default), &(node.Uid), &(node.Description), &(node.Comment))
 		if err != nil {
 			fmt.Printf("readDomainDatamodel: SQL result scan error=%s\n", err)
@@ -938,16 +968,16 @@ func readDomainDatamodel(nbd string) []DomainData {
 
 func createYamlFile(nodeArray []DomainData, treeContent string, fileName string) {
 	includeNodes := false
-	if (treeContent == "complete") {
+	if treeContent == "complete" {
 		includeNodes = true
 	}
 	treeFp, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0755)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Could not open %s for writing yaml data\n", fileName)
 		return
 	}
-	for i := 0 ; i < len(nodeArray) ; i++ {
-		if (includeNodes) {
+	for i := 0; i < len(nodeArray); i++ {
+		if includeNodes {
 			writeBranches(treeFp, nodeArray[i].Path)
 		}
 		writeYamlNode(treeFp, nodeArray[i])
@@ -958,8 +988,8 @@ func createYamlFile(nodeArray []DomainData, treeContent string, fileName string)
 
 func writeBranches(treeFp *os.File, path string) {
 	branchPaths := decomposePath(path)
-	for i := 0 ; i < len(branchPaths) ; i++ {
-		if (!inBranchList(branchPaths[i])) {
+	for i := 0; i < len(branchPaths); i++ {
+		if !inBranchList(branchPaths[i]) {
 			writeBranch(treeFp, branchPaths[i])
 			addToBranchList(branchPaths[i])
 		}
@@ -967,8 +997,8 @@ func writeBranches(treeFp *os.File, path string) {
 }
 
 func inBranchList(branchPath string) bool {
-	for i := 0 ; i < len(branchPathList) ; i++ {
-		if (branchPath == branchPathList[i]) {
+	for i := 0; i < len(branchPathList); i++ {
+		if branchPath == branchPathList[i] {
 			return true
 		}
 	}
@@ -980,9 +1010,9 @@ func addToBranchList(branchPath string) {
 }
 
 func writeBranch(treeFp *os.File, branchPath string) {
-	treeFp.Write([]byte(branchPath + ":\n"))	
-	treeFp.Write([]byte("  type: branch\n"))	
-	treeFp.Write([]byte("  description: " + branchPath + "\n"))	
+	treeFp.Write([]byte(branchPath + ":\n"))
+	treeFp.Write([]byte("  type: branch\n"))
+	treeFp.Write([]byte("  description: " + branchPath + "\n"))
 	treeFp.Write([]byte("\n"))
 }
 
@@ -990,7 +1020,7 @@ func decomposePath(path string) []string {
 	var branchPaths []string
 	segments := strings.Count(path, ".")
 	lead := 0
-	for i := 0 ; i <= segments ; i++ {
+	for i := 0; i <= segments; i++ {
 		trail := strings.Index(path[lead:], ".") + lead
 		branchPaths = append(branchPaths, path[:trail])
 		lead = trail + 1
@@ -1000,52 +1030,52 @@ func decomposePath(path string) []string {
 
 func writeYamlNode(treeFp *os.File, node DomainData) {
 	treeFp.Write([]byte(node.Path + ":\n"))
-	if (len(node.Type) > 0) {
+	if len(node.Type) > 0 {
 		treeFp.Write([]byte("  type: " + node.Type + "\n"))
 	}
-	if (len(node.Datatype) > 0) {
+	if len(node.Datatype) > 0 {
 		datatype := node.Datatype
-		if (datatype == "state_encoded") {
+		if datatype == "state_encoded" {
 			datatype = "string"
 		}
 		treeFp.Write([]byte("  datatype: " + datatype + "\n"))
 	}
-	if (len(node.Min) > 0) {
+	if len(node.Min) > 0 {
 		treeFp.Write([]byte("  min: " + node.Min + "\n"))
 	}
-	if (len(node.Max) > 0) {
+	if len(node.Max) > 0 {
 		treeFp.Write([]byte("  max: " + node.Max + "\n"))
 	}
-	if (len(node.Unit) > 0) {
+	if len(node.Unit) > 0 {
 		treeFp.Write([]byte("  unit: " + node.Unit + "\n"))
 	}
-	if (len(node.Default) > 0) {
+	if len(node.Default) > 0 {
 		if strings.Contains(node.Default, "[") {
 			treeFp.Write([]byte("  default:\n"))
 			defaultValues := extractJsonData(node.Default)
-			for i := 0 ; i < len(defaultValues) ; i++ {
+			for i := 0; i < len(defaultValues); i++ {
 				treeFp.Write([]byte("  - '" + defaultValues[i] + "'\n")) //python needs ' around integer to treat it as string
 			}
 		} else {
 			treeFp.Write([]byte("  default: " + node.Default + "\n"))
 		}
 	}
-	if (len(node.Uid) > 0) {
+	if len(node.Uid) > 0 {
 		treeFp.Write([]byte("  uuid: " + node.Uid + "\n"))
 	}
-	if (len(node.EnumValues) > 0 && node.Datatype != "boolean") {
+	if len(node.EnumValues) > 0 && node.Datatype != "boolean" {
 		treeFp.Write([]byte("  allowed:\n"))
 		enumValues := extractJsonData(node.EnumValues)
-		for i := 0 ; i < len(enumValues) ; i++ {
+		for i := 0; i < len(enumValues); i++ {
 			treeFp.Write([]byte("  - '" + enumValues[i] + "'\n")) //python needs ' around integer to treat it as string
 		}
 	}
-	if (len(node.Description) > 0) {
+	if len(node.Description) > 0 {
 		treeFp.Write([]byte("  description: " + node.Description + "\n"))
 	} else {
-		treeFp.Write([]byte("  description: " + node.Path + "\n"))   // mandatory property in VSS-Tools
+		treeFp.Write([]byte("  description: " + node.Path + "\n")) // mandatory property in VSS-Tools
 	}
-	if (len(node.Comment) > 0) {
+	if len(node.Comment) > 0 {
 		treeFp.Write([]byte("  comment: " + node.Comment + "\n"))
 	}
 	treeFp.Write([]byte("\n"))
@@ -1074,8 +1104,8 @@ func extractJsonData(jsonLiteral string) []string { // {"Key1":"value1", .., "Ke
 func extractJsonDataLevel1(jsonMap interface{}) []string {
 	switch vv := jsonMap.(type) {
 	case map[string]interface{}:
-//		fmt.Println(vv, "is an object")
-			return extractJsonDataLevel2(vv)
+		//		fmt.Println(vv, "is an object")
+		return extractJsonDataLevel2(vv)
 	default:
 		fmt.Printf("extractJsonDataLevel1: %s is of an unknown type\n", vv)
 	}
@@ -1088,8 +1118,8 @@ func extractJsonDataLevel2(jsonObject map[string]interface{}) []string {
 	for k, v := range jsonObject {
 		switch v.(type) {
 		case string:
-//			fmt.Println(k, "is a string:")
-			valueArray[i] = k  // key holds the VSS enum value
+			//			fmt.Println(k, "is a string:")
+			valueArray[i] = k // key holds the VSS enum value
 		default:
 			fmt.Printf("extractJsonDataLevel2: %s is of an unknown type\n", k)
 		}
@@ -1099,7 +1129,7 @@ func extractJsonDataLevel2(jsonObject map[string]interface{}) []string {
 	return valueArray
 }
 
-func 	readUnitScaleData(yamlFileName string) {
+func readUnitScaleData(yamlFileName string) {
 	if !fileExists(yamlFileName) {
 		fmt.Printf("%s does not exist.\n", yamlFileName)
 		return
@@ -1136,11 +1166,11 @@ func 	readUnitScaleData(yamlFileName string) {
 			fmt.Printf("Error unknown key value=%s\n", text)
 		}
 	}
-	unitScaleList = append(unitScaleList, unitConversionElem)  // add last scaling element
+	unitScaleList = append(unitScaleList, unitConversionElem) // add last scaling element
 	file.Close()
 }
 
-func readArray(scanner *bufio.Scanner) (string, string) { 
+func readArray(scanner *bufio.Scanner) (string, string) {
 	var text string
 	firstLineAfterArrayElem := ""
 	array := "["
@@ -1150,21 +1180,21 @@ func readArray(scanner *bufio.Scanner) (string, string) {
 			array += `"` + readArrayValue(text) + `", `
 		} else if !isEmptyLine(text) {
 			firstLineAfterArrayElem = text
-//			fmt.Printf("firstLineAfterArrayElem=%s\n", firstLineAfterArrayElem)
+			//			fmt.Printf("firstLineAfterArrayElem=%s\n", firstLineAfterArrayElem)
 			break
 		}
 	}
-	if len(array) > 1  {
+	if len(array) > 1 {
 		array = array[:len(array)-2] + "]"
 	} else {
 		return "", ""
 	}
-	return array, firstLineAfterArrayElem	
+	return array, firstLineAfterArrayElem
 }
 
 func isEmptyLine(line string) bool {
-	for i := 0 ; i < len(line) ;  i++ {
-		if (line[i] != ' ') {
+	for i := 0; i < len(line); i++ {
+		if line[i] != ' ' {
 			return false
 		}
 	}
@@ -1210,14 +1240,20 @@ func main() {
 	readUnitScaleData("UnitScaling.yaml")
 	domainData = make([]DomainData, 2)
 	db = initDb(*DctDb, db)
-        defer db.Close()
+	defer db.Close()
 	fmt.Printf("Opened database %s for the task %s\n", *DctDb, *taskSelector)
 	switch *taskSelector {
-		case "domains": showDomains()
-		case "datamodel": createDomainDatamodel()
-		case "import": populateTable()
-		case "join": createConversionTable()
-		case "createfiles": createConversionFiles()
-		default: fmt.Printf("Unsupported task.\n")
+	case "domains":
+		showDomains()
+	case "datamodel":
+		createDomainDatamodel()
+	case "import":
+		populateTable()
+	case "join":
+		createConversionTable()
+	case "createfiles":
+		createConversionFiles()
+	default:
+		fmt.Printf("Unsupported task.\n")
 	}
 }

@@ -1,7 +1,7 @@
 /**
 * (C) 2023 Ford Motor Company
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -10,16 +10,16 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"github.com/akamensky/argparse"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
+	"github.com/gorilla/websocket"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
-	"net/http"
-	"github.com/gorilla/websocket"
-	"flag"
-	"net/url"
 )
 
 type DomainData struct {
@@ -41,15 +41,15 @@ var canDriverUrl string
 func initVehicleInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData) {
 	CanDriverOutputChan := make(chan DomainData, 1)
 	CanDriverInputChan := make(chan DomainData, 1)
-	go initCanDriverOutput(CanDriverOutputChan)  // RxData
-	go initCanDriverInput(CanDriverInputChan)    // TxData
+	go initCanDriverOutput(CanDriverOutputChan) // RxData
+	go initCanDriverInput(CanDriverInputChan)   // TxData
 
 	for {
 		select {
 		case outData := <-outputChan:
 			utils.Info.Printf("Data from the vehicle interface: Name=%s, Value=%s", outData.Name, outData.Value)
 			CanDriverOutputChan <- outData
-		case inData := <- CanDriverInputChan:
+		case inData := <-CanDriverInputChan:
 			utils.Info.Printf("Data to the vehicle interface: Name=%s, Value=%s", inData.Name, inData.Value)
 		}
 	}
@@ -72,18 +72,18 @@ func initCanDriverOutput(outputChan chan DomainData) { // CAN driver WS client -
 func canDriverClient(conn *websocket.Conn, clientChan chan DomainData) {
 	defer conn.Close()
 	for {
-		domainData := <- clientChan
-		request := `{"path":"` + domainData.Name + `", "value":"` + domainData.Value + `"}` 
+		domainData := <-clientChan
+		request := `{"path":"` + domainData.Name + `", "value":"` + domainData.Value + `"}`
 		err := conn.WriteMessage(websocket.BinaryMessage, []byte(request))
 		if err != nil {
 			utils.Error.Printf("canDriverClient:Request write error:%s\n", err)
-			return 
+			return
 		}
 	}
 }
 
 func reDialer(dialer websocket.Dialer, sessionUrl url.URL) *websocket.Conn {
-	for i := 0 ; i < 15 ; i++ {
+	for i := 0; i < 15; i++ {
 		conn, _, err := dialer.Dial(sessionUrl.String(), nil)
 		if err != nil {
 			utils.Error.Printf("Data session dial error:%s\n", err)
@@ -95,7 +95,7 @@ func reDialer(dialer websocket.Dialer, sessionUrl url.URL) *websocket.Conn {
 	return nil
 }
 
-func initCanDriverInput(inputChan chan DomainData) {  // CAN driver WS server -> TxData
+func initCanDriverInput(inputChan chan DomainData) { // CAN driver WS server -> TxData
 	serverHandler := makeServerHandler(inputChan)
 	MuxServer[0].HandleFunc("/", serverHandler)
 	utils.Error.Fatal(http.ListenAndServe(":8002", MuxServer[0]))
@@ -135,7 +135,7 @@ func serverSession(conn *websocket.Conn, serverChannel chan DomainData) {
 	}
 }
 
-func convertToDomainData(message string) DomainData {  // {"path":"x.y.z", "value":"123"}
+func convertToDomainData(message string) DomainData { // {"path":"x.y.z", "value":"123"}
 	var domainData DomainData
 	var messageMap map[string]interface{}
 	err := json.Unmarshal([]byte(message), &messageMap)
@@ -158,32 +158,32 @@ func fileExists(filename string) bool {
 }
 
 func readBytes(numOfBytes uint32, treeFp *os.File) []byte {
-	if (numOfBytes > 0) {
-	    buf := make([]byte, numOfBytes)
-	    treeFp.Read(buf)
-	    return buf
+	if numOfBytes > 0 {
+		buf := make([]byte, numOfBytes)
+		treeFp.Read(buf)
+		return buf
 	}
 	return nil
 }
 
 func deSerializeUInt(buf []byte) interface{} {
-    switch len(buf) {
-      case 1:
-        var intVal uint8
-        intVal = (uint8)(buf[0])
-        return intVal
-      case 2:
-        var intVal uint16
-        intVal = (uint16)((uint16)((uint16)(buf[1])*256) + (uint16)(buf[0]))
-        return intVal
-      case 4:
-        var intVal uint32
-        intVal = (uint32)((uint32)((uint32)(buf[3])*16777216) + (uint32)((uint32)(buf[2])*65536) + (uint32)((uint32)(buf[1])*256) + (uint32)(buf[0]))
-        return intVal
-      default:
-        utils.Error.Printf("Buffer length=%d is of an unknown size", len(buf))
-        return nil
-    }
+	switch len(buf) {
+	case 1:
+		var intVal uint8
+		intVal = (uint8)(buf[0])
+		return intVal
+	case 2:
+		var intVal uint16
+		intVal = (uint16)((uint16)((uint16)(buf[1])*256) + (uint16)(buf[0]))
+		return intVal
+	case 4:
+		var intVal uint32
+		intVal = (uint32)((uint32)((uint32)(buf[3])*16777216) + (uint32)((uint32)(buf[2])*65536) + (uint32)((uint32)(buf[1])*256) + (uint32)(buf[0]))
+		return intVal
+	default:
+		utils.Error.Printf("Buffer length=%d is of an unknown size", len(buf))
+		return nil
+	}
 }
 
 func main() {
@@ -211,7 +211,7 @@ func main() {
 
 	utils.InitLog("feeder-log.txt", "./logs", *logFile, *logLevel)
 
-	canSignals := []string{"LVoltSysSt", "GpsFxTy", "GpsLong", "TrMetRead", "VehSpd"}  // simulated signals
+	canSignals := []string{"LVoltSysSt", "GpsFxTy", "GpsLong", "TrMetRead", "VehSpd"} // simulated signals
 
 	vehicleInputChan := make(chan DomainData, 1)
 	vehicleOutputChan := make(chan DomainData, 1)
@@ -225,7 +225,7 @@ func main() {
 			utils.Info.Printf("CAN Driver: TXData received. Path = %s, Value=%s", vehicleInData.Name, vehicleInData.Value)
 		default:
 			time.Sleep(10 * time.Second)
-			var domainData DomainData  // simulated input data
+			var domainData DomainData // simulated input data
 			domainData.Name = canSignals[rand.Intn(len(canSignals))]
 			domainData.Value = strconv.Itoa(rand.Intn(2))
 			vehicleOutputChan <- domainData

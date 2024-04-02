@@ -5,7 +5,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -17,10 +17,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apache/iotdb-client-go/client"
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/w3c/automotive-viss2/utils"
 	"io"
 	"net"
 	"net/http"
@@ -79,7 +79,7 @@ var historySupport bool
 
 // Apache IoTDB
 var IoTDBsession client.Session
-var IoTDBClientConfig = &client.Config {
+var IoTDBClientConfig = &client.Config{
 	Host:     "127.0.0.1",
 	Port:     "6667",
 	UserName: "root",
@@ -87,16 +87,16 @@ var IoTDBClientConfig = &client.Config {
 }
 
 type IoTDBConfiguration struct {
-	Host string		`json:"host"`
-	Port string		`json:"port"`
-	UserName string `json:"username"`
-	Password string `json:"password"`
+	Host       string `json:"host"`
+	Port       string `json:"port"`
+	UserName   string `json:"username"`
+	Password   string `json:"password"`
 	PrefixPath string `json:"queryPrefixPath"`
-	Timeout int64	`json:"queryTimeout(ms)"`
+	Timeout    int64  `json:"queryTimeout(ms)"`
 }
 
 // Default IoTDB connector configuration
-var IoTDBConfig = IoTDBConfiguration {
+var IoTDBConfig = IoTDBConfiguration{
 	"127.0.0.1",
 	"6667",
 	"root",
@@ -104,7 +104,6 @@ var IoTDBConfig = IoTDBConfiguration {
 	"root.test2.dev1",
 	5000,
 }
-
 
 var dummyValue int // dummy value returned when DB configured to none. Counts from 0 to 999, wrap around, updated every 47 msec
 
@@ -513,10 +512,10 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		var (
 			// Back-quote the VSS node for the DB query, e.g. `Vehicle.CurrentLocation.Longitude`
 			selectLastSQL = fmt.Sprintf("select last `%v` from %v", path, IoTDBConfig.PrefixPath)
-			value = ""
-			ts = ""
+			value         = ""
+			ts            = ""
 		)
-//		utils.Info.Printf("IoTDB: query using: %v", selectLastSQL)
+		//		utils.Info.Printf("IoTDB: query using: %v", selectLastSQL)
 		sessionDataSet, err := IoTDBsession.ExecuteQueryStatement(selectLastSQL, &IoTDBConfig.Timeout)
 		if err == nil {
 			var success bool
@@ -570,7 +569,8 @@ func setVehicleData(path string, value string) string {
 			return ""
 		}
 		return ts
-	case "memcache": fallthrough
+	case "memcache":
+		fallthrough
 	case "redis":
 		udsConn := utils.GetUdsConn(path, "serverFeeder")
 		if udsConn == nil {
@@ -590,7 +590,7 @@ func setVehicleData(path string, value string) string {
 		IoTDBts := time.Now().UTC().UnixNano() / 1000000
 
 		// IoTDB will automatically convert the value string to the native data type in the timeseries schema for basic types
-//		utils.Info.Printf("IoTDB: DB insert with prefixPath: %v vssKey: %v, vssValue: %v, ts: %v", IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts)
+		//		utils.Info.Printf("IoTDB: DB insert with prefixPath: %v vssKey: %v, vssValue: %v, ts: %v", IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts)
 		if status, err := IoTDBsession.InsertStringRecord(IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts); err != nil {
 			utils.Error.Printf("IoTDB: DB insert using InsertStringRecord failed with: %v", err)
 			return ""
@@ -1042,13 +1042,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 		err := memcacheClient.Ping()
 		if err != nil {
 			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
-				cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
-				err := cmd.Run()
-				if err != nil {
-					utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
-					// os.Exit(1) should terminate the process
-					return
-				}
+			cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
+			err := cmd.Run()
+			if err != nil {
+				utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+				// os.Exit(1) should terminate the process
+				return
+			}
 		}
 		utils.Info.Printf("Memcache daemon alive.")
 	default:
@@ -1181,7 +1181,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				isRemoved := true
 				for isRemoved == true {
 					isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
-utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
+					utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
 				}
 			case "internal-cancelsubscription":
 				routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))

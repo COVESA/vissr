@@ -5,12 +5,10 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
+	"github.com/go-redis/redis"
 	"os/exec"
-	//	"github.com/go-redis/redis"
-	"github.com/go-redis/redis/v8"
 )
 
 func main() {
@@ -20,9 +18,9 @@ func main() {
 		Password: "",
 		DB:       1,
 	})
-	ctx := context.TODO() //redis/v8
+	//ctx := context.TODO() //redis/v8
 	//    err := client.Ping().Err()
-	err := client.Ping(ctx).Err() //redis/v8
+	err := client.Ping().Err() //redis/v8
 	if err != nil {
 		//        out, err := exec.Command("redis-server", "/etc/redis/redis.conf").Output()
 		redisStartCmd := exec.Command("redis-server", "/opt/homebrew/etc/redis.conf")
