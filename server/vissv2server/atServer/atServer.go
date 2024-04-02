@@ -1223,7 +1223,7 @@ func writeToActiveList(gatingId int, at string) {
 func removeFromPendingList(index int) AtGenPayload {
 	atGenData := pendingList[index].AtGenData
 	pendingList[index].GatingId = -1
-	pendingList[i].Consent = "NOT_SET"
+	pendingList[index].Consent = "NOT_SET"
 	return atGenData
 }
 
