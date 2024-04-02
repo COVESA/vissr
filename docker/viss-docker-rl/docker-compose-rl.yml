@@ -9,6 +9,20 @@ services:
     volumes:
       - /tmp/docker/
 
+  redis:
+    image: redis
+    container_name: app_redis
+    privileged: true
+    user: root
+    command: redis-server /etc/redis.conf
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../../redis/redis.conf:/etc/redis.conf
+    volumes_from:
+      - tmp
+
+
   feeder-rl:
     container_name: feeder-rl
     user: root
@@ -27,22 +41,6 @@ services:
       #- ./feeder/feeder-rl/VehicleVssMapData.json:/app/VehicleVssMapData.json
     volumes_from:
       - tmp
-
-
-  redis:
-    image: redis
-    container_name: app_redis
-    privileged: true
-    user: root
-    command: redis-server /etc/redis.conf
-    ports:
-      - "6379:6379"
-    volumes:
-      - ../../redis/redis.conf:/etc/redis.conf
-    volumes_from:
-      - tmp
-
-
 
 
   vissv2server:
