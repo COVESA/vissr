@@ -66,7 +66,7 @@ func gRPCThread(done chan interface{}, wg *sync.WaitGroup, id int) error {
 				fmt.Printf("Error=%v when issuing request=:%s", err, vssRequest)
 				wg.Done()
 			} else {
-				fmt.Printf("THREAD ID =%d Received response:%s\n", id, pbResponse.String())
+				fmt.Printf("GRPC CLIENT ID =%d Received response:%s\n", id, pbResponse.String())
 			}
 		}
 	}
@@ -80,7 +80,7 @@ func main() {
 	done := make(chan interface{})
 	var wg sync.WaitGroup
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go gRPCThread(done, &wg, i)
 	}
