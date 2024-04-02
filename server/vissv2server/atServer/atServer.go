@@ -1188,6 +1188,7 @@ func initLists() {
 	activeList = make([]ActiveListElem, LISTSIZE)
 	for i := 0; i < LISTSIZE; i++ {
 		pendingList[i].GatingId = -1
+		pendingList[i].Consent = "NOT_SET"
 		activeList[i].GatingId = -1
 	}
 }
