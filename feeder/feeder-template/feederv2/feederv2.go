@@ -11,10 +11,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/akamensky/argparse"
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/w3c/automotive-viss2/utils"
 	"math/rand"
 	"net"
 	"os"
@@ -31,12 +31,12 @@ type DomainData struct {
 }
 
 type DataItem struct {
-	Path string  `json:"path"`
-	Dp []DpItem  `json:"dp"`
+	Path string   `json:"path"`
+	Dp   []DpItem `json:"dp"`
 }
 
 type DpItem struct {
-	Ts string    `json:"ts"`
+	Ts    string `json:"ts"`
 	Value string `json:"value"`
 }
 
@@ -275,7 +275,7 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 				time.Sleep(3 * time.Second)         // not to overload input channel
 				inputChan <- simulateInput(&simCtx) // simulating signals read from the vehicle interface
 			} else {
-				time.Sleep(1 * time.Second)         // set to the tripdata "time base"
+				time.Sleep(1 * time.Second) // set to the tripdata "time base"
 				dataPoint := getSimulatedDataPoints(dpIndex)
 				for i := 0; i < len(dataPoint); i++ {
 					inputChan <- dataPoint[i]
@@ -351,7 +351,7 @@ func readSimulatedData(fname string) []DataItem {
 
 func getSimulatedDataPoints(dpIndex int) []DomainData {
 	dataPoint := make([]DomainData, len(tripData))
-	for i := 0 ; i < len(tripData); i++ {
+	for i := 0; i < len(tripData); i++ {
 		dataPoint[i].Name = tripData[i].Path
 		dataPoint[i].Value = tripData[i].Dp[dpIndex].Value
 	}
@@ -454,7 +454,7 @@ func main() {
 		Help:     "changes log output level",
 		Default:  "info"})
 	simSource := parser.Selector("i", "simsource", []string{"vssjson", "internal"}, &argparse.Options{Required: false,
-		Help: "Simulator source must be either vssjson, or internal", Default: "internal"})  // "vehiclejson" could be added for non-converted simulator data
+		Help: "Simulator source must be either vssjson, or internal", Default: "internal"}) // "vehiclejson" could be added for non-converted simulator data
 	stateDB := parser.Selector("d", "statestorage", []string{"sqlite", "redis", "memcache", "none"}, &argparse.Options{Required: false,
 		Help: "Statestorage must be either sqlite, redis, memcache, or none", Default: "redis"})
 	dbFile := parser.String("f", "dbfile", &argparse.Options{
@@ -504,12 +504,12 @@ func main() {
 		err := memcacheClient.Ping()
 		if err != nil {
 			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
-				cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
-				err := cmd.Run()
-				if err != nil {
-					utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
-					os.Exit(1)
-				}
+			cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
+			err := cmd.Run()
+			if err != nil {
+				utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+				os.Exit(1)
+			}
 		}
 		utils.Info.Printf("Memcache daemon alive.")
 	default:
@@ -543,8 +543,8 @@ func main() {
 			if simulatedSource != "vssjson" {
 				vssOutputChan <- convertDomainData(false, vehicleInData, feederMap)
 			} else {
-//utils.Info.Printf("simulatedDataPoints:Path=%s, Value=%s", vehicleInData.Name, vehicleInData.Value)
-				vssOutputChan <- vehicleInData  // conversion not needed
+				//utils.Info.Printf("simulatedDataPoints:Path=%s, Value=%s", vehicleInData.Name, vehicleInData.Value)
+				vssOutputChan <- vehicleInData // conversion not needed
 			}
 		}
 	}

@@ -2,7 +2,7 @@
 * (C) 2021 Mitsubishi Electrics Automotive
 * (C) 2021 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -14,12 +14,12 @@ import (
 	"net"
 	"os"
 
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
 )
 
 func main() {
 	buf := make([]byte, 128)
-//	conn, err := net.Dial("unix", "/tmp/vissv2/histctrlserver.sock")
+	//	conn, err := net.Dial("unix", "/tmp/vissv2/histctrlserver.sock")
 	conn, err := net.Dial("unix", utils.GetUdsPath("Vehicle", "history"))
 	if err != nil {
 		utils.Error.Printf("HistCtrlClient:Accept failed, err = %s", err)

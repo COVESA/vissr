@@ -2,7 +2,7 @@
 * (C) 2023 Ford Motor Company
 * (C) 2023 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -14,8 +14,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"github.com/akamensky/argparse"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
-	utils "github.com/w3c/automotive-viss2/utils"
+	pb "github.com/covesa/vissr/grpc_pb"
+	utils "github.com/covesa/vissr/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

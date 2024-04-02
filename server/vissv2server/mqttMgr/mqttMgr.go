@@ -1,7 +1,7 @@
 /**
 * (C) 2022 Geotab
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/covesa/vissr/utils"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
-	"github.com/w3c/automotive-viss2/utils"
 	//	"github.com/gorilla/websocket"
 )
 
@@ -52,7 +52,7 @@ func vissV2Receiver(transportMgrChan chan string, vissv2Channel chan string) {
 	}
 }
 
-//TODO add conf file
+// TODO add conf file
 func getBrokerSocket(isSecure bool) string {
 	//	FVTAddr := os.Getenv("MQTT_BROKER_ADDR")
 

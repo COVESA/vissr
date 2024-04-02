@@ -2,7 +2,7 @@
 * (C) 2023 Ford Motor Company
 * (C) 2021 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -52,7 +52,7 @@ type UdsReg struct {
 	RootName     string `json:"root"`
 	ServerFeeder string `json:"serverFeeder"`
 	Redis        string `json:"redis"`
-	Memcache        string `json:"memcache"`
+	Memcache     string `json:"memcache"`
 	History      string `json:"history"`
 }
 
@@ -84,7 +84,7 @@ func GetUdsConn(path string, connectionName string) net.Conn {
 
 func GetUdsPath(path string, connectionName string) string {
 	root := ExtractRootName(path)
-//	Info.Printf("GetUdsPath:root=%s, connectionName=%s", root, connectionName)
+	//	Info.Printf("GetUdsPath:root=%s, connectionName=%s", root, connectionName)
 	for i := 0; i < len(udsRegList); i++ {
 		if root == udsRegList[i].RootName {
 			return getSocketPath(i, connectionName)

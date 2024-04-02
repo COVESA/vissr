@@ -5,8 +5,8 @@ package main
 import (
 	"context"
 	"fmt"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
-	"github.com/w3c/automotive-viss2/utils"
+	pb "github.com/covesa/vissr/grpc_pb"
+	"github.com/covesa/vissr/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"log"

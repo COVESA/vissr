@@ -5,7 +5,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019,2023 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -32,16 +32,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/w3c/automotive-viss2/server/vissv2server/atServer"
-	"github.com/w3c/automotive-viss2/server/vissv2server/grpcMgr"
-	"github.com/w3c/automotive-viss2/server/vissv2server/httpMgr"
-	"github.com/w3c/automotive-viss2/server/vissv2server/mqttMgr"
-	"github.com/w3c/automotive-viss2/server/vissv2server/serviceMgr"
-	"github.com/w3c/automotive-viss2/server/vissv2server/wsMgr"
+	"github.com/covesa/vissr/server/vissv2server/atServer"
+	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
+	"github.com/covesa/vissr/server/vissv2server/httpMgr"
+	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
+	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
+	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 
 	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
 	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
 )
 
 var VSSTreeRoot *gomodel.Node_t

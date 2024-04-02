@@ -5,9 +5,9 @@
 # To run with redis as state storage use docker compose. This can be used to build individual images but will not
 # run.
 
-ARG GO_VERSION=1.18.3
+ARG GO_VERSION=1.22.1
 ARG VSSTREE_NAME="vss_vissv2.binary"
-ARG BUILD_IMAGE="golang:latest"
+ARG BUILD_IMAGE="golang:1.22.1-bookworm"
 ARG RUNTIME_IMAGE="debian:bullseye-slim"
 
 #----------------------Builder-----------------------
@@ -58,17 +58,8 @@ COPY --from=builder /build/etc/redis.conf /etc/.
 EXPOSE 6379
 ENTRYPOINT ["/usr/bin/redis-server", "/etc/redis.conf" ]
 
-FROM golang:1.21-bookworm as feeder
-USER root
-WORKDIR /app
-COPY --from=builder /build/bin/feeder-rl feeder
-COPY --from=builder /build/feeder/feeder-rl/certificate.pem .
-COPY --from=builder /build/feeder/feeder-rl/config.json .
-COPY --from=builder /build/feeder/feeder-rl/VehicleVssMapData.json .
-ENTRYPOINT ["/app/feeder"]
 
-
-FROM golang:1.21-bookworm as vissv2server
+FROM golang:latest as vissv2server
 USER root
 RUN mkdir transport_sec
 WORKDIR /app
@@ -84,7 +75,17 @@ COPY --from=builder /build/server/agt_server/agt_public_key.rsa .
 ENTRYPOINT ["/app/vissv2server","-s","redis"]
 
 
-FROM golang:1.21-bookworm as agt_server
+FROM golang:latest as feeder
+USER root
+WORKDIR /app
+COPY --from=builder /build/bin/feeder-rl feeder
+COPY --from=builder /build/feeder/feeder-rl/certificate.pem .
+COPY --from=builder /build/feeder/feeder-rl/config.json .
+COPY --from=builder /build/feeder/feeder-rl/VehicleVssMapData.json .
+ENTRYPOINT ["/app/feeder"]
+
+
+FROM golang:latest as agt_server
 USER root
 RUN mkdir transport_sec
 WORKDIR /app

@@ -10,9 +10,9 @@ package main
 import (
 	"encoding/json"
 	"github.com/akamensky/argparse"
+	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	"github.com/petervolvowinz/viss-rl-interfaces"
-	"github.com/w3c/automotive-viss2/utils"
 	"log"
 	"math/rand"
 	"net"
@@ -50,7 +50,7 @@ func readFeederMap(mapFilename string) []FeederMap {
 		utils.Error.Printf("readFeederMap():unmarshal error=%s", err)
 		return nil
 	}
-	//utils.Info.Printf("readFeederMap():fMap[0].VssName=%s", fMap[0].VssName)
+	utils.Info.Printf("readFeederMap():fMap[0].VssName=%s", fMap[0].VssName)
 	return fMap
 }
 
@@ -286,6 +286,7 @@ func RemotiveLabsBroker() {
 	writerChannel := make(chan viss_rl_interfaces.ValueChannel, 1)
 	readerChannel := make(chan viss_rl_interfaces.ValueChannel, 1)
 
+	utils.Info.Printf("feeder for rl stsrting...")
 	ch := make(chan int, 2)
 	go func() {
 		err := api.WriterReader(readQuitSignal, writerChannel, readerChannel)
@@ -301,6 +302,7 @@ func RemotiveLabsBroker() {
 	go initVSSInterfaceMgr(vssInputChan, vssOutputChan)
 	go initVehicleInterfaceMgr_2(vssInputChan, writerChannel)
 
+	utils.Info.Printf("feeder for rl started")
 	for {
 		select {
 		case vssInData := <-vssInputChan:
@@ -340,6 +342,7 @@ func Simulation(mapFile *string) {
 
 func main() {
 	// Create new parser object
+
 	parser := argparse.NewParser("print", "Data feeder for the Vehicle tree") // The root node name Vehicle must be synched with the feeder-registration.json file.
 
 	mapFile := parser.String("m", "mapfile", &argparse.Options{
@@ -378,6 +381,8 @@ func main() {
 
 	utils.InitLog("feeder-log.txt", "./logs", *logFile, *logLevel)
 	utils.Info.Printf("db path is=%s", dbPath)
+	utils.Info.Printf("Running version 0.1.0")
+
 	err = TouchFile(feedChan)
 	if err != nil {
 		utils.Error.Printf("file not created error=%s", err)

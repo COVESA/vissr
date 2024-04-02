@@ -4,7 +4,7 @@ package grpcMgr
 
 import (
 	"context"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
 	"google.golang.org/grpc/stats"
 )
 
