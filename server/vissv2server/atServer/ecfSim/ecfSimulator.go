@@ -17,9 +17,6 @@ import (
 	"net/url"
 	"flag"
 	"github.com/gorilla/websocket"
-	"net/http"
-	"strings"
-	"time"
 )
 
 var muxServer = []*http.ServeMux{
@@ -79,17 +76,12 @@ func ecfClient(conn *websocket.Conn, sendChan chan string) {
 			fmt.Printf("ecfClient:Request write error:%s\n", err)
 			return
 		}
-		request := string(msg)
-		//		fmt.Printf("ecfReceiver: request: %s\n", request)
-		receiveChan <- request
 	}
 }
 
 func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
 	defer conn.Close()
 	for {
-		response := <-sendChan
-		err := conn.WriteMessage(websocket.TextMessage, []byte(response))
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Printf("ecfReceiver read error: %s\n", err)
