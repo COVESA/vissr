@@ -10,14 +10,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"time"
-	"strings"
-	"net/http"
-	"net/url"
 	"flag"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -79,17 +76,12 @@ func ecfClient(conn *websocket.Conn, sendChan chan string) {
 			fmt.Printf("ecfClient:Request write error:%s\n", err)
 			return
 		}
-		request := string(msg)
-		//		fmt.Printf("ecfReceiver: request: %s\n", request)
-		receiveChan <- request
 	}
 }
 
 func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
 	defer conn.Close()
 	for {
-		response := <-sendChan
-		err := conn.WriteMessage(websocket.TextMessage, []byte(response))
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			fmt.Printf("ecfReceiver read error: %s\n", err)
@@ -102,7 +94,7 @@ func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
 }
 
 func dispatchResponse(request string, sendChan chan string) {
-fmt.Printf("dispatchResponse: request=%s\n", request)
+	fmt.Printf("dispatchResponse: request=%s\n", request)
 	var requestMap map[string]interface{}
 	errorIndex := statusIndex
 	err := json.Unmarshal([]byte(request), &requestMap)
