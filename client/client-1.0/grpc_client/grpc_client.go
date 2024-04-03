@@ -2,7 +2,7 @@
 * (C) 2023 Ford Motor Company
 * (C) 2023 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -14,16 +14,16 @@ import (
 	"crypto/x509"
 	"fmt"
 	"github.com/akamensky/argparse"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
-	utils "github.com/w3c/automotive-viss2/utils"
+	pb "github.com/covesa/vissr/grpc_pb"
+	utils "github.com/covesa/vissr/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"os"
-	"time"
-	"strings"
 	"strconv"
+	"strings"
+	"time"
 )
 
 var clientCert tls.Certificate
@@ -39,14 +39,14 @@ var grpcCompression utils.Compression
 var commandList []string
 
 func initCommandList() {
-	commandList = make([]string, 4)  // 0->GET, 1->SET, 2->SUBSCRIBE, X%10=3->UNSUBSCRIBE
+	commandList = make([]string, 4) // 0->GET, 1->SET, 2->SUBSCRIBE, X%10=3->UNSUBSCRIBE
 
 	commandList[0] = `{"action":"get","path":"Vehicle/Speed","requestId":"232"}`
 	commandList[1] = `{"action":"set", "path":"Vehicle/Body/Lights/IsLeftIndicatorOn", "value":"true", "requestId":"245"}`
 	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},{"type":"timebased","parameter":	{"period":"5000"}}],"requestId":"246"}`
-	commandList[3] = `{"action":"unsubscribe","subscriptionId":"X","requestId":"240"}`  // X is replaced according to input
+	commandList[3] = `{"action":"unsubscribe","subscriptionId":"X","requestId":"240"}` // X is replaced according to input
 
-/* different variants
+	/* different variants
 	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed","CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
 	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","filter":{"type":"timebased","parameter":{"period":"100"}},"requestId":"246"}`
 		commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","requestId":"232"}`
@@ -56,9 +56,8 @@ func initCommandList() {
 	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","requestId":"258"}`
 	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
 	commandList[1] = {"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
-*/
+	*/
 }
-
 
 func noStreamCall(commandIndex int) {
 	var conn *grpc.ClientConn
@@ -88,8 +87,8 @@ func noStreamCall(commandIndex int) {
 	defer cancel()
 	vssRequest := commandList[commandIndex%10]
 	var vssResponse string
-	switch commandIndex%10 {
-	    case 0: //get
+	switch commandIndex % 10 {
+	case 0: //get
 		pbRequest := utils.GetRequestJsonToPb(vssRequest, grpcCompression)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err != nil {
@@ -97,14 +96,14 @@ func noStreamCall(commandIndex int) {
 			return
 		}
 		vssResponse = utils.GetResponsePbToJson(pbResponse, grpcCompression)
-	    case 1: // set
+	case 1: // set
 		pbRequest := utils.SetRequestJsonToPb(vssRequest, grpcCompression)
 		pbResponse, _ := client.SetRequest(ctx, pbRequest)
 		vssResponse = utils.SetResponsePbToJson(pbResponse, grpcCompression)
-	    case 3: //unsubscribe
-	    	subIdIndex := strings.Index(vssRequest, "X")
-	    	vssRequest = vssRequest[:subIdIndex] + strconv.Itoa(commandIndex/10) + vssRequest[subIdIndex+1:]
-	    	fmt.Printf("Unsubscribe request=:%s\n", vssRequest)
+	case 3: //unsubscribe
+		subIdIndex := strings.Index(vssRequest, "X")
+		vssRequest = vssRequest[:subIdIndex] + strconv.Itoa(commandIndex/10) + vssRequest[subIdIndex+1:]
+		fmt.Printf("Unsubscribe request=:%s\n", vssRequest)
 		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcCompression)
 		pbResponse, _ := client.UnsubscribeRequest(ctx, pbRequest)
 		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcCompression)
@@ -189,7 +188,7 @@ func main() {
 		}
 		fmt.Printf("Selected request:%s\n", commandList[commandIndex%10])
 		if commandIndex == 2 { // subscribe
-			go streamCall(commandIndex%10)
+			go streamCall(commandIndex % 10)
 		} else {
 			go noStreamCall(commandIndex)
 		}

@@ -1,7 +1,7 @@
 /**
 * (C) 2023 Ford Motor Company
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -11,19 +11,18 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
-	utils "github.com/w3c/automotive-viss2/utils"
+	pb "github.com/covesa/vissr/grpc_pb"
+	utils "github.com/covesa/vissr/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"net"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 var grpcCompression utils.Compression
 var grpcMgrId int
 var grpcMgrChan chan string
-
 
 type GrpcRequestMessage struct {
 	VssReq       string
@@ -120,7 +119,7 @@ func setGrpcRoutingData(clientId int, grpcRespChan chan string, isMultipleEvent 
 }
 
 func resetGrpcRoutingData(clientId int) {
-	//utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
+	utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			grpcRoutingDataList[i].ClientId = -1
@@ -148,13 +147,13 @@ func RemoveRoutingForwardResponse(response string) {
 }
 
 func updateRoutingList(resp string, clientId int, isMultipleEvent bool) {
-utils.Info.Printf("updateRoutingList:message=%s", resp)
+	utils.Info.Printf("updateRoutingList:message=%s", resp)
 	if strings.Contains(resp, "unsubscribe") {
 		subscribeClientId, subscribeChan := getSubscribeRoutingData(resp)
 		subscribeChan <- KILL_MESSAGE + " clientId:" + strconv.Itoa(subscribeClientId)
 		resetGrpcRoutingData(clientId)
-//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
-	} else 	if !isMultipleEvent { // get and set
+		//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
+	} else if !isMultipleEvent { // get and set
 		resetGrpcRoutingData(clientId)
 	} else if strings.Contains(resp, "subscribe") { // update routing info with subscriptionId
 		if !strings.Contains(resp, "subscriptionId") { // error
@@ -197,7 +196,7 @@ func initGrpcServer() {
 		portNo = utils.SecureConfiguration.GrpcSecPort
 		utils.Info.Printf("initGrpcServer:port number=%s", portNo)
 	} else {
-		server = grpc.NewServer()
+		server = grpc.NewServer(grpc.StatsHandler(&Handler{}))
 		portNo = "8887"
 		utils.Info.Printf("portNo =%s", portNo)
 	}
@@ -255,32 +254,32 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 	subscribeClientId := -1
 	for {
 		select {
-			case <-stream.Context().Done():
-				utils.Info.Printf("gRPC subscribe session terminated by client")
-				// issue message to servicemgr about subscription termination
-utils.AddRoutingForwardRequest(`{"action":"internal-killsubscriptions"}`, grpcMgrId, subscribeClientId, grpcMgrChan)
-				resetGrpcRoutingData(subscribeClientId)
+		case <-stream.Context().Done():
+			utils.Info.Printf("gRPC subscribe session terminated by client")
+			// issue message to servicemgr about subscription termination
+			utils.AddRoutingForwardRequest(`{"action":"internal-killsubscriptions"}`, grpcMgrId, subscribeClientId, grpcMgrChan)
+			resetGrpcRoutingData(subscribeClientId)
+			return nil
+		case vssResp := <-grpcResponseChan: //  forward subscribe response and following events
+			if strings.Contains(vssResp, KILL_MESSAGE) { //issued by unsubscribe thread
+				clientId := extractClientId(vssResp)
+				resetGrpcRoutingData(clientId)
 				return nil
-			case vssResp := <-grpcResponseChan: //  forward subscribe response and following events
-				if strings.Contains(vssResp, KILL_MESSAGE) {  //issued by unsubscribe thread
-					clientId := extractClientId(vssResp)
-					resetGrpcRoutingData(clientId)
-					return nil
-				}
-				if subscribeClientId == -1 {
-					subscribeClientId, _ = getSubscribeRoutingData(vssResp)
-				}
-				pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
-				if err := stream.Send(pbResp); err != nil {
-					resetGrpcRoutingData(subscribeClientId)
-					return err
-				}
 			}
+			if subscribeClientId == -1 {
+				subscribeClientId, _ = getSubscribeRoutingData(vssResp)
+			}
+			pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
+			if err := stream.Send(pbResp); err != nil {
+				resetGrpcRoutingData(subscribeClientId)
+				return err
+			}
+		}
 	}
 	return nil
 }
 
-func extractClientId(killMessage string) int {  // mesage contains clientId:xyz
+func extractClientId(killMessage string) int { // mesage contains clientId:xyz
 	delimIndex := strings.Index(killMessage, ":")
 	clientId, _ := strconv.Atoi(killMessage[delimIndex+1:])
 	return clientId
@@ -305,6 +304,7 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 			RemoveRoutingForwardResponse(respMessage)
 		case reqMessage := <-grpcClientChan[0]:
 			clientId := getClientId()
+			utils.Info.Print("****************** New gRPC client session ************************: " + reqMessage.VssReq + " clientId=" + strconv.Itoa(clientId))
 			if clientId != -1 {
 				isMultipleEvents := false
 				if !strings.Contains(reqMessage.VssReq, "unsubscribe") && strings.Contains(reqMessage.VssReq, "subscribe") {

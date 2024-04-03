@@ -2,7 +2,7 @@
 * (C) 2022 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -44,20 +44,20 @@ const (
 )
 
 type ErrorInformation struct {
-	Number string
-	Reason string
+	Number  string
+	Reason  string
 	Message string
 }
 
 var ErrorInfoList [8]ErrorInformation = [8]ErrorInformation{
-	{"400","bad_request","The request is malformed."},
-	{"400","invalid_data","Data present in the request is invalid."},
-	{"401","expired_token","Access token has expired."},
-	{"401","invalid_token","Access token is invalid."},
-	{"401","missing_token","Access token is missing."},
-	{"403","forbidden_request","The server refuses to carry out the request."},
-	{"404","unavailable_data","The requested data was not found."},
-	{"503","service_unavailable","The server is temporarily unable to handle the request."}}
+	{"400", "bad_request", "The request is malformed."},
+	{"400", "invalid_data", "Data present in the request is invalid."},
+	{"401", "expired_token", "Access token has expired."},
+	{"401", "invalid_token", "Access token is invalid."},
+	{"401", "missing_token", "Access token is missing."},
+	{"403", "forbidden_request", "The server refuses to carry out the request."},
+	{"404", "unavailable_data", "The requested data was not found."},
+	{"503", "service_unavailable", "The server is temporarily unable to handle the request."}}
 
 var MuxServer = []*http.ServeMux{
 	http.NewServeMux(), // for app client HTTP sessions

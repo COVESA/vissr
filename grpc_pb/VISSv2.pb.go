@@ -2,7 +2,7 @@
 // (C) 2023 Ford Motor Company
 // (C) 2021 Geotab
 //
-// All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+// All files and artifacts in the repository at https://github.com/covesa/vissr
 // are licensed under the provisions of the license provided by the LICENSE file in this repository.
 //
 

@@ -5,7 +5,7 @@
 # To run with redis as state storage use docker compose. This can be used to build individual images but will not
 # run.
 
-ARG GO_VERSION=1.18.3
+ARG GO_VERSION=1.22.1
 ARG VSSTREE_NAME="vss_vissv2.binary"
 ARG BUILD_IMAGE="golang:latest"
 ARG RUNTIME_IMAGE="debian:bullseye-slim"
@@ -32,7 +32,7 @@ COPY go.mod go.sum ./
 #RUN ls -a etc/
 
 #copy cert info from testCredGen to path expected by w3c server
-COPY testCredGen/ca transport_sec/ca
+#COPY testCredGen/ca transport_sec/ca
 COPY testCredGen/server transport_sec/server
 COPY testCredGen/client transport_sec/client
 
@@ -50,7 +50,7 @@ RUN apt-get autoremove -y
 COPY --from=builder /build/transport_sec/ ../transport_sec/.
 
 
-FROM golang:1.21-bookworm as agt_server
+FROM golang:latest as agt_server
 USER root
 RUN mkdir transport_sec
 WORKDIR /app

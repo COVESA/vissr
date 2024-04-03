@@ -9,8 +9,8 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	pb "github.com/w3c/automotive-viss2/grpc_pb"
-	"github.com/w3c/automotive-viss2/utils"
+	pb "github.com/covesa/vissr/grpc_pb"
+	"github.com/covesa/vissr/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"log"
@@ -332,7 +332,7 @@ func TestLongTermTokenAccess(t *testing.T) {
 
 	log.Printf("got token = %s", post.Token)
 	var Agt utils.ExtendedJwt
-	err = Agt.DecodeFromFull(post.Token) // parsing the JWT token
+	err = Agt.DecodeFromFull(post.Token) // parsing the JWT tokenU
 	vin := Agt.PayloadClaims["vin"]
 	ctx := Agt.PayloadClaims["clx"]
 	iat, err := strconv.Atoi(Agt.PayloadClaims["iat"])

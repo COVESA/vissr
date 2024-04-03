@@ -2,7 +2,7 @@
 * (C) 2023 Ford Motor Company
 * (C) 2020 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -25,8 +25,8 @@ import (
 
 	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
 	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
+	"github.com/covesa/vissr/utils"
 	"github.com/google/uuid"
-	"github.com/w3c/automotive-viss2/utils"
 )
 
 var VSSTreeRoot *gomodel.Node_t

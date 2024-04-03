@@ -1,7 +1,7 @@
 /**
 * (C) 2023 Ford Motor Company
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -12,9 +12,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/akamensky/argparse"
+	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/w3c/automotive-viss2/utils"
 	"net"
 	"os"
 	"sort"

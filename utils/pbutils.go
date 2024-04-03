@@ -1,7 +1,7 @@
 /**
 * (C) 2021 Geotab
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -9,10 +9,9 @@ package utils
 
 import (
 	"encoding/json"
-	"strconv"
-
+	pb "github.com/covesa/vissr/protobuf/protoc-out"
 	"github.com/golang/protobuf/proto"
-	pb "github.com/w3c/automotive-viss2/protobuf/protoc-out"
+	"strconv"
 )
 
 //var currentCompression Compression
@@ -936,7 +935,7 @@ func getJsonError_pb(protoMessage *pb.ProtobufMessage, mMethod pb.MessageMethod)
 	return `,"error":{"number":"` + number + `","reason":"` + reason + `","message":"` + message + `"}`
 }
 
-//      *******************************Only for testing during dev ***************************************
+// *******************************Only for testing during dev ***************************************
 func testPrintProtoMessage(protoMessage *pb.ProtobufMessage) {
 	switch protoMessage.GetMethod() {
 	case 0: // GET

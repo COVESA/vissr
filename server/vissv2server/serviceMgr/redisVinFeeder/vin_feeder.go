@@ -3,13 +3,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/covesa/vissr/utils"
+	"github.com/go-redis/redis"
 	"os"
 	"time"
-	//"github.com/go-redis/redis"
-	"github.com/go-redis/redis/v8"
 )
 
 type RedisDp struct {
@@ -21,8 +19,8 @@ var feederClient *redis.Client
 
 func redisSet(client *redis.Client, path string, val string, ts string) int {
 	dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
-	ctx := context.TODO()
-	err := client.Set(ctx, path, dp, time.Duration(0)).Err()
+	// ctx := context.TODO()
+	err := client.Set(path, dp, time.Duration(0)).Err()
 	if err != nil {
 		fmt.Printf("Job failed. Err=%s\n", err)
 		return -1

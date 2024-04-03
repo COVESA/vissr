@@ -1,7 +1,7 @@
 /**
 * (C) 2023 Ford Motor Company
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"net/url"
 	"flag"
 	"github.com/gorilla/websocket"
-	"encoding/json"
 )
 
 var muxServer = []*http.ServeMux{
@@ -100,7 +100,7 @@ fmt.Printf("dispatchResponse: request=%s\n", request)
 	err := json.Unmarshal([]byte(request), &requestMap)
 	if err != nil {
 		fmt.Printf("dispatchResponse:Request unmarshal error=%s", err)
-		errorIndex = 1  //bad request
+		errorIndex = 1 //bad request
 	}
 	response := `{"action":"` + requestMap["action"].(string) + `", "status":"` + replyStatus[errorIndex] + `"}`
 	sendChan <- response
@@ -119,27 +119,27 @@ func uiDialogue(request string) string {
 	fmt.Printf("Select action: 0:Consent reply=YES / 1:Consent reply=NO / 2: Postpone consent reply: ")
 	fmt.Scanf("%s", &actionNum)
 	switch actionNum {
-		case "0":
-			if prepareCancelRequest(request) {
-				var cancelSecs int
-				fmt.Printf("Time to activate event to cancel request in seconds: ")
-				fmt.Scanf("%d", &cancelSecs)
-				cancelTicker.Reset(time.Duration(cancelSecs) * time.Second)
-				cancelRequest = request
-			}
-			return createReply(request, true)
-		case "1":
-			return createReply(request, false)
-		case "2":
-			var postponSecs int
-			fmt.Printf("Time to postpone in seconds: ")
-			fmt.Scanf("%d", &postponSecs)
-			postponeTicker.Reset(time.Duration(postponSecs) * time.Second)
-			postponedRequest = request
-			return ""
-		default:
-			fmt.Printf("Invalid action.")
-			return ""
+	case "0":
+		if prepareCancelRequest(request) {
+			var cancelSecs int
+			fmt.Printf("Time to activate event to cancel request in seconds: ")
+			fmt.Scanf("%d", &cancelSecs)
+			cancelTicker.Reset(time.Duration(cancelSecs) * time.Second)
+			cancelRequest = request
+		}
+		return createReply(request, true)
+	case "1":
+		return createReply(request, false)
+	case "2":
+		var postponSecs int
+		fmt.Printf("Time to postpone in seconds: ")
+		fmt.Scanf("%d", &postponSecs)
+		postponeTicker.Reset(time.Duration(postponSecs) * time.Second)
+		postponedRequest = request
+		return ""
+	default:
+		fmt.Printf("Invalid action.")
+		return ""
 	}
 	return ""
 }
@@ -180,7 +180,7 @@ func createReply(request string, consent bool) string {
 		fmt.Printf("createReply:Request unmarshal error=%s", err)
 		return ""
 	} else {
-		return `{"action":"consent-reply", "consent":"` + yesNo +  `", "messageId":"` + requestMap["messageId"].(string) + `"}`
+		return `{"action":"consent-reply", "consent":"` + yesNo + `", "messageId":"` + requestMap["messageId"].(string) + `"}`
 	}
 }
 
@@ -196,10 +196,10 @@ func main() {
 
 	for {
 		select {
-		  case message := <-receiveChan:
+		case message := <-receiveChan:
 			fmt.Printf("Message received=%s\n", message)
 			if !strings.Contains(message, "status\":") {
-			  	dispatchResponse(message, sendChan)
+				dispatchResponse(message, sendChan)
 				reply := uiDialogue(message)
 				if reply != "" {
 					fmt.Printf("Reply to atServer=%s\n", reply)
