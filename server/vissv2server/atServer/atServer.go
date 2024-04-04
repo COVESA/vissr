@@ -207,7 +207,7 @@ func initEcfComm(ecfReceiveChan chan string, ecfSendChan chan string, muxServer 
 func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		if req.Header.Get("Upgrade") == "websocket" {
-			utils.Info.Printf("Received websocket request: we are upgrading to a websocket connection.\n")
+			utils.Info.Printf("Received websocket request: we are upgrading to a websocket connection.")
 			Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 			h := http.Header{}
 			conn, err := Upgrader.Upgrade(w, req, h)
@@ -215,21 +215,22 @@ func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.Res
 				utils.Error.Print("upgrade error:", err)
 				return
 			}
-			go ecfReceiver(conn, receiveChan)
+			go ecfReceiver(conn, receiveChan, sendChan)
 			go ecfSender(conn, sendChan)
 			receiveChan <- "internal-ecfAvailable"
 		} else {
-			utils.Info.Printf("Client must set up a Websocket session.\n")
+			utils.Info.Printf("Client must set up a Websocket session.")
 		}
 	}
 }
 
-func ecfReceiver(conn *websocket.Conn, receiveChan chan string) {
+func ecfReceiver(conn *websocket.Conn, receiveChan chan string, sendChan chan string) {
 	defer conn.Close()
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			utils.Error.Printf("ECF server read error: %s\n", err)
+			utils.Info.Printf("ecfReceiver read error: %s", err)
+			sendChan <- "internal-ecfReceiver-killed"
 			break
 		}
 		request := string(msg)
@@ -242,10 +243,13 @@ func ecfSender(conn *websocket.Conn, sendChan chan string) {
 	defer conn.Close()
 	for {
 		response := <- sendChan
+		if response == "internal-ecfReceiver-killed" {
+			utils.Info.Printf("ecfSender termination")
+			break
+		}
 		err := conn.WriteMessage(websocket.TextMessage, []byte(response))
 		if err != nil {
-			utils.Error.Printf("ecfSender: write error: %s\n", err)
-			break
+			utils.Error.Printf("ecfSender: write error: %s", err)
 		}
 	}
 }
@@ -663,10 +667,11 @@ func consentInquiryResponse(input string) string {
 				removeFromPendingList(i)
 				return `{"action": "at-inquiry", "consent":"NO"}`
 			} else { // YES or IN_VEHICLE
+				consent := pendingList[i].Consent
 				atGenData := removeFromPendingList(i)
 				at := generateAt(atGenData)
 				writeToActiveList(gatingId, at)
-				return `{"action": "at-inquiry", "aToken":"` + at + `", "consent":"` + pendingList[i].Consent + `"}`
+				return `{"action": "at-inquiry", "aToken":"` + at + `", "consent":"` + consent + `"}`
 			}
 		}
 	}
