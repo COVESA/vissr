@@ -7,7 +7,7 @@
 
 ARG GO_VERSION=1.22.1
 ARG VSSTREE_NAME="vss_vissv2.binary"
-ARG BUILD_IMAGE="golang:latest"
+ARG BUILD_IMAGE="golang:1.22.1-bookworm"
 ARG RUNTIME_IMAGE="debian:bullseye-slim"
 
 #----------------------Builder-----------------------

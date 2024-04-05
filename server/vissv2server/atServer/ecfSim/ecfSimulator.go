@@ -10,13 +10,13 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"time"
-	"strings"
+	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
-	"flag"
-	"github.com/gorilla/websocket"
+	"strings"
+	"time"
 )
 
 var muxServer = []*http.ServeMux{
@@ -94,7 +94,7 @@ func ecfReceiver(conn *websocket.Conn, ecfReceiveChan chan string) {
 }
 
 func dispatchResponse(request string, sendChan chan string) {
-fmt.Printf("dispatchResponse: request=%s\n", request)
+	fmt.Printf("dispatchResponse: request=%s\n", request)
 	var requestMap map[string]interface{}
 	errorIndex := statusIndex
 	err := json.Unmarshal([]byte(request), &requestMap)
