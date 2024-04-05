@@ -12,21 +12,21 @@
     <title>VISSv2 Server :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1712302719" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1712302719" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1712316641" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1712316641" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1712302719" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1712316641" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1712302719"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1712316641"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1712302719"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1712302719"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1712316641"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1712316641"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1712302719"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1712316641"></script>
 
     
   </div>
@@ -634,15 +634,30 @@
 <h4 id="vss-tree-configuration">VSS tree configuration</h4>
 <p>The server has a copy of the VSS tree that it uses to verify that client requsts are valid -
 that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token, etc.
-The tree parser that is used expects the tre to have the &lsquo;binary format&rsquo; that one of the VSS-Tools genertes from the vspec files.
+The tree parser that is used expects the tree to have the &lsquo;binary format&rsquo; that the binary exporter of the VSS-Tools generates from the vspec files.
 To generate this the <a href="https://github.com/COVESA/vehicle_signal_specification">VSS repo</a> must be cloned including the VSS-Tools submodule,
 and a file containing the binary representation must be created, which is done with the following command issued in the root directory.</p>
 <p>$ make binary</p>
+<p>However, before issuing the command above it is necessary to edit the make file to remove the &ndash;strict command parameter.
+The tool will then issue a warning in its log that an unknown attribute is detected, but the binary file is correctly generated.</p>
 <p>This generates a file with a name like &lsquo;vss_rel_4.1-dev.binary&rsquo;,
 which then needs to be renamed to &lsquo;vss_vissv2.binary&rsquo; and stored in the vissr/server/vissv2server directory.</p>
 <p>If you want to configure the tree to include access control, access control tags as described in the
 <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-selection">VISSv2 - Access Control Selection chapter</a> needs to be added to appropriate tree nodes.
-This can either be done by editing vspec files directly, or using the <a href="https://github.com/covesa/vss-tools">VSS-Tools</a> overlay mechanism.</p>
+This can either be done by editing vspec files directly (example below), or using the <a href="https://github.com/covesa/vss-tools">VSS-Tools</a> overlay mechanism.</p>
+<p>Adding read-write access control to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
+If consent also should be required then switch the commenting between the two validate statements.</p>
+<pre tabindex="0"><code>Vehicle:
+  type: branch
+#  validate: read-write+consent
+  validate: read-write
+  description: High-level vehicle data.
+</code></pre><p>The above validate statement is inherited by all of the descendants of the node.
+It can be applied to any node in the tree to allow for some nodes to not be access controlled while others will be access controlled.
+Changing read-write to write-only leads to that the server will allow reading of the data without a token,
+but requiring a valid token for write requests to the data.</p>
+<p>The AT server uses the purposelist.json file to validate that a client request to access controlled data is permitted by the access token included in the request.
+It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.</p>
 <h4 id="command-line-configuration">Command line configuration</h4>
 <p>The server has the following command line configurations:</p>
 <ul>
@@ -1067,19 +1082,19 @@ For more details, see the  <a href="/vissr/client#compression-client">compressio
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1712302719"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1712302719"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1712302719"></script>
-    <script src="/vissr/js/jquery.sticky.js?1712302719"></script>
-    <script src="/vissr/js/featherlight.min.js?1712302719"></script>
-    <script src="/vissr/js/highlight.pack.js?1712302719"></script>
+    <script src="/vissr/js/clipboard.min.js?1712316641"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1712316641"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1712316641"></script>
+    <script src="/vissr/js/jquery.sticky.js?1712316641"></script>
+    <script src="/vissr/js/featherlight.min.js?1712316641"></script>
+    <script src="/vissr/js/highlight.pack.js?1712316641"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1712302719"></script>
-    <script src="/vissr/js/learn.js?1712302719"></script>
-    <script src="/vissr/js/hugo-learn.js?1712302719"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1712316641"></script>
+    <script src="/vissr/js/learn.js?1712316641"></script>
+    <script src="/vissr/js/hugo-learn.js?1712316641"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1712302719"></script>
+            <script src="/vissr/mermaid/mermaid.js?1712316641"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
