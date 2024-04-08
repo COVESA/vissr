@@ -610,6 +610,12 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // internal message
 		return
 	}
+	if requestMap["path"] == nil {
+		utils.Error.Printf("Unmarshal filter path array failed.")
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		return
+	}
 	rootPath := requestMap["path"].(string)
 	var searchPath []string
 
