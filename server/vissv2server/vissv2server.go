@@ -233,7 +233,7 @@ func setTokenErrorResponse(reqMap map[string]interface{}, errorCode int) {
 func verifyToken(token string, action string, paths string, validation int) (int, string, string) {
 	handle := ""
 	gatingId := ""
-	request := `{"token":"` + token + `","paths":"` + paths + `","action":"` + action + `","validation":"` + strconv.Itoa(validation) + `"}`
+	request := `{"token":"` + token + `","paths":` + paths + `,"action":"` + action + `","validation":"` + strconv.Itoa(validation) + `"}`
 	atsChannel[0] <- request
 	body := <-atsChannel[0]
 	var bdy map[string]interface{}
