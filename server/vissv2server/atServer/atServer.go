@@ -662,7 +662,7 @@ func consentInquiryResponse(input string) string {
 	for i := 0; i < LISTSIZE; i++ {
 		if pendingList[i].GatingId == gatingId {
 			if pendingList[i].Consent == "NOT_SET" {
-				return `{"action": "at-inquiry", "sessionId":` + strconv.Itoa(gatingId) + `", "consent":"NOT_SET"}`
+				return `{"action": "at-inquiry", "sessionId":"` + strconv.Itoa(gatingId) + `", "consent":"NOT_SET"}`
 			} else if pendingList[i].Consent == "NO" {
 				removeFromPendingList(i)
 				return `{"action": "at-inquiry", "consent":"NO"}`
