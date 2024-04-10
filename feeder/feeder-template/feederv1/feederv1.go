@@ -85,7 +85,7 @@ func statestorageSet(path string, val string, ts string) int {
 		}
 		return 0
 	case "redis":
-		dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
+		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
 		err := redisClient.Set(path, dp, time.Duration(0)).Err()
 		if err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
