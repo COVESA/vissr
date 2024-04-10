@@ -71,7 +71,7 @@ func getAtRequestLT(agttoken string) *atRequest {
 	return &atRequest{
 		Action:  "at-request",
 		Token:   agttoken,
-		Purpose: "fuel-status",
+		Purpose: "ubi-sensor-status",
 		Pop:     token,
 	}
 
@@ -211,7 +211,7 @@ func getVISSClient(connection *grpc.ClientConn) pb.VISSv2Client {
 func infuseTokengRPCGetRequest(at_token string) []string {
 
 	commandList := make([]string, 2)
-	str := fmt.Sprintf(`{"action":"get","path":"Vehicle/Body/Lights","filter":{"type":"paths","parameter":"*"},,"authorization":"%s","requestId":"235"}`, at_token)
+	str := fmt.Sprintf(`{"action":"get","path":"Vehicle/Speed","filter":{"type":"paths","parameter":"*"},,"authorization":"%s","requestId":"235"}`, at_token)
 	commandList[0] = str
 	str = fmt.Sprintf(`{"action":"get","path":"Vehicle/Speed","authorization":"%s","requestId":"236"}`, at_token)
 	commandList[1] = str
@@ -220,7 +220,7 @@ func infuseTokengRPCGetRequest(at_token string) []string {
 }
 
 func getShortTermAGTResponse() (*http.Response, error) {
-	body := []byte(`{"action":"agt-request","vin":"GEO001","context":"Independent+OEM+Cloud","proof":"ABC","key":"DEF"}`)
+	body := []byte(`{"action":"agt-request","vin":"GEO001","context":"Driver+OEM+Vehicle","proof":"ABC","key":"DEF"}`)
 
 	r, err := http.NewRequest("POST", agt_posttesturl, bytes.NewBuffer(body))
 	if err != nil {
@@ -248,7 +248,7 @@ func getLongTermAGTResponse() (*http.Response, error) {
 	agtP := agtPayload{
 		Action:  "agt-request",
 		Vin:     "GEO001",
-		Context: "Independent+OEM+Cloud",
+		Context: "Driver+OEM+Vehicle",
 		Proof:   "ABC",
 		Key:     popToken.Jwk.Thumb, // Thumb print need to match.
 	}
@@ -305,7 +305,7 @@ func TestShortTermTokenAccess(t *testing.T) {
 	if vin != "GEO001" {
 		t.Error("Vin does not match => ", vin)
 	}
-	if ctx != "Independent+OEM+Cloud" {
+	if ctx != "Driver+OEM+Vehicle" {
 		t.Error("roles fails to match => ", ctx)
 	}
 
@@ -346,7 +346,7 @@ func TestLongTermTokenAccess(t *testing.T) {
 	if vin != "GEO001" {
 		t.Error("Vin does not match => ", vin)
 	}
-	if ctx != "Independent+OEM+Cloud" {
+	if ctx != "OEM+OEM+Vehicle" {
 		t.Error("roles fails to match => ", ctx)
 	}
 

@@ -70,6 +70,7 @@ COPY --from=builder /build/server/vissv2server/atServer/purposelist.json atServe
 COPY --from=builder /build/server/vissv2server/atServer/scopelist.json atServer/scopelist.json
 COPY --from=builder /build/server/vissv2server/uds-registration.docker.json uds-registration.json
 COPY --from=builder /build/server/vissv2server/vss_vissv2.binary .
+COPY --from=builder /build/server/vissv2server/serviceMgr/signaldimension.json .
 COPY --from=builder /build/server/agt_server/agt_public_key.rsa .
 
 ENTRYPOINT ["/app/vissv2server","-s","redis"]

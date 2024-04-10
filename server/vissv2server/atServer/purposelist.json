@@ -1,191 +1,21 @@
-{
-    "purposes": [
-        {
-            "short": "pay-as-you-drive",
-            "long": "Insurance cost based on actual driven distance.",
-            "contexts": {
-                "user": "Independent",
-                "app": [
-                    "OEM",
-                    "Third party"
-                ],
-                "device": "Cloud"
-            },
-            "signal_access": [
-            	{
-                	"path": "Vehicle.TraveledDistance",
-                	"access_mode": "read-only"
-            	},
-            	{
-                	"path": "Vehicle.CurrentLocation.Longitude",
-                	"access_mode": "read-only"
-            	},
-            	{
-                	"path": "Vehicle.CurrentLocation.Latitude",
-                	"access_mode": "read-only"
-            	}
-            ]
-        },
-        {
-            "short": "pay-how-you-drive",
-            "long": "Insurance cost based on driving behavior.",
-            "contexts": {
-                "user": "Independent",
-                "app": [
-                    "OEM",
-                    "Third party"
-                ],
-                "device": "Cloud"
-            },
-            "signal_access": [
-                {
-                    "path": "Vehicle.Speed",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.CurrentLocation.Latitude",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.CurrentLocation.Longitude",
-                    "access_mode": "read-only"
-                }
-            ]
-        },
-        {
-            "short": "fuel-status",
-            "long": "Fuel level and remaining range.",
-            "contexts": [
-                {
-                    "user": "Independent",
-                    "app": [
-                        "OEM",
-                        "Third party"
-                    ],
-                    "device": "Cloud"
-                },
-                {
-                    "user": "Owner",
-                    "app": "Third party",
-                    "device": "Nomadic"
-                },
-                {
-                    "user": "Driver",
-                    "app": "OEM",
-                    "device": "Vehicle"
-                }
-            ],
-            "signal_access": [
-                {
-                    "path": "Vehicle.Powertrain.FuelSystem.AbsoluteLevel",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.FuelSystem.Range",
-                    "access_mode": "read-only"
-                }
-            ]
-        },
-        {
-            "short": "engine-status",
-            "long": "Combustion engine status and data.",
-            "contexts": [
-                {
-                    "user": "Driver",
-                    "app": [
-                        "OEM",
-                        "Third party"
-                    ],
-                    "device": "Vehicle"
-                },
-                {
-                    "user": "Owner",
-                    "app": [
-                        "OEM",
-                        "Third party"
-                    ],
-                    "device": "Cloud"
-                }
-            ],
-            "signal_access": [
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.ECT",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.EngineOilLevel",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.IsRunning",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.Speed",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.Torque",
-                    "access_mode": "read-only"
-                },
-                {
-                    "path": "Vehicle.Powertrain.CombustionEngine.Power",
-                    "access_mode": "read-only"
-                }
-            ]
-        },
-        {
-            "short": "door-control",
-            "long": "Door open status and lock data.",
-            "contexts": [
-                {
-                    "user": "Driver",
-                    "app": [
-                        "OEM",
-                        "Third party"
-                    ],
-                    "device": "Vehicle"
-                },
-                {
-                    "user": "Owner",
-                    "app": "OEM",
-                    "device": "Cloud"
-                }
-            ],
-            "signal_access": [
-                {
-                    "path": "Vehicle.Cabin.Door.Row1.Left.IsOpen",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path":"Vehicle.Cabin.Door.Row1.Right.IsOpen",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path": "Vehicle.Cabin.Door.Row2.Left.IsOpen",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path":"Vehicle.Cabin.Door.Row2.Right.IsOpen",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path": "Vehicle.Cabin.Door.Row1.Left.IsLocked",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path":"Vehicle.Cabin.Door.Row1.Right.IsLocked",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path": "Vehicle.Cabin.Door.Row2.Left.IsLocked",
-                    "access_mode": "read-write"
-                },
-                {
-                    "path":"Vehicle.Cabin.Door.Row2.Right.IsLocked",
-                    "access_mode": "read-write"
-                }
-            ]
-        }
-    ]
+{"purposes":
+            [{"short": "ubi-sensor-status", 
+            "long": "Sensor data for insurance provider to enable Usage Based Insurance premium", 
+            "contexts":[ {"user":"Driver", "app":"OEM", "device":"Vehicle"}],
+            "signal_access":
+                [{"path": "Vehicle.Speed", "access_permission": "read-only"}, 
+                {"path": "Vehicle.CurrentLocation.Heading", "access_permission": "read-only"},
+                {"path": "Vehicle.CurrentLocation.Latitude", "access_permission": "read-only"},
+                {"path": "Vehicle.CurrentLocation.Longitude", "access_permission": "read-only"},
+                {"path": "Vehicle.Chassis.SteeringWheel.Angle", "access_permission": "read-only"},
+                {"path": "Vehicle.Driver.IsHandsOnWheel", "access_permission": "read-only"},
+                {"path": "Vehicle.ADAS.ActiveAutonomyLevel", "access_permission": "read-only"},
+                {"path": "Vehicle.ADAS.CruiseControl.IsActive", "access_permission": "read-only"},
+                {"path": "Vehicle.ADAS.LaneDepartureDetection.IsWarning", "access_permission": "read-only"},
+                {"path": "Vehicle.TraveledDistance", "access_permission": "read-only"},
+                {"path": "Vehicle.Powertrain.Transmission.CurrentGear", "access_permission": "read-only"},
+                {"path": "Vehicle.VehicleIdentification.VIN", "access_permission": "read-only"},
+                {"path": "Vehicle.VehicleIdentification.Model", "access_permission": "read-only"},
+                {"path": "Vehicle.Cabin.Seat.Row1.Pos1.IsBelted", "access_permission": "read-only"}] 
+            }] 
 }
