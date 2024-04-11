@@ -16,18 +16,38 @@ $ go build
 #### VSS tree configuration
 The server has a copy of the VSS tree that it uses to verify that client requsts are valid -
 that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token, etc.
-The tree parser that is used expects the tre to have the 'binary format' that one of the VSS-Tools genertes from the vspec files.
+The tree parser that is used expects the tree to have the 'binary format' that the binary exporter of the VSS-Tools generates from the vspec files.
 To generate this the [VSS repo](https://github.com/COVESA/vehicle_signal_specification) must be cloned including the VSS-Tools submodule,
 and a file containing the binary representation must be created, which is done with the following command issued in the root directory.
 
 $ make binary
+
+However, before issuing the command above it is necessary to edit the make file to remove the --strict command parameter.
+The tool will then issue a warning in its log that an unknown attribute is detected, but the binary file is correctly generated.
 
 This generates a file with a name like 'vss_rel_4.1-dev.binary',
 which then needs to be renamed to 'vss_vissv2.binary' and stored in the vissr/server/vissv2server directory.
 
 If you want to configure the tree to include access control, access control tags as described in the
 [VISSv2 - Access Control Selection chapter](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-selection) needs to be added to appropriate tree nodes.
-This can either be done by editing vspec files directly, or using the [VSS-Tools](https://github.com/covesa/vss-tools) overlay mechanism.
+This can either be done by editing vspec files directly (example below), or using the [VSS-Tools](https://github.com/covesa/vss-tools) overlay mechanism.
+
+Adding read-write access control to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
+If consent also should be required then switch the commenting between the two validate statements.
+```
+Vehicle:
+  type: branch
+#  validate: read-write+consent
+  validate: read-write
+  description: High-level vehicle data.
+```
+The above validate statement is inherited by all of the descendants of the node.
+It can be applied to any node in the tree to allow for some nodes to not be access controlled while others will be access controlled.
+Changing read-write to write-only leads to that the server will allow reading of the data without a token,
+but requiring a valid token for write requests to the data.
+
+The AT server uses the purposelist.json file to validate that a client request to access controlled data is permitted by the access token included in the request.
+It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.
 
 #### Command line configuration
 The server has the following command line configurations:

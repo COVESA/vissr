@@ -37,8 +37,11 @@ the server will then forward the access token received in the client request to 
 
 The ATS will as part of the validation also use the VISSv2 specified policy documents if they are found in the working directory.
 
-The ATS suports caching of access tokens, and returning a token handle to the client if cached. The cache is configured to hold max 10 tokens.
+The ATS supports caching of access tokens, and returning a token handle to the client if cached. The cache is configured to hold max 10 tokens.
 If the cache is full, caching of one more is rejected until a cached token becomes expired, or pre-emptied by other reasons.
+
+For the AT server to verify the AGT signature it needs to have access to the AGTS public key. To facilitate that it is necessary to copy the server/agt_server/agt_public_key.rsa file
+to the server/vissv2server directory.
 
 ### Server configuration
 The configuration available for the servers is whether the protocols that they implement to expose their APIS are TLS protected or not.

@@ -189,7 +189,7 @@ func statestorageSet(path string, val string, ts string) int {
 		}
 		return 0
 	case "redis":
-		dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
+		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
 		err := redisClient.Set(path, dp, time.Duration(0)).Err()
 		if err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
@@ -197,7 +197,7 @@ func statestorageSet(path string, val string, ts string) int {
 		}
 		return 0
 	case "memcache":
-		dp := `{"val":"` + val + `", "ts":"` + ts + `"}`
+		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
 		err := memcacheClient.Set(&memcache.Item{Key: path, Value: []byte(dp)})
 		if err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)

@@ -233,7 +233,7 @@ func setTokenErrorResponse(reqMap map[string]interface{}, errorCode int) {
 func verifyToken(token string, action string, paths string, validation int) (int, string, string) {
 	handle := ""
 	gatingId := ""
-	request := `{"token":"` + token + `","paths":"` + paths + `","action":"` + action + `","validation":"` + strconv.Itoa(validation) + `"}`
+	request := `{"token":"` + token + `","paths":` + paths + `,"action":"` + action + `","validation":"` + strconv.Itoa(validation) + `"}`
 	atsChannel[0] <- request
 	body := <-atsChannel[0]
 	var bdy map[string]interface{}
@@ -608,6 +608,12 @@ func serveRequest(request string, tDChanIndex int, sDChanIndex int) {
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
 	if requestMap["action"] == "internal-killsubscriptions" || requestMap["action"] == "internal-cancelsubscription" {
 		serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // internal message
+		return
+	}
+	if requestMap["path"] == nil {
+		utils.Error.Printf("Unmarshal filter path array failed.")
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
 	}
 	rootPath := requestMap["path"].(string)
