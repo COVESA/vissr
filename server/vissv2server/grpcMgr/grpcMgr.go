@@ -171,6 +171,9 @@ func getSubscriptionId(resp string) string {
 		utils.Error.Printf("getSubscriptionId:Unmarshal error data=%s, err=%s", resp, err)
 		return ""
 	}
+	if respMap["subscriptionId"] == nil {
+		return""
+	}
 	return respMap["subscriptionId"].(string)
 }
 
@@ -261,6 +264,9 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 			resetGrpcRoutingData(subscribeClientId)
 			return nil
 		case vssResp := <-grpcResponseChan: //  forward subscribe response and following events
+			if strings.Contains(vssResp, `"error"`) { // error message
+				return nil
+			}
 			if strings.Contains(vssResp, KILL_MESSAGE) { //issued by unsubscribe thread
 				clientId := extractClientId(vssResp)
 				resetGrpcRoutingData(clientId)

@@ -824,7 +824,7 @@ func createJSON(value string, key string) string {
 
 func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
 	data := ""
-
+Info.Printf("createJsonData:len(dataPack)=%d", len(dataPack))
 	if len(dataPack) > 1 {
 		data += "["
 	}
@@ -835,6 +835,7 @@ func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
 		} else {
 			path = DecompressPath(dataPack[i].GetPathC())
 		}
+Info.Printf("createJsonData:path=%s", path)
 		dp := getJsonDp(dataPack[i])
 		data += `{"path":"` + path + `","dp":` + dp + `},`
 	}

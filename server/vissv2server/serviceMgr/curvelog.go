@@ -427,6 +427,7 @@ func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize 
 		}
 		mcloseClSubId.Unlock()
 		dp := getVehicleData(path)
+utils.Info.Printf("dp=%s", dp)
 		utils.MapRequest(dp, &dpMap)
 		_, ts := readRing(&aRingBuffer, 0) // read latest written
 		if ts != dpMap["ts"].(string) {
@@ -442,11 +443,11 @@ func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize 
 			var clPack CLPack
 			clPack.SubscriptionId = subscriptionId
 			if len(extraData) > 0 {
-				clPack.DataPack = `{"path":"` + path + `","data":` + extraData + "}"
+				clPack.DataPack = `{"path":"` + path + `","dp":` + extraData + "}"
 				clChan <- clPack
 			}
 			if lastSelected > 0 {
-				clPack.DataPack = `{"path":"` + path + `","data":` + data + "}"
+				clPack.DataPack = `{"path":"` + path + `","dp":` + data + "}"
 				clChan <- clPack
 			}
 			setRingTail(&aRingBuffer, lastSelected) // update tail pointer
@@ -628,7 +629,7 @@ func transformDataPoint(aRingBuffer *RingBuffer, index int, tsBase time.Time) (C
 func returnSingleDp(clChan chan CLPack, subscriptionId int, path string) {
 	dp := getVehicleData(path)
 	var clPack CLPack
-	clPack.DataPack = `{"path":"` + path + `","data":` + dp + "}"
+	clPack.DataPack = `{"path":"` + path + `","dp":` + dp + "}"
 	clPack.SubscriptionId = subscriptionId
 	clChan <- clPack
 }
@@ -637,7 +638,7 @@ func returnSingleDp2(clChan chan CLPack, subscriptionId int, paths Dim2Elem) {
 	dp1 := getVehicleData(paths.Path1)
 	dp2 := getVehicleData(paths.Path2)
 	var clPack CLPack
-	clPack.DataPack = `[{"path":"` + paths.Path1 + `","data":` + dp1 + "}," + `{"path":"` + paths.Path2 + `","data":` + dp2 + "}]"
+	clPack.DataPack = `[{"path":"` + paths.Path1 + `","dp":` + dp1 + "}," + `{"path":"` + paths.Path2 + `","dp":` + dp2 + "}]"
 	clPack.SubscriptionId = subscriptionId
 	clChan <- clPack
 }
@@ -647,7 +648,7 @@ func returnSingleDp3(clChan chan CLPack, subscriptionId int, paths Dim3Elem) {
 	dp2 := getVehicleData(paths.Path2)
 	dp3 := getVehicleData(paths.Path3)
 	var clPack CLPack
-	clPack.DataPack = `[{"path":"` + paths.Path1 + `","data":` + dp1 + `},{"path":"` + paths.Path2 + `","data":` + dp2 + `},{"path":"` + paths.Path3 + `","data":` + dp3 + "}]"
+	clPack.DataPack = `[{"path":"` + paths.Path1 + `","dp":` + dp1 + `},{"path":"` + paths.Path2 + `","dp":` + dp2 + `},{"path":"` + paths.Path3 + `","dp":` + dp3 + "}]"
 	clPack.SubscriptionId = subscriptionId
 	clChan <- clPack
 }
@@ -687,7 +688,7 @@ func clCapture2dim(clChan chan CLPack, subscriptionId int, paths Dim2Elem, bufSi
 		if (currentBufSize == bufSize) || (closeClSession == true) {
 			data1, data2, updatedTail := clAnalyze2dim(&aRingBuffer1, &aRingBuffer2, currentBufSize, maxError)
 			var clPack CLPack
-			clPack.DataPack = `[{"path":"` + paths.Path1 + `","data":` + data1 + "}," + `{"path":"` + paths.Path2 + `","data":` + data2 + "}]"
+			clPack.DataPack = `[{"path":"` + paths.Path1 + `","dp":` + data1 + "}," + `{"path":"` + paths.Path2 + `","dp":` + data2 + "}]"
 			clPack.SubscriptionId = subscriptionId
 			clChan <- clPack
 			setRingTail(&aRingBuffer1, updatedTail)
@@ -812,7 +813,7 @@ func clCapture3dim(clChan chan CLPack, subscriptionId int, paths Dim3Elem, bufSi
 		if (currentBufSize == bufSize) || (closeClSession == true) {
 			data1, data2, data3, updatedTail := clAnalyze3dim(&aRingBuffer1, &aRingBuffer2, &aRingBuffer3, currentBufSize, maxError)
 			var clPack CLPack
-			clPack.DataPack = `[{"path":"` + paths.Path1 + `","data":` + data1 + `},{"path":"` + paths.Path2 + `","data":` + data2 + `},{"path":"` + paths.Path3 + `","data":` + data3 + "}]"
+			clPack.DataPack = `[{"path":"` + paths.Path1 + `","dp":` + data1 + `},{"path":"` + paths.Path2 + `","dp":` + data2 + `},{"path":"` + paths.Path3 + `","dp":` + data3 + "}]"
 			clPack.SubscriptionId = subscriptionId
 			clChan <- clPack
 			setRingTail(&aRingBuffer1, updatedTail)
