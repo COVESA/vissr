@@ -847,6 +847,7 @@ func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
 
 func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
 	dpPack := dataPack.GetDp()
+	//Info(dpPack)
 	dp := ""
 	if len(dpPack) > 1 {
 		dp += "["
