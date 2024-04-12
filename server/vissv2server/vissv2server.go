@@ -706,9 +706,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	paths = paths[:len(paths)-2]
-	if totalMatches == 1 {
-		paths = paths[1 : len(paths)-1] // remove hyphens
-	} else if totalMatches > 1 {
+	if totalMatches > 1 {
 		paths = "[" + paths + "]"
 	}
 
@@ -745,6 +743,9 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
+	}
+	if totalMatches == 1 {
+		paths = paths[1 : len(paths)-1] // remove hyphens
 	}
 	requestMap["path"] = paths
 	if tokenHandle != "" {
