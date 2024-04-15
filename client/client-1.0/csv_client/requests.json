@@ -3,5 +3,6 @@
 {"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"timebased","parameter":{"period":"3"}},"requestId":"246"},
 {"action":"subscribe","path":"Vehicle.Speed","filter":{"type":"curvelog","parameter":{"maxerr":"2","bufsize":"20"}},"requestId":"275"},
 {"action":"subscribe","path":"Vehicle.Speed","filter":{"type":"curvelog","parameter":{"maxerr":"1","bufsize":"5"}},"requestId":"277"},
-{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"curvelog","parameter":{"maxerr":"0.00001","bufsize":"20"}}],"requestId":"285"}
+{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"curvelog","parameter":{"maxerr":"0.00001","bufsize":"20"}}],"requestId":"285"},
+{"action":"subscribe","path":"Vehicle.Speed","filter":{"type":"timebased","parameter":{"period":"20"}},"requestId":"246"}
 ]}

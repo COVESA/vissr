@@ -149,7 +149,7 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 		subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 		unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
 		unsubChannel <- unsubReq
-		maxArrayLen := 10000
+		maxArrayLen := 1000
 		valArray := make([]string, maxArrayLen)
 		tsArray := make([]string, maxArrayLen)
 		sessionDone := false
@@ -168,11 +168,16 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 				finalIterations = 1 // 2 more iteration if last buffer has saved dp(s). If not, change to 1.
 			} else {
 				finalIterations--
-				fmt.Printf("Notification: %s\n", jsonNotification)
+				// fmt.Printf("Notification: %s\n", jsonNotification)
 				if arrayIndex < maxArrayLen {
+					if arrayIndex%100 == 0 {
+						fmt.Printf("Number of datapoints saved: %d\n", arrayIndex)
+					}
 					arrayIndex = storeinArrays(jsonNotification, valArray, tsArray, arrayIndex)
 				} else {
-					fmt.Printf("Maximum number of datapoints are saved. Recording terminated.\n")
+					// fmt.Printf("Maximum number of datapoints are saved. Recording terminated.\n")
+					sessionDone = true
+					finalIterations = 0
 				}
 			}
 			if sessionDone == true && finalIterations == 0 {
@@ -355,6 +360,7 @@ func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel cha
 				return
 			default:
 			}
+
 		}
 	}
 }
@@ -386,7 +392,7 @@ func readOption(conn *websocket.Conn, optionChannel chan string, unsubChannel ch
 		fmt.Scanf("%s", &commandNumber)
 		if commandNumber == "q" {
 			unsubReq := <-unsubChannel
-			fmt.Printf("Unsubscribe request: %s\n", unsubReq)
+			fmt.Printf("*********************************** Unsubscribe request: **************** %s\n", unsubReq)
 			getResponse(conn, []byte(unsubReq))
 
 		}
@@ -445,21 +451,29 @@ func main() {
 
 	unsubChannel := make(chan string, 1)
 	optionChannel := make(chan string)
+
+	quitsignal := make(chan int, 1)
 	go readOption(conn, optionChannel, unsubChannel)
 
-	for {
-		displayOptions()
-		select {
-		case commandNumber = <-optionChannel:
-			if commandNumber == "0" {
-				return
+	go func() {
+		for {
+			displayOptions()
+			select {
+			case commandNumber = <-optionChannel:
+				if commandNumber == "0" {
+					fmt.Printf("quitting program\n")
+					close(quitsignal)
+				}
 			}
+			cNo, err := strconv.Atoi(commandNumber)
+			if err != nil {
+				fmt.Printf("Selected option not supported\n")
+				continue
+			}
+			performCommand(cNo-1, conn, optionChannel, unsubChannel)
 		}
-		cNo, err := strconv.Atoi(commandNumber)
-		if err != nil {
-			fmt.Printf("Selected option not supported\n")
-			continue
-		}
-		performCommand(cNo-1, conn, optionChannel, unsubChannel)
-	}
+	}()
+
+	<-quitsignal
+
 }
