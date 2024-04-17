@@ -8,24 +8,30 @@ Android Automotive serves as the standard infotainment system, offering a platfo
 The value of vehicle data inherently increases with its usage, especially when accessible in an open environment without compromising security and privacy. This openness cultivates innovation for digital service providers operating within the automotive sector. Establishing a robust framework for vehicle data consent and privacy, coupled with the adoption of open Vehicle APIs like VISS, holds the potential to empower digital services in the automotive space.
 
 ## Why not use Android Automotive Car API/Sensor API which is standard for same purpose?
-Purpose of this demo is not to entirely replace AAOS stack but try to address some of limitations that AAOS system have with vehicle data access which is limited to system applications.VISS/gRPC was also used towards Vehicle HAL that populate entire AAOS Vehicle properties 
+Purpose of this demo is not to entirely replace AAOS stack but try to address some of limitations that AAOS system have with vehicle data access which is limited to system applications.
+
+VISS/gRPC was also used towards Vehicle HAL that populate entire AAOS Vehicle properties 
 
 Following guide provides step-by-step instructions on setting up containerized environment & integrating your Android application with COVESA/VISS gRPC APIs.
+
 
 ## Steps to setup containerized ecosystem environment
 
 ### Step 1: Configure RemotiveLabs virtual cloud endpoints towards feeder component
 Configure feeder to use RemotiveLabs virtual sensor cloud for Vehicle drive playback support
+
 https://github.com/COVESA/vissr/blob/master/feeder/feeder-rl/README.md
 
 Free access to cloud console : https://cloud.remotivelabs.com
    
 ### Step 2: Configure Security policy files for access control in Access token server
+
 Populate purpose list with VSS data points & access control
+
 https://github.com/COVESA/vissr/blob/master/server/vissv2server/atServer/purposelist.json
 
 Use following purpose 'ubi-sensor-status'
-
+   
        {"purposes":
             [{"short": "ubi-sensor-status", 
             "long": "Sensor data for insurance provider to enable Usage Based Insurance premium", 
@@ -56,33 +62,37 @@ After tagging vss_vissv2.binary shall be generated with tagged VSS by executing 
 Copy generated vss_vissv2.binary to location https://github.com/COVESA/vissr/tree/master/server/vissv2server
 
 ### Step 4: Build docker for AGT/AT/VISS server
+
 Build AGT docker : https://github.com/COVESA/vissr/blob/master/docker/agt-docker/Readme.md
 
 Build VISS/AT docker : https://github.com/COVESA/vissr/blob/master/docker/README.md
 
 ### Step 5: Integrate VISS proto towards Android Application
+
 Download any Android Automotive OS Emulator. E.g Snapp Automotive Emulator available : https://github.com/snappautomotive/README
+
 Android application could leverage VISS protobuf files shared at https://github.com/COVESA/vissr/tree/master/grpc_pb
 
-Use following APIs
+Build & install the APK using Android Studio by opening project : https://github.com/COVESA/vissr/tree/master/client/android/covesa-vissr-app-demo
+
+Application uses following APIs to get access to Vehicle sensor data
 
 1. Request for Access Grant Token(AGT) using HTTP POST request : https://github.com/COVESA/vissr/blob/master/server/agt_server/README.md
 2. Request for Access Token(AT) using HTTP POST request with AGT as input : https://github.com/COVESA/vissr/blob/master/server/vissv2server/atServer/README.md
 3. Subscribe for Multiple VSS datapoints with Access Token(AT) : https://www.w3.org/TR/viss2-core/#multiple-signals-request
 
-Build the APK using Android Studio by opening project : https://github.com/COVESA/vissr/tree/master/client/android/covesa-vissr-app-demo
-and install APK to Emulator
 
 ## Steps to run programs
 
 ### Step 1 : Start RemotiveLabs vehicle sensor data drive recording
 ### Step 2 : Run AGT docker & VISS server docker in local host PC hosted at 127.0.0.1
 ### Step 3 : Starts Android Emulator & do reverse port forwarding via adb that establish TCP communication between Android device & local host PC
+
     $adb reverse tcp:8887 tcp:8887 -> VISS server
     $adb reverse tcp:7500 tcp:7500 -> AGT server
     $adb reverse tcp:8600 tcp:8600 -> AT server
 
 ### Step 4 : Run the application
-### Step 5 : Hit PLAY button in RemotiveLabs vehicle drive recording
+### Step 5 : Play RemotiveLabs vehicle drive recording 
 ### Step 6 : Application shall get updates of VSS datapoints subscribed
 
