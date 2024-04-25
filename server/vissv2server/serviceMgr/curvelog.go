@@ -427,7 +427,7 @@ func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize 
 		}
 		mcloseClSubId.Unlock()
 		dp := getVehicleData(path)
-utils.Info.Printf("dp=%s", dp)
+		utils.Info.Printf("dp=%s", dp)
 		utils.MapRequest(dp, &dpMap)
 		_, ts := readRing(&aRingBuffer, 0) // read latest written
 		if ts != dpMap["ts"].(string) {
@@ -619,8 +619,17 @@ func transformDataPoint(aRingBuffer *RingBuffer, index int, tsBase time.Time) (C
 	cLBufElement.Value = (float64)(value)
 	t, err := time.Parse(time.RFC3339, ts)
 	if err != nil {
-		utils.Error.Printf("Curve logging failed to convert time to Unix time err=%s", err)
-		return cLBufElement, false
+		t2, err := strconv.ParseInt(ts, 10, 64)
+		if err != nil {
+			utils.Error.Printf("Curve logging failed to convert time to Unix time err=%s", err)
+			return cLBufElement, false
+		}
+		tstr := time.UnixMilli(t2).Format(time.RFC3339)
+		t, err = time.Parse(time.RFC3339, tstr)
+		if err != nil {
+			utils.Error.Printf("Curve logging failed to convert time to Unix time err=%s", err)
+			return cLBufElement, false
+		}
 	}
 	cLBufElement.Timestamp = t.Sub(tsBase).Seconds()
 	return cLBufElement, true

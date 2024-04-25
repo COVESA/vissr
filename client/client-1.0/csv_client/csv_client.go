@@ -122,6 +122,7 @@ func getResponse(conn *websocket.Conn, request []byte) []byte {
 		return nil
 	}
 	_, msg, err := conn.ReadMessage()
+	fmt.Printf("consumed by getResponse%s\n", msg)
 	if err != nil {
 		fmt.Printf("Response error: %s\n", err)
 		return nil
@@ -149,14 +150,15 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 		subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 		unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
 		unsubChannel <- unsubReq
-		maxArrayLen := 10000
-		valArray := make([]string, maxArrayLen)
-		tsArray := make([]string, maxArrayLen)
+		maxArrayLen := 10     // no of datapoints to save in csv + buffer size for last notification
+		var valArray []string //:= make([]string, maxArrayLen)
+		var tsArray []string  //:= make([]string, maxArrayLen)
 		sessionDone := false
 		arrayIndex := 0
 		finalIterations := -1
 		for {
 			_, msg, err := conn.ReadMessage()
+			fmt.Printf(" ******** consumed by performCommand ******** %s/n", string(msg))
 			if err != nil {
 				fmt.Printf("Notification error: %s\n", err)
 				return
@@ -170,12 +172,12 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 				finalIterations--
 				fmt.Printf("Notification: %s\n", jsonNotification)
 				if arrayIndex < maxArrayLen {
-					arrayIndex = storeinArrays(jsonNotification, valArray, tsArray, arrayIndex)
+					arrayIndex = storeinArrays(jsonNotification, &valArray, &tsArray, arrayIndex)
 				} else {
 					fmt.Printf("Maximum number of datapoints are saved. Recording terminated.\n")
 				}
 			}
-			if sessionDone == true && finalIterations == 0 {
+			if sessionDone == true && finalIterations <= 0 {
 				fmt.Printf("Number of datapoints saved: %d\n", arrayIndex)
 				saveInCsv(valArray, tsArray, arrayIndex)
 				return
@@ -189,13 +191,13 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 /* TODO: Current impl only supports notifications that do not contain data arrays ([]data).
 * To support data[] (multiple signals in the notification), arrayIndex would need to be an array, and tsArray/valArray would have to be 2-dim arrays
  */
-func storeinArrays(jsonNotification string, valArray []string, tsArray []string, arrayIndex int) int { // can be any of the four response formats that VISSv2 specifies...
+func storeinArrays(jsonNotification string, valArray *[]string, tsArray *[]string, arrayIndex int) int { // can be any of the four response formats that VISSv2 specifies...
 	var notificationMap = make(map[string]interface{})
 	utils.MapRequest(jsonNotification, &notificationMap)
 	return processDataLevel1(notificationMap["data"], valArray, tsArray, arrayIndex)
 }
 
-func processDataLevel1(dataObject interface{}, valArray []string, tsArray []string, arrayIndex int) int { // data or []data level
+func processDataLevel1(dataObject interface{}, valArray *[]string, tsArray *[]string, arrayIndex int) int { // data or []data level
 	switch vv := dataObject.(type) {
 	case []interface{}: // []data
 		//		utils.Info.Println(dataObject, "is an array:, len=", strconv.Itoa(len(vv)))
@@ -209,7 +211,7 @@ func processDataLevel1(dataObject interface{}, valArray []string, tsArray []stri
 	return arrayIndex
 }
 
-func processDataLevel2(dataArray []interface{}, valArray []string, tsArray []string, arrayIndex int) int { // []data level
+func processDataLevel2(dataArray []interface{}, valArray *[]string, tsArray *[]string, arrayIndex int) int { // []data level
 	for k, v := range dataArray {
 		switch vv := v.(type) {
 		case map[string]interface{}:
@@ -222,7 +224,7 @@ func processDataLevel2(dataArray []interface{}, valArray []string, tsArray []str
 	return arrayIndex
 }
 
-func processDataLevel3(data map[string]interface{}, valArray []string, tsArray []string, arrayIndex int) int { // inside data, dp or []dp level
+func processDataLevel3(data map[string]interface{}, valArray *[]string, tsArray *[]string, arrayIndex int) int { // inside data, dp or []dp level
 	for k, v := range data {
 		switch vv := v.(type) {
 		case []interface{}: // []dp
@@ -240,7 +242,7 @@ func processDataLevel3(data map[string]interface{}, valArray []string, tsArray [
 	return arrayIndex
 }
 
-func processDataLevel4(dpArray []interface{}, valArray []string, tsArray []string, arrayIndex int) int { // []dp level
+func processDataLevel4(dpArray []interface{}, valArray *[]string, tsArray *[]string, arrayIndex int) int { // []dp level
 	for k, v := range dpArray {
 		switch vv := v.(type) {
 		case map[string]interface{}:
@@ -253,15 +255,17 @@ func processDataLevel4(dpArray []interface{}, valArray []string, tsArray []strin
 	return arrayIndex
 }
 
-func processDataLevel5(dp map[string]interface{}, valArray []string, tsArray []string, arrayIndex int) int { // inside dp level
+func processDataLevel5(dp map[string]interface{}, valArray *[]string, tsArray *[]string, arrayIndex int) int { // inside dp level
 	for k, v := range dp {
 		switch vv := v.(type) {
 		case string:
 			//			utils.Info.Println(k, "is string", vv)
 			if k == "value" {
-				valArray[arrayIndex] = vv
+				// valArray[arrayIndex] = vv
+				*valArray = append(*valArray, vv)
 			} else if k == "ts" {
-				tsArray[arrayIndex] = vv
+				// tsArray[arrayIndex] = vv
+				*tsArray = append(*tsArray, vv)
 			}
 		default:
 			utils.Info.Println(k, "is of an unknown type")
@@ -383,7 +387,7 @@ func displayOptions() {
 
 func readOption(conn *websocket.Conn, optionChannel chan string, unsubChannel chan string) {
 	for {
-		fmt.Scanf("%s", &commandNumber)
+		fmt.Scanf("%s\n", &commandNumber)
 		if commandNumber == "q" {
 			unsubReq := <-unsubChannel
 			fmt.Printf("Unsubscribe request: %s\n", unsubReq)
@@ -451,7 +455,9 @@ func main() {
 		displayOptions()
 		select {
 		case commandNumber = <-optionChannel:
+			fmt.Printf("command number is \n", commandNumber)
 			if commandNumber == "0" {
+				fmt.Printf("Exiting program\n")
 				return
 			}
 		}
