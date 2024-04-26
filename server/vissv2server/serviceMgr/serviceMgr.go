@@ -394,9 +394,7 @@ func deactivateSubscription(subscriptionList []SubscriptionState, subscriptionId
 		utils.Info.Printf("deactivateSubscription: closeClSubId set to %d", closeClSubId)
 		mcloseClSubId.Unlock()
 	}
-	if getOpType(subscriptionList[index].FilterList, "curvelog") == false {
-		subscriptionList = removeFromsubscriptionList(subscriptionList, index)
-	}
+	subscriptionList = removeFromsubscriptionList(subscriptionList, index)
 	return 1, subscriptionList
 }
 
@@ -1215,6 +1213,10 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", getDataPack(subscriptionState.Path, nil))
 		case clPack := <-CLChannel: // curve logging notification
 			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
+			if index == -1 {
+				closeClSubId = -1
+				continue
+			}
 			//subscriptionState := subscriptionList[index]
 			subscriptionList[index].SubscriptionThreads--
 			if clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0 {
