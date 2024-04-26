@@ -75,3 +75,10 @@ logs/
 /client/client-1.0/grpc_client/grpc_map_client/static/node_modules/
 /client/client-1.0/grpc_client/grpc_client
 /client/client-1.0/client-1.0
+/server/vissv2server/vss_vissv2_t.binary
+/server/vissv2server/atServer/purposelist_t.json
+/client/client-1.0/csv_client/csv_client
+/client/client-1.0/csv_client/data.csv
+/client/client-1.0/csv_client/data_curve_speed_maxerr_2.csv
+/client/client-1.0/csv_client/data_curver_speed_maxerr_1.csv
+/client/client-1.0/csv_client/data_nocurve.csv

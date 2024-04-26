@@ -848,6 +848,7 @@ Info.Printf("createJsonData:path=%s", path)
 
 func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
 	dpPack := dataPack.GetDp()
+	//Info(dpPack)
 	dp := ""
 	if len(dpPack) > 1 {
 		dp += "["
