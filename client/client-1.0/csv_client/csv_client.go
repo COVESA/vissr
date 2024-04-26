@@ -122,7 +122,6 @@ func getResponse(conn *websocket.Conn, request []byte) []byte {
 		return nil
 	}
 	_, msg, err := conn.ReadMessage()
-	fmt.Printf("consumed by getResponse%s\n", msg)
 	if err != nil {
 		fmt.Printf("Response error: %s\n", err)
 		return nil
@@ -145,7 +144,6 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 	fmt.Printf("Compression is not applied. If subscribe request is issued, response data will be saved in the file data.csv\n")
 
 	jsonResponse := string(getResponse(conn, []byte(requestList.Request[commandNumber])))
-	fmt.Printf("Response: %s\n", jsonResponse)
 	if strings.Contains(requestList.Request[commandNumber], "subscribe") == true {
 		subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 		unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
@@ -158,7 +156,6 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 		finalIterations := -1
 		for {
 			_, msg, err := conn.ReadMessage()
-			fmt.Printf(" ******** consumed by performCommand ******** %s/n", string(msg))
 			if err != nil {
 				fmt.Printf("Notification error: %s\n", err)
 				return
@@ -391,8 +388,9 @@ func readOption(conn *websocket.Conn, optionChannel chan string, unsubChannel ch
 		if commandNumber == "q" {
 			unsubReq := <-unsubChannel
 			fmt.Printf("Unsubscribe request: %s\n", unsubReq)
-			getResponse(conn, []byte(unsubReq))
-
+			// getResponse(conn, []byte(unsubReq))
+			// let the main thread handle the unsubscribe request
+			conn.WriteMessage(websocket.BinaryMessage, []byte(unsubReq))
 		}
 		optionChannel <- commandNumber
 	}
@@ -446,7 +444,7 @@ func main() {
 	}
 
 	conn := initVissV2WebSocket(compression)
-
+	defer conn.Close()
 	unsubChannel := make(chan string, 1)
 	optionChannel := make(chan string)
 	go readOption(conn, optionChannel, unsubChannel)
@@ -460,6 +458,9 @@ func main() {
 				fmt.Printf("Exiting program\n")
 				return
 			}
+		}
+		if commandNumber == "q" {
+			continue
 		}
 		cNo, err := strconv.Atoi(commandNumber)
 		if err != nil {
