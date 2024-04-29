@@ -1,4 +1,4 @@
-# Integrating VISS towards Android service/application 
+# Integrating VISS towards Android service/application
 
 ## What is this application or service enables?
 This application/service operates within the native environment of Android Automotive OS (AAOS) and leverages COVESA VISS APIs, employing both gRPC and HTTP protocols, to securely access a predefined set of vehicle sensor datasets. These datasets empower the application to compute a safety score for the driver, aiding in real-time assessment of driving behavior.The primary aim of this service is not to merely excel as an application, but rather to address a prevalent industry challenge: how original equipment manufacturers (OEMs) can securely grant access to specific datasets—be it for reading, writing, or both—to their respective clients or consumers. This is achieved by adhering to Open Vehicle data standards, with VSS (Vehicle Signal Specification) serving as the vehicle data model, and VISS (Vehicle Interface Service Specification) acting as the service for accessing vehicle data.
@@ -8,12 +8,24 @@ Android Automotive serves as the standard infotainment system, offering a platfo
 The value of vehicle data inherently increases with its usage, especially when accessible in an open environment without compromising security and privacy. This openness cultivates innovation for digital service providers operating within the automotive sector. Establishing a robust framework for vehicle data consent and privacy, coupled with the adoption of open Vehicle APIs like VISS, holds the potential to empower digital services in the automotive space.
 
 ## Why not use Android Automotive Car API/Sensor API which is standard for same purpose?
-Purpose of this demo is not to entirely replace AAOS stack but try to address some of limitations that AAOS system have with vehicle data access which is limited to system applications.
+While the Android Automotive Car API/Sensor API offers a standard solution for accessing vehicle data, this demo serves a different purpose. Instead of aiming to replace the entire AAOS stack, it seeks to address specific limitations within the AAOS system concerning vehicle data access, which is typically restricted to system applications.
 
-VISS/gRPC was also used towards Vehicle HAL that populate entire AAOS Vehicle properties 
+Google's AAOS Vehicle properties are extensively documented at the following sources:
+
+   [Vehicle properties definition](https://android.googlesource.com/platform/hardware/interfaces/+/refs/heads/android-s-beta-4/automotive/vehicle/2.0/types.hal) 
+   
+   [Permissions associated with Vehicle properties](https://android.googlesource.com/platform/packages/services/Car/+/refs/heads/android-s-beta-4/car-lib/src/android/car/VehiclePropertyIds.java)
+   
+   [Permissions in String](https://android.googlesource.com/platform/packages/services/Car/+/refs/heads/android-s-beta-4/car-lib/src/android/car/Car.java)
+   
+   [Protection level details](https://android.googlesource.com/platform/packages/services/Car/+/refs/heads/android-s-beta-4/service/AndroidManifest.xml)
+
+Accessing Vehicle properties with a protection level of "signature|privileged" requires elevated privileges. Therefore, applications must either be signed with the same signature as the service or be system priv-apps, with their packages whitelisted by OEMs (source).
+
+Customization of AOSP device software is necessary to allow such access, leading OEMs to restrict the above data access to trusted or vetted partners.
+
 
 Following guide provides step-by-step instructions on setting up containerized environment & integrating your Android application with COVESA/VISS gRPC APIs.
-
 
 ## Steps to setup containerized ecosystem environment
 
@@ -96,3 +108,5 @@ Application uses following APIs to get access to Vehicle sensor data
 ### Step 5 : Play RemotiveLabs vehicle drive recording 
 ### Step 6 : Application shall get updates of VSS datapoints subscribed
 
+### NOTICE : Solution works towards Volvo Cars drive datasets that are not open to public via RemotiveLabs cloud
+### Work in progress on ticket : https://github.com/COVESA/vissr/issues/30 
