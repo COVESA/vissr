@@ -62,7 +62,7 @@ func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData) 
 		select {
 		case outData := <-outputChan:
 			utils.Info.Printf("Data written to statestorage: Name=%s, Value=%s", outData.Name, outData.Value)
-			status := redisSet(feederClient, outData.Name, outData.Value, utils.GetRfcTime())
+			status := redisSet(feederClient, outData.Name, outData.Value /*utils.GetRfcTime()*/, utils.GetTimeInMilliSecs())
 			if status != 0 {
 				utils.Error.Printf("initVSSInterfaceMgr():Redis write failed")
 			}

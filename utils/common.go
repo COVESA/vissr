@@ -308,6 +308,10 @@ func AddKeyValue(message string, key string, value string) string { // to avoid 
 	return message
 }
 
+func GetTimeInMilliSecs() string {
+	return strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10)
+}
+
 func GetRfcTime() string {
 	withTimeZone := time.Now().Format(time.RFC3339) // 2020-05-01T15:34:35+02:00
 	if withTimeZone[len(withTimeZone)-6] == '+' {
@@ -315,6 +319,7 @@ func GetRfcTime() string {
 	} else {
 		return withTimeZone
 	}
+	return withTimeZone
 }
 
 func FileExists(filename string) bool {
