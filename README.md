@@ -1,9 +1,14 @@
-**(C) 2023, 2024 Ford Motor Company**<br>
-**(C) 2019, 2023, 2024 Volvo Cars**<br>
-**(C) 2019 Geotab Inc**<br>
-**(C) 2019 Mitsubishi Electric Automotive**<br>
+![Status - Active](https://img.shields.io/static/v1?label=Status&message=Active&color=3FFF3A&style=for-the-badge)
 
-All files and artifacts in this repository are licensed under the provisions of the license provided by the LICENSE file in this repository.
+# vehicle-information-service-specification-reference-implementation (VISSR)
+
+[![License](https://img.shields.io/badge/License-MPL%202.0-blue.svg)](https://opensource.org/licenses/MPL-2.0)
+
+### Maintainers
+
+Ulf Björkengren - Ford Motor Company
+
+Peter Winzell - Volvo Cars
 
 # COVESA VISS Reference Implementation - VISSR 
 This project implements the COVESA VISS v2 specification under development at [https://github.com/COVESA/vehicle-information-service-specification](https://github.com/COVESA/vehicle-information-service-specification).
