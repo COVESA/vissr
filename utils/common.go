@@ -313,7 +313,8 @@ func GetTimeInMilliSecs() string {
 }
 
 func GetRfcTime() string {
-	withTimeZone := time.Now().Format(time.RFC3339) // 2020-05-01T15:34:35+02:00
+	time.Now()
+	withTimeZone := time.Now().Format(time.RFC3339Nano) // 2020-05-01T15:34:35+02:00
 	if withTimeZone[len(withTimeZone)-6] == '+' {
 		return withTimeZone[:len(withTimeZone)-6] + "Z"
 	} else {

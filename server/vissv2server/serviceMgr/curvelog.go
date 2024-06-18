@@ -415,7 +415,7 @@ func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize 
 	//    { CLBufElement{0, 0}, "", -1, CLBufElement{0, 0}, "", -1, CLBufElement{0, 0}, "", -1 }
 	for {
 		newTime := getCurrentUtcTime()
-		sleepPeriod := getSleepDuration(newTime, oldTime, 800) // TODO: Iteration period should be configurable, set to less than sample freq of signal.
+		sleepPeriod := getSleepDuration(newTime, oldTime, 90) // TODO: Iteration period should be configurable, set to less than sample freq of signal.
 		if sleepPeriod < 0 {
 			utils.Warning.Printf("Curve logging may have missed to capture.")
 		}
@@ -427,7 +427,7 @@ func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize 
 		}
 		mcloseClSubId.Unlock()
 		dp := getVehicleData(path)
-		utils.Info.Printf("dp=%s", dp)
+		utils.Info.Printf("**** dp =%s ", dp)
 		utils.MapRequest(dp, &dpMap)
 		if dpMap["value"].(string) == "Data-not-found" {
 			continue
@@ -601,7 +601,7 @@ func saveNonPdrDp(postProc []PostProcessBufElement1dim, maxError float64) bool {
 func transformDataPoints(aRingBuffer *RingBuffer, clBuffer []CLBufElement, bufSize int) []CLBufElement {
 	var status bool
 	_, tsBaseStr := readRing(aRingBuffer, bufSize-1) // get ts for first dp in buffer
-	tsBase, _ := time.Parse(time.RFC3339, tsBaseStr)
+	tsBase, _ := time.Parse(time.RFC3339Nano, tsBaseStr)
 	for index := 0; index < bufSize; index++ {
 		clBuffer[index], status = transformDataPoint(aRingBuffer, index, tsBase)
 		if status == false {
@@ -619,16 +619,16 @@ func transformDataPoint(aRingBuffer *RingBuffer, index int, tsBase time.Time) (C
 		utils.Error.Printf("Curve logging failed to convert value=%s to float err=%s", val, err)
 		return cLBufElement, false
 	}
-	cLBufElement.Value = (float64)(value)
-	t, err := time.Parse(time.RFC3339, ts)
+	cLBufElement.Value = value
+	t, err := time.Parse(time.RFC3339Nano, ts)
 	if err != nil {
 		t2, err := strconv.ParseInt(ts, 10, 64)
 		if err != nil {
 			utils.Error.Printf("Curve logging failed to convert time to Unix time err=%s", err)
 			return cLBufElement, false
 		}
-		tstr := time.UnixMilli(t2).Format(time.RFC3339)
-		t, err = time.Parse(time.RFC3339, tstr)
+		tstr := time.UnixMilli(t2).Format(time.RFC3339Nano)
+		t, err = time.Parse(time.RFC3339Nano, tstr)
 		if err != nil {
 			utils.Error.Printf("Curve logging failed to convert time to Unix time err=%s", err)
 			return cLBufElement, false
