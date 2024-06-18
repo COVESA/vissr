@@ -66,37 +66,40 @@ Use following purpose 'ubi-sensor-status'
 
 ### Step 3: Enabled access-control tagging to each VSS nodes & Generate vss_vissv2.binary
 For VISS server to support access control, it is essential to tag VSS datapoints with access control mode with 'validate' attribute.
+[Access control tagging](https://github.com/renjithrajagopal-sudo/vehicle_signal_specification/commit/ccd0475327b057f75fa4a796b967315bdb6620db)
 
-Access control tagging at https://github.com/renjithrajagopal-sudo/vehicle_signal_specification/commit/ccd0475327b057f75fa4a796b9Should 67315bdb6620db
-
-After tagging vss_vissv2.binary shall be generated with tagged VSS by executing $make binary from https://github.com/renjithrajagopal-sudo/vehicle_signal_specification
-
-Copy generated vss_vissv2.binary to location https://github.com/COVESA/vissr/tree/master/server/vissv2server
+After tagging vss_vissv2.binary shall be generated with tagged VSS by executing 
+```
+$make binary from https://github.com/renjithrajagopal-sudo/vehicle_signal_specification
+```
+[Copy generated vss_vissv2.binary to location](https://github.com/COVESA/vissr/tree/master/server/vissv2server)
 
 ### Step 4: Build docker for AGT/AT/VISS server
 
-Build AGT docker : https://github.com/COVESA/vissr/blob/master/docker/agt-docker/Readme.md
+[Build AGT docker](https://github.com/COVESA/vissr/blob/master/docker/agt-docker/Readme.md)
 
-Build VISS/AT docker : https://github.com/COVESA/vissr/blob/master/docker/README.md
+[Build VISS/AT docker](https://github.com/COVESA/vissr/blob/master/docker/README.md)
 
 ### Step 5: Integrate VISS proto towards Android Application
 
-Download any Android Automotive OS Emulator. E.g Snapp Automotive Emulator available : https://github.com/snappautomotive/README
+[Download any Android Automotive OS Emulator. E.g Snapp Automotive Emulator available](https://github.com/snappautomotive/README)
 
-Android application could leverage VISS protobuf files shared at https://github.com/COVESA/vissr/tree/master/grpc_pb
+[Android application could leverage VISS protobuf files shared at](https://github.com/COVESA/vissr/tree/master/grpc_pb)
 
-Build & install the APK using Android Studio by opening project : https://github.com/COVESA/vissr/tree/master/client/android/covesa-vissr-app-demo
+[Build & install the APK using Android Studio by opening project](https://github.com/COVESA/vissr/tree/master/client/android/covesa-vissr-app-demo)
 
 Application uses following APIs to get access to Vehicle sensor data
 
-1. Request for Access Grant Token(AGT) using HTTP POST request : https://github.com/COVESA/vissr/blob/master/server/agt_server/README.md
-2. Request for Access Token(AT) using HTTP POST request with AGT as input : https://github.com/COVESA/vissr/blob/master/server/vissv2server/atServer/README.md
-3. Subscribe for Multiple VSS datapoints with Access Token(AT) : https://www.w3.org/TR/viss2-core/#multiple-signals-request
+[1. Request for Access Grant Token(AGT) using HTTP POST request](https://github.com/COVESA/vissr/blob/master/server/agt_server/README.md)
+
+[2. Request for Access Token(AT) using HTTP POST request with AGT as input](https://github.com/COVESA/vissr/blob/master/server/vissv2server/atServer/README.md)
+
+[3. Subscribe for Multiple VSS datapoints with Access Token(AT)](https://www.w3.org/TR/viss2-core/#multiple-signals-request)
 
 
 ## Steps to run programs
 
-### Step 1 : Start RemotiveLabs vehicle sensor data drive recording
+### Step 1 : Start RemotiveLabs vehicle sensor data drive recording 
 ### Step 2 : Run AGT docker & VISS server docker in local host PC hosted at 127.0.0.1
 ### Step 3 : Starts Android Emulator & do reverse port forwarding via adb that establish TCP communication between Android device & local host PC
 
