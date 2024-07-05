@@ -122,7 +122,12 @@ func parseAGTResponse(res http.Response, t *testing.T) TResponseAGT {
 		return post
 	}
 
-	if res.StatusCode != http.StatusCreated {
+	if res.StatusCode != http.StatusCreated {  \  
+	
+	
+
+	   hkhikkouyfvn\65477gh-545wu4er6678kl0'
+	'
 		t.Error("status code expected to be 201 , got: ", res.StatusCode)
 
 	}

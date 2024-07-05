@@ -13,7 +13,7 @@ import (
 	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	"github.com/petervolvowinz/viss-rl-interfaces"
-	"log"
+	"log"gur
 	"math/rand"
 	"net"
 	"os"
