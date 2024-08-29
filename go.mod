@@ -3,8 +3,8 @@ module github.com/covesa/vissr
 go 1.22.1
 
 require (
-	github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20240320075946-f7026ba21d29
-	github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20240320075946-f7026ba21d29
+	github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20240827143318-9495c70b56c2
+	github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20240827143318-9495c70b56c2
 	github.com/akamensky/argparse v1.4.0
 	github.com/apache/iotdb-client-go v1.1.7
 	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874
