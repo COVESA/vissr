@@ -1,6 +1,6 @@
 [
   {
-    "root":"Vehicle",
+    "root":"*",
     "serverFeeder":"/var/tmp/vissv2/serverFeeder.sock",
     "redis": "/var/tmp/vissv2/redisDB.sock",
     "memcache": "/var/tmp/vissv2/memcacheDB.sock",
