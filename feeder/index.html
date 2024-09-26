@@ -12,21 +12,21 @@
     <title>VISSR Feeders :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1724923408" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1727347177" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1724923408" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1727347177" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1724923408"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1727347177"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1724923408"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1724923408"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1727347177"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1727347177"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1724923408"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1727347177"></script>
 
     
   </div>
@@ -627,6 +627,7 @@ which spawns two threads that implement the respective interface task.
 The architecture shown handle all its communication with the server via the state storage.
 This leads to a polling paradigm and thus a potential latency and performance weakness.
 This architecture is therefore not found on the master branch, but available on the datastore-poll branch.
+There is still a feeder design for this in the feeder-template/feederv1 directory.
 <img src="/vissr/images/feeder-sw-design-v1.jpg?width=50pc" alt="Feeder Sw architecture, unoptimized polling"></p>
 <ul>
 <li>Figure 1. Feeder software architecture unoptimized polling</li>
@@ -638,10 +639,13 @@ the state storage to find new write requests.
 <ul>
 <li>Figure 2. Feeder software architecture optimized polling</li>
 </ul>
-<p>A feeder implementing the optimized polling version of the SwA is found at the master branch.
+<p>A feeder implementing this solution can be found in the feeder-template/feederv2 directory.
 This feeder can be configured to either use an SQLite, or a Redis state storage interface, please see the Datastore chapter for details.</p>
-<p>A design for how the polling on the server side can be mitigated is in the planning stage.
-It is likely to require an update of the feeder interface.</p>
+<p>However, the solution implementd in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
+For this the feeder implementation in the feeder-template/feederv3 directory needs to be used.</p>
+<p>The server is able via the interface to detect whether a feeder implements version 2 or 3 of the interface.
+In case of version 2 it keeps poling of the data store, while for version 3 it relies on event signalling from the feeder instead.
+For more details of this interface, see the <a href="/vissr/server/#feeder-interface">VISSR Server:Feeder interface</a> chapter.</p>
 <p>The feeder translation task is divided into a mapping of the signal name, and a possible scaling of the value.
 The instructions for how to do this is encoded into one or more configuration files that the feeder reads at startup.
 There are two versions of the feeder instructions, being used in template feederv1 and feederv2, respectively.</p>
@@ -987,19 +991,19 @@ Extending the model to instead expect &ldquo;vehicle domain signals&rdquo; (like
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1724923408"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1724923408"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1724923408"></script>
-    <script src="/vissr/js/jquery.sticky.js?1724923408"></script>
-    <script src="/vissr/js/featherlight.min.js?1724923408"></script>
-    <script src="/vissr/js/highlight.pack.js?1724923408"></script>
+    <script src="/vissr/js/clipboard.min.js?1727347177"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1727347177"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1727347177"></script>
+    <script src="/vissr/js/jquery.sticky.js?1727347177"></script>
+    <script src="/vissr/js/featherlight.min.js?1727347177"></script>
+    <script src="/vissr/js/highlight.pack.js?1727347177"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1724923408"></script>
-    <script src="/vissr/js/learn.js?1724923408"></script>
-    <script src="/vissr/js/hugo-learn.js?1724923408"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1727347177"></script>
+    <script src="/vissr/js/learn.js?1727347177"></script>
+    <script src="/vissr/js/hugo-learn.js?1727347177"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1724923408"></script>
+            <script src="/vissr/mermaid/mermaid.js?1727347177"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

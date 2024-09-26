@@ -12,21 +12,21 @@
     <title>VISSv2 Server :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1724923408" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1724923408" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1727347177" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1727347177" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1724923408" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1727347177" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1724923408"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1727347177"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1724923408"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1724923408"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1727347177"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1727347177"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1724923408"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1727347177"></script>
 
     
   </div>
@@ -595,6 +595,7 @@
         <li><a href="#build-the-server">Build the server</a></li>
         <li><a href="#configure-the-server">Configure the server</a></li>
         <li><a href="#pathlist-file-generation">Pathlist file generation</a></li>
+        <li><a href="#feeder-interface">Feeder interface</a></li>
         <li><a href="#history-control">History control</a></li>
         <li><a href="#ignition-life-cycle">Ignition life cycle</a></li>
         <li><a href="#experimental-compression">Experimental compression</a></li>
@@ -736,6 +737,37 @@ SwCs that use this file:</p>
 <li>The protobuf encoding scheme.</li>
 <li>The live simulator.</li>
 </ul>
+<h3 id="feeder-interface">Feeder interface</h3>
+<p>As described in the <a href="/vissr/feeder/">VISSR Feeders</a> chapter there are two template versions of feeders.
+Version 2 only supports reception of Set requests from the server, while version 3 can also act on subscribe/unsubscribe requests from the server,
+and then issue an event to the server when it has updated a subscribed signal in the data store.
+The figure below shows the communication network that implements this.
+<img src="/vissr/images/feeder-event-comm.jpg?width=50pc" alt="Network for feeder event communication"></p>
+<ul>
+<li>Figure 1. Network for feeder event communication</li>
+</ul>
+<p>The feeder, running in a separate process, is communicating with the server over a Unix domain socket interface.
+This interface is on the server side managed by the &ldquo;feeder front end&rdquo; thread.
+The &ldquo;service manager&rdquo; thread of the server receives set/subscribe/unsubscribe requests from clients (get requests do not affect this network)
+that it passes on to the feeder front end, which then analyzes the requests and decides to which other entities this should be forwarded.
+The subscribe request types that benefit from switching from polling to an event based paradigm are change, range, curvelog, and historic data capture.
+This solution supports events for the change, range, and curvelog type.
+The historic data capture may later also be updated to support this.
+The message formats for the messages passed over the UDS interface are shown below.
+For the message formats over the other Golang channel based interfaces, please read the code.</p>
+<p>Feeder front end to Feeder:</p>
+<ul>
+<li>{”action”: ”set”, &ldquo;data&rdquo;: {&ldquo;path&rdquo;:&ldquo;x&rdquo;, &ldquo;dp&rdquo;:{&ldquo;value&rdquo;:&ldquo;y&rdquo;, &ldquo;ts&rdquo;:&ldquo;z&rdquo;}}}</li>
+<li>{”action”: ”subscribe”, ”path”: [”p1”, &hellip;, ”pN”]}</li>
+<li>{”action”: ”unsubscribe”, ”path”: [”p1”, &hellip;, ”pN”]}</li>
+</ul>
+<p>Feeder to Feeder front end:</p>
+<ul>
+<li>{”action”: ”subscribe”, ”status”: “ok/nok”}</li>
+<li>{”action”: ”subscription”, ”path”: ”p”}</li>
+</ul>
+<p>A feeder implementing version 2 may discard messages from the Feeder front end that have the &ldquo;action&rdquo; set to either &ldquo;subcribe&rdquo; or &ldquo;unsubscribe&rdquo;,
+while a feeder implementing version 3 must respond to a subscribe request with &ldquo;status&rdquo; set to &ldquo;ok&rdquo;.</p>
 <h3 id="history-control">History control</h3>
 <p>The VISSv2 specification provides a capability for clients to issue a request for <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation">historic data</a>.
 This server supports temporary recording of data that can then be requested by a client using a history filter.
@@ -1082,19 +1114,19 @@ For more details, see the  <a href="/vissr/client#compression-client">compressio
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1724923408"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1724923408"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1724923408"></script>
-    <script src="/vissr/js/jquery.sticky.js?1724923408"></script>
-    <script src="/vissr/js/featherlight.min.js?1724923408"></script>
-    <script src="/vissr/js/highlight.pack.js?1724923408"></script>
+    <script src="/vissr/js/clipboard.min.js?1727347177"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1727347177"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1727347177"></script>
+    <script src="/vissr/js/jquery.sticky.js?1727347177"></script>
+    <script src="/vissr/js/featherlight.min.js?1727347177"></script>
+    <script src="/vissr/js/highlight.pack.js?1727347177"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1724923408"></script>
-    <script src="/vissr/js/learn.js?1724923408"></script>
-    <script src="/vissr/js/hugo-learn.js?1724923408"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1727347177"></script>
+    <script src="/vissr/js/learn.js?1727347177"></script>
+    <script src="/vissr/js/hugo-learn.js?1727347177"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1724923408"></script>
+            <script src="/vissr/mermaid/mermaid.js?1727347177"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
