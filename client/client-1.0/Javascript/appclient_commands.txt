@@ -29,13 +29,13 @@ Metadata request:
 {"action":"get","path":"Vehicle/ADAS","filter":[{"type":"paths","parameter":["ABS/*","CruiseControl/Error"]},{"type":"dynamic-metadata","parameter":"availability"}],"requestId":"237"}
 
 Set request:
-{"action":"set", "path":"Vehicle/Cabin/Door/Row1/Right/IsOpen", "value":"999", "requestId":"245"}
+{"action":"set", "path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen", "value":"999", "requestId":"245"}
 
 Subscribe request:
 {"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"type":"timebased","parameter":{"period":"3000"}},"requestId":"246"}
-{"action":"subscribe","path":"Vehicle.Cabin.Door.Row1.Right.IsOpen","filter":{"type":"change","parameter":{"logic-op":"ne", "diff":"0"}},"requestId":"247"}
-{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"range","parameter":{"logic-op":"gt","boundary":"500"}},"requestId":"255"}
-{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"range","parameter":[{"logic-op":"gt","boundary":"500"},{"logic-op":"lt","boundary":"510"}]},"requestId":"265"}
+{"action":"subscribe","path":"Vehicle.Cabin.Door.Row1.PassengerSide.IsOpen","filter":{"type":"change","parameter":{"logic-op":"ne", "diff":"0"}},"requestId":"247"}
+{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"type":"range","parameter":{"logic-op":"gt","boundary":"500"}},"requestId":"255"}
+{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"type":"range","parameter":[{"logic-op":"gt","boundary":"500"},{"logic-op":"lt","boundary":"510"}]},"requestId":"265"}
 {"action":"subscribe","path":"Vehicle.Powertrain.Transmission.Speed","filter":{"type":"curvelog","parameter":{"maxerr":"2","bufsize":"100"}},"requestId":"275"}
 {"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"curvelog","parameter":{"maxerr":"0.00001","bufsize":"100"}}],"requestId":"285"}
 
@@ -48,7 +48,7 @@ Unsubscribe request:
 
 Get request:
 HTTP GET 
-URL: Vehicle/Cabin/Door/Row1/Right/IsOpen
+URL: Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen
 URL: Vehicle.Acceleration.Longitudinal
 
 Get request with search:
@@ -90,6 +90,6 @@ wsclient_uncompressed.html:
 // where "at" is the Access Token from ATS request
 
 http_client.html:
-URL: Vehicle/Cabin/Door/Row1/Right/IsOpen
+URL: Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen
 Access token: from at-request response
 

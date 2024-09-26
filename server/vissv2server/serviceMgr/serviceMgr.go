@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"slices"
 	"time"
 )
 
@@ -58,6 +59,24 @@ type HistoryList struct {
 
 var historyList []HistoryList
 var historyAccessChannel chan string
+
+// for feeder notifications
+var toFeeder chan string       // requests
+var fromFeederRorC chan string //range and change messages
+var fromFeederCl chan string   // curvelog messages
+
+type FeederSubElem struct {
+	SubscriptionId string
+	Path []string
+	Variant string
+}
+var feederSubList []FeederSubElem
+
+type FeederPathElem struct {
+	Path string
+	Reference int
+}
+var feederPathList []FeederPathElem
 
 //var feederConn net.Conn
 //var hostIp string
@@ -204,20 +223,20 @@ func setSubscriptionListThreads(subscriptionList []SubscriptionState, subThreads
 	return subscriptionList
 }
 
-func checkRangeChangeFilter(filterList []utils.FilterObject, latestDataPoint string, path string) (bool, bool, string) {
+func checkRangeChangeFilter(filterList []utils.FilterObject, latestDataPoint string, path string) (bool, string) {
 	for i := 0; i < len(filterList); i++ {
 		if filterList[i].Type == "paths" || filterList[i].Type == "timebased" || filterList[i].Type == "curvelog" {
 			continue
 		}
 		currentDataPoint := getVehicleData(path)
 		if filterList[i].Type == "range" {
-			return evaluateRangeFilter(filterList[i].Parameter, getDPValue(currentDataPoint)), false, currentDataPoint // do not update latestValue
+			return evaluateRangeFilter(filterList[i].Parameter, getDPValue(currentDataPoint)), currentDataPoint // do not update latestValue
 		}
 		if filterList[i].Type == "change" {
 			return evaluateChangeFilter(filterList[i].Parameter, getDPValue(latestDataPoint), getDPValue(currentDataPoint), currentDataPoint)
 		}
 	}
-	return false, false, ""
+	return false, ""
 }
 
 func getDPValue(dp string) string {
@@ -264,13 +283,13 @@ func evaluateRangeFilter(opValue string, currentValue string) bool {
 	}
 	evaluation := true
 	for i := 0; i < len(rangeFilter); i++ {
-		eval, _ := compareValues(rangeFilter[i].LogicOp, rangeFilter[i].Boundary, currentValue, "0") // currVal - 0 logic-op boundary
+		eval := compareValues(rangeFilter[i].LogicOp, rangeFilter[i].Boundary, currentValue, "0") // currVal - 0 logic-op boundary
 		evaluation = evaluation && eval
 	}
 	return evaluation
 }
 
-func evaluateChangeFilter(opValue string, latestValue string, currentValue string, currentDataPoint string) (bool, bool, string) {
+func evaluateChangeFilter(opValue string, latestValue string, currentValue string, currentDataPoint string) (bool, string) {
 	//utils.Info.Printf("evaluateChangeFilter: opValue=%s", opValue)
 	type ChangeFilter struct {
 		LogicOp string `json:"logic-op"`
@@ -280,17 +299,17 @@ func evaluateChangeFilter(opValue string, latestValue string, currentValue strin
 	err := json.Unmarshal([]byte(opValue), &changeFilter)
 	if err != nil {
 		utils.Error.Printf("evaluateChangeFilter: Unmarshal error=%s", err)
-		return false, false, ""
+		return false, ""
 	}
-	val1, val2 := compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff)
-	return val1, val2, currentDataPoint
+	val1 := compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff)
+	return val1, currentDataPoint
 }
 
-func compareValues(logicOp string, latestValue string, currentValue string, diff string) (bool, bool) {
+func compareValues(logicOp string, latestValue string, currentValue string, diff string) bool {
 	latestValueType := utils.AnalyzeValueType(latestValue)
 	if latestValueType != utils.AnalyzeValueType(currentValue) {
 		utils.Error.Printf("compareValues: Incompatible types, latVal=%s, curVal=%s", latestValue, currentValue)
-		return false, false
+		return false
 	}
 	switch latestValueType {
 	case 0:
@@ -298,82 +317,82 @@ func compareValues(logicOp string, latestValue string, currentValue string, diff
 	case 2: // bool
 		if diff != "0" {
 			utils.Error.Printf("compareValues: invalid parameter for boolean type")
-			return false, false
+			return false
 		}
 		switch logicOp {
 		case "eq":
-			return currentValue == latestValue, true
+			return currentValue == latestValue
 		case "ne":
-			return currentValue != latestValue, true // true->false OR false->true
+			return currentValue != latestValue // true->false OR false->true
 		case "gt":
-			return latestValue == "false" && currentValue != latestValue, true // false->true
+			return latestValue == "false" && currentValue != latestValue // false->true
 		case "lt":
-			return latestValue == "true" && currentValue != latestValue, true // true->false
+			return latestValue == "true" && currentValue != latestValue // true->false
 		}
-		return false, false
+		return false
 	case 1: // int
 		curVal, err := strconv.Atoi(currentValue)
 		if err != nil {
-			return false, false
+			return false
 		}
 		latVal, err := strconv.Atoi(latestValue)
 		if err != nil {
-			return false, false
+			return false
 		}
 		diffVal, err := strconv.Atoi(diff)
 		if err != nil {
-			return false, false
+			return false
 		}
-		//utils.Info.Printf("compareValues: value type=integer, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
+//		utils.Info.Printf("compareValues: value type=integer, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
 		switch logicOp {
 		case "eq":
-			return curVal-diffVal == latVal, false
+			return curVal-diffVal == latVal
 		case "ne":
-			return curVal-diffVal != latVal, false
+			return curVal-diffVal != latVal
 		case "gt":
-			return curVal-diffVal > latVal, false
+			return curVal-diffVal > latVal
 		case "gte":
-			return curVal-diffVal >= latVal, false
+			return curVal-diffVal >= latVal
 		case "lt":
-			return curVal-diffVal < latVal, false
+			return curVal-diffVal < latVal
 		case "lte":
-			return curVal-diffVal <= latVal, false
+			return curVal-diffVal <= latVal
 		}
-		return false, false
+		return false
 	case 3: // float
 		f64Val, err := strconv.ParseFloat(currentValue, 32)
 		if err != nil {
-			return false, false
+			return false
 		}
 		curVal := float32(f64Val)
 		f64Val, err = strconv.ParseFloat(latestValue, 32)
 		if err != nil {
-			return false, false
+			return false
 		}
 		latVal := float32(f64Val)
 		f64Val, err = strconv.ParseFloat(diff, 32)
 		if err != nil {
-			return false, false
+			return false
 		}
 		diffVal := float32(f64Val)
 		//utils.Info.Printf("compareValues: value type=float, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
 		switch logicOp {
 		case "eq":
-			return curVal-diffVal == latVal, false
+			return curVal-diffVal == latVal
 		case "ne":
-			return curVal-diffVal != latVal, false
+			return curVal-diffVal != latVal
 		case "gt":
-			return curVal-diffVal > latVal, false
+			return curVal-diffVal > latVal
 		case "gte":
-			return curVal-diffVal >= latVal, false
+			return curVal-diffVal >= latVal
 		case "lt":
-			return curVal-diffVal < latVal, false
+			return curVal-diffVal < latVal
 		case "lte":
-			return curVal-diffVal <= latVal, false
+			return curVal-diffVal <= latVal
 		}
-		return false, false
+		return false
 	}
-	return false, false
+	return false
 }
 
 func addPackage(incompleteMessage string, packName string, packValue string) string {
@@ -456,7 +475,25 @@ func getCurveLoggingParams(opValue string) (float64, int) { // {"maxerr": "X", "
 	return maxErr, bufSize
 }
 
-func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan chan int, CLChan chan CLPack, subscriptionId int, paths []string) {
+func createFeederNotifyMessage(variant string, pathList []string, subscriptionId int) string {
+	paths := `["`
+	for i := 0; i < len(pathList); i++ {
+		paths += pathList[i] + `", "`
+	}
+	paths = paths[:len(paths)-3] + "]"
+	return `{"action": "subscribe", "variant": "` + variant + `", "path": ` + paths + `, "subscriptionId": "` + strconv.Itoa(subscriptionId) + `"}`
+}
+
+func getFeederNotifyType(filterList []utils.FilterObject) string {
+	for i := 0; i < len(filterList); i++ {
+		if filterList[i].Type == "curvelog" || filterList[i].Type == "change" || filterList[i].Type == "range" {
+			return filterList[i].Type
+		}
+	}
+	return ""
+}
+
+func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan chan int, CLChan chan CLPack, subscriptionId int, paths []string, subscriptionList []SubscriptionState) []SubscriptionState {
 	for i := 0; i < len(filterList); i++ {
 		if filterList[i].Type == "timebased" {
 			interval := getIntervalPeriod(filterList[i].Parameter)
@@ -467,10 +504,13 @@ func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan ch
 			break
 		}
 		if filterList[i].Type == "curvelog" {
-			go curveLoggingServer(CLChan, threadsChan, subscriptionId, filterList[i].Parameter, paths)
+			clRoutingList, subThreads := curveLoggingDispatcher(CLChan, subscriptionId, filterList[i].Parameter, paths)
+			subscriptionList = setSubscriptionListThreads(subscriptionList, subThreads)
+			clRouterChan <- clRoutingList
 			break
 		}
 	}
+	return subscriptionList
 }
 
 func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
@@ -570,7 +610,7 @@ func setVehicleData(path string, value string) string {
 	case "memcache":
 		fallthrough
 	case "redis":
-		udsConn := utils.GetUdsConn(path, "serverFeeder")
+/*		udsConn := utils.GetUdsConn(path, "serverFeeder")
 		if udsConn == nil {
 			utils.Error.Printf("setVehicleData:Failed to UDS connect to feeder for path = %s", path)
 			return ""
@@ -580,7 +620,9 @@ func setVehicleData(path string, value string) string {
 		if err != nil {
 			utils.Error.Printf("setVehicleData:Write failed, err = %s", err)
 			return ""
-		}
+		}*/
+		message := `{"action": "set", "data": {"path":"` + path + `", "dp":{"value":"` + value + `", "ts":"` + ts + `"}}}`
+		toFeeder <- message
 		return ts
 	case "apache-iotdb":
 		vssKey := []string{"`" + path + "`"} // Back-quote the VSS node for the DB insert, e.g. `Vehicle.CurrentLocation.Longitude`
@@ -947,6 +989,218 @@ func getValidation(path string) string {
 	return "read-write" //dummy return
 }
 
+func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeederCl chan string) {
+	udsConn := utils.GetUdsConn("*", "serverFeeder")
+	if udsConn == nil {
+		utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
+		return // ???
+	}
+	fromFeeder := make(chan string)
+	go feederReader(udsConn, fromFeeder)
+	feederNotification := "not-verified"  // possible alues ["not-verified", "not-supported", "supported"]
+	subMessageCount := 0
+	for {
+		select {
+			case message := <- toFeeder:
+				var messageMap map[string]interface{}
+				var feederUpdatePath string
+				var unsubscribePath []string
+				err := json.Unmarshal([]byte(message), &messageMap)
+				if err != nil || messageMap["action"] == nil {
+					utils.Error.Printf("feederFrontend:Feeder message corrupt, err = %s\nmessage=%s", err, message)
+				} else {
+					switch messageMap["action"].(string) {
+						case "subscribe":
+							if messageMap["subscriptionId"] != nil && messageMap["variant"] != nil && messageMap["path"] != nil {
+								feederSubList = addOnFeederSubList(messageMap["subscriptionId"].(string), messageMap["variant"].(string), messageMap["path"].([]interface{}))
+								feederPathList, feederUpdatePath = addOnFeederPathList(messageMap["path"].([]interface{}))
+								if feederNotification != "not-supported" {
+									if subMessageCount >= 5 {
+										feederNotification = "not-supported"
+										continue
+									}
+									message = `{"action": "subscribe", "path":` + feederUpdatePath + `}`
+									subMessageCount++
+								}
+							} else {
+								utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+								continue
+							}
+						case "unsubscribe":
+							if messageMap["subscriptionId"] != nil {
+								fromFeederCl <- message  // needed for list purging
+								feederSubList, unsubscribePath = deleteOnFeederSubList(messageMap["subscriptionId"].(string))
+								feederPathList, feederUpdatePath = deleteOnFeederPathList(unsubscribePath)
+								if len(feederUpdatePath) > 4 {
+									message = `{"action": "unsubscribe", "path":` + feederUpdatePath + `}`
+								} else {
+									continue
+								}
+							} else {
+								utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+								continue
+							}
+						case "set": // send message as is to feeder
+						default:
+							utils.Error.Printf("feederFrontend:Feeder message action unknown, message=%s", message)
+							continue
+					}
+					_, err := udsConn.Write([]byte(message))
+					if err != nil {
+						utils.Error.Printf("feederFrontend:Feeder write failed, err = %s", err)
+					}
+				}
+			case message := <- fromFeeder:
+				var messageMap map[string]interface{}
+				err := json.Unmarshal([]byte(message), &messageMap)
+				if err != nil || messageMap["action"] == nil {
+					utils.Error.Printf("feederFrontend:Feeder message corrupt, err = %s\nmessage=%s", err, message)
+				} else {
+					switch messageMap["action"].(string) {
+						case "subscribe": //response
+							if messageMap["status"] != nil {
+								if messageMap["status"].(string) == "ok" {
+									fromFeederRorC <- message
+									fromFeederCl <- message
+									feederNotification = "supported"
+								} else {
+									feederNotification = "not-supported"
+								}
+							} else {
+								utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+								continue
+							}
+						case "subscription": //notification
+							if messageMap["path"] != nil {
+								variant := getSubscribeVariant(messageMap["path"].(string))
+								if strings.Contains(variant, "change") || strings.Contains(variant, "range") {
+									fromFeederRorC <- message
+								}
+								if strings.Contains(variant, "curvelog") {
+									fromFeederCl <- message
+								}
+							} else {
+								utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+							}
+						default:
+							utils.Error.Printf("feederFrontend:Feeder message action unknown, message=%s", message)
+					}
+				}
+		}
+	}
+}
+
+func getSubscribeVariant(path string) string {
+	variants := ""
+	for i := 0; i < len(feederSubList); i++ {
+		for j := 0; j < len(feederSubList[i].Path); j++ {
+			if feederSubList[i].Path[j] == path {
+				if !strings.Contains(variants, feederSubList[i].Variant) {
+					variants += feederSubList[i].Variant + "+"
+				}
+			}
+		}
+	}
+	if len(variants) > 0 {
+		variants = variants[:len(variants)-1]
+	}
+	return variants
+}
+
+func addOnFeederSubList(subscriptionId string, variant string, path []interface{}) []FeederSubElem {
+        var feederSubElem FeederSubElem
+        feederSubElem.SubscriptionId = subscriptionId
+        feederSubElem.Variant = variant
+        feederSubElem.Path = make([]string, len(path))
+        for i := 0; i < len(path); i++ {
+        	feederSubElem.Path[i] = path[i].(string)
+        }
+	feederSubList = append(feederSubList, feederSubElem)
+	return feederSubList
+}
+
+func deleteOnFeederSubList(subscriptionId string) ([]FeederSubElem, []string) {
+	for i := 0; i < len(feederSubList); i++ {
+		if feederSubList[i].SubscriptionId == subscriptionId {
+			unsubscribePath := make([]string, len(feederSubList[i].Path))
+			for j := 0; j < len(feederSubList[i].Path); j++ {
+				unsubscribePath[j] = feederSubList[i].Path[j]
+			}
+			return slices.Delete(feederSubList, i, i+1), unsubscribePath
+		}
+	}
+	return nil, nil
+}
+
+func addOnFeederPathList(path []interface{}) ([]FeederPathElem, string) {
+        var feederPathElem FeederPathElem
+	var pathFound bool
+	feederUpdatePath := `["`
+	for i := 0; i < len(path); i++ {
+		pathFound = false
+		for j := 0; j < len(feederPathList); j++ {
+			if path [i] == feederPathList[j].Path {
+				feederPathList[j].Reference++
+				pathFound = true
+			}
+		}
+		if !pathFound {
+			feederPathElem.Path = path[i].(string)
+			feederPathElem.Reference = 1
+			feederPathList = append(feederPathList, feederPathElem)
+			feederUpdatePath += path[i].(string) + `", "`
+		}
+	}
+	if len(feederUpdatePath) > 2 {
+		feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4]
+	}
+	return feederPathList, feederUpdatePath + `"]`
+}
+
+func deleteOnFeederPathList(path []string) ([]FeederPathElem, string) {
+	feederUpdatePath := `["`
+	removeIndex := make([]int, len(path))
+	k := 0
+	for i := 0; i < len(path); i++ {
+		removeIndex[k] = -1
+		for j := 0; j < len(feederPathList); j++ {
+			if path [i] == feederPathList[j].Path {
+				if feederPathList[j].Reference > 1 {
+					feederPathList[j].Reference--
+				} else {
+					removeIndex[k] = j
+					k++
+				}
+			}
+		}
+		k = 0
+		for i := 0; i < len(path); i++ {
+			if removeIndex[k] == i {
+				feederUpdatePath += path[i] + `", "`
+				k++
+				feederPathList = slices.Delete(feederPathList, i, i+1)
+			}
+		}
+	}
+	if len(feederUpdatePath) > 2 {
+		feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4]
+	}
+	return feederPathList, feederUpdatePath + `"]`
+}
+
+func feederReader(udsConn net.Conn, fromFeeder chan string) {
+	buf := make([]byte, 512)
+	for {
+		nr, err := udsConn.Read(buf)
+		if err != nil {
+			utils.Error.Printf("feederReader:Read failed, err = %s", err)
+			break
+		} else {
+			fromFeeder <- string(buf[:nr])
+		}
+	}
+}
+
 func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
@@ -967,7 +1221,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			utils.Error.Printf("Could not find state storage file = %s", dbFile)
 		}
 	case "redis":
-		addr := utils.GetUdsPath("Vehicle", "redis")
+		addr := utils.GetUdsPath("*", "redis")
 		if len(addr) == 0 {
 			utils.Error.Printf("redis-server socket address not found.")
 			// os.Exit(1) should terminate the process
@@ -1057,7 +1311,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 	backendChan := make(chan string)
 	subscriptionChan := make(chan int)
 	historyAccessChannel = make(chan string)
-	CLChannel = make(chan CLPack, 5) // allow some buffering...
+	initClResources()
 	subscriptionList := []SubscriptionState{}
 	subscriptionId = 1 // do not start with zero!
 
@@ -1068,11 +1322,18 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 	if historySupport {
 		go historyServer(historyAccessChannel, vss_data)
 	}
+	toFeeder = make(chan string)
+	fromFeederRorC = make(chan string)
+	fromFeederCl = make(chan string)
+	go feederFrontend(toFeeder, fromFeederRorC, fromFeederCl)
+	go curveLogServer()
 	var dummyTicker *time.Ticker
 	if stateDbType != "none" {
 		dummyTicker = time.NewTicker(47 * time.Millisecond)
 	}
-	subscriptTicker := time.NewTicker(23 * time.Millisecond) //range/change subscriptions
+	subscriptTicker := time.NewTicker(23 * time.Millisecond) //range/change subscription ticker when no feeder notifications
+	feederNotification := false
+	triggeredPath := ""
 
 	for {
 		select {
@@ -1156,7 +1417,11 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
 				subscriptionList = append(subscriptionList, subscriptionState)
 				responseMap["subscriptionId"] = strconv.Itoa(subscriptionId)
-				activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, CLChannel, subscriptionId, subscriptionState.Path)
+				subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, CLChannel, subscriptionId, subscriptionState.Path, subscriptionList)
+				variant := getFeederNotifyType(subscriptionState.FilterList)
+				if variant == "curvelog" || variant == "range" || variant == "change" {
+					toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
+				}
 				subscriptionId++ // not to be incremented elsewhere
 				dataChan <- utils.FinalizeMessage(responseMap)
 			case "unsubscribe":
@@ -1168,6 +1433,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 						if status != -1 {
 							responseMap["subscriptionId"] = subscriptId
 							dataChan <- utils.FinalizeMessage(responseMap)
+							toFeeder <- request
 							break
 						}
 						requestMap["subscriptionId"] = subscriptId
@@ -1201,8 +1467,6 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			if dummyValue > 999 {
 				dummyValue = 0
 			}
-		case subThreads := <-threadsChan:
-			subscriptionList = setSubscriptionListThreads(subscriptionList, subThreads)
 		case subscriptionId := <-subscriptionChan: // interval notification triggered
 			subscriptionState := subscriptionList[getSubcriptionStateIndex(subscriptionId, subscriptionList)]
 			var subscriptionMap = make(map[string]interface{})
@@ -1230,26 +1494,64 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			subscriptionMap["RouterId"] = subscriptionList[index].RouterId
 			backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", clPack.DataPack)
 		case <-subscriptTicker.C:
-			// check if range or change notification triggered
-			for i := range subscriptionList {
-				//				triggerDataPoint := getVehicleData(subscriptionList[i].Path[0])
-				doTrigger, updateLatest, triggerDataPoint := checkRangeChangeFilter(subscriptionList[i].FilterList, subscriptionList[i].LatestDataPoint, subscriptionList[i].Path[0])
-				if updateLatest == true {
-					subscriptionList[i].LatestDataPoint = triggerDataPoint
-				}
-				if doTrigger == true {
-					subscriptionState := subscriptionList[i]
-					var subscriptionMap = make(map[string]interface{})
-					subscriptionMap["action"] = "subscription"
-					subscriptionMap["ts"] = utils.GetRfcTime()
-					subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
-					subscriptionMap["RouterId"] = subscriptionState.RouterId
-					subscriptionList[i].LatestDataPoint = triggerDataPoint
-					backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", getDataPack(subscriptionList[i].Path, nil))
-				}
+			if feederNotification == false { // feeder does not issue notifications
+				subscriptionList = checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
+			} else {
+				subscriptTicker.Stop()
 			}
+		case feederMessage := <-fromFeederRorC:
+utils.Info.Printf("Feeder message=%s", feederMessage)
+			triggeredPath, feederNotification = decodeFeederMessage(feederMessage, feederNotification)
+			subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
 		} // select
 	} // for
+}
+
+func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan string) []SubscriptionState {
+	// check if range or change notification triggered
+	for i := range subscriptionList {
+		if len(triggeredPath) == 0 || triggeredPath == subscriptionList[i].Path[0] {
+			doTrigger, triggerDataPoint := checkRangeChangeFilter(subscriptionList[i].FilterList, subscriptionList[i].LatestDataPoint, subscriptionList[i].Path[0])
+			subscriptionList[i].LatestDataPoint = triggerDataPoint
+			if doTrigger == true {
+				subscriptionState := subscriptionList[i]
+				var subscriptionMap = make(map[string]interface{})
+				subscriptionMap["action"] = "subscription"
+				subscriptionMap["ts"] = utils.GetRfcTime()
+				subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
+				subscriptionMap["RouterId"] = subscriptionState.RouterId
+				backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", getDataPack(subscriptionList[i].Path, nil))
+			}
+		}
+	}
+	return subscriptionList
+}
+
+func decodeFeederMessage(feederMessage string, feederNotification bool) (string, bool) {
+	if len(feederMessage) == 0 {
+		return "", feederNotification
+	}
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(feederMessage), &messageMap)
+	if err != nil || messageMap["action"] == nil {
+		utils.Error.Printf("Error in feeder message=%s", feederMessage)
+		return "", feederNotification
+	}
+	var triggeredPath string
+	switch messageMap["action"].(string) {
+		case "subscribe":
+			if messageMap["status"] != nil && messageMap["status"].(string) == "ok" {
+				feederNotification = true
+			}
+		case "subscription":
+			if messageMap["path"] != nil {
+				triggeredPath  = messageMap["path"].(string)
+			}
+		default:
+			utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
+			return "", feederNotification
+	}
+	return triggeredPath, feederNotification
 }
 
 func getSubscriptionData(subscriptionList []SubscriptionState, gatingId string) (string, string) {

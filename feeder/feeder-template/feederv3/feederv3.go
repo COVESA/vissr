@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"slices"
 	"time"
 )
 
@@ -57,6 +58,8 @@ var redisClient *redis.Client
 var memcacheClient *memcache.Client
 var dbHandle *sql.DB
 var stateDbType string
+
+var notificationList []string
 
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
@@ -156,21 +159,38 @@ func deSerializeUInt(buf []byte) interface{} {
 }
 
 func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData) {
-	udsChan := make(chan DomainData, 1)
-	go initUdsEndpoint(udsChan)
+	os.Remove("/var/tmp/vissv2/serverFeeder.sock")
+	listener, err := net.Listen("unix", "/var/tmp/vissv2/serverFeeder.sock") //the file must be the same as declared in the feeder-registration.json that the service mgr reads
+	if err != nil {
+		utils.Error.Printf("udsReader:UDS listen failed, err = %s", err)
+		os.Exit(-1)
+	}
+	conn, err := listener.Accept()
+	if err != nil {
+		utils.Error.Printf("udsReader:UDS accept failed, err = %s", err)
+		os.Exit(-1)
+	}
+	udsChan := make(chan string)
+	go udsReader(conn, inputChan, udsChan)
+	go udsWriter(conn, udsChan)
 	for {
 		select {
 		case outData := <-outputChan:
-//			utils.Info.Printf("Data written to statestorage: Name=%s, Value=%s", outData.Name, outData.Value)
+if outData.Name == "Vehicle.TripMeterReading" {
+	utils.Info.Printf("Data written to statestorage: Name=%s, Value=%s", outData.Name, outData.Value)
+}
 			if len(outData.Name) == 0 {
 				continue
 			}
 			status := statestorageSet(outData.Name, outData.Value, utils.GetRfcTime())
 			if status != 0 {
-				utils.Error.Printf("initVSSInterfaceMgr():Redis write failed")
+				utils.Error.Printf("initVSSInterfaceMgr():State storage write failed")
+			} else {
+				if onNotificationList(outData.Name) != -1 {
+					message := `{"action": "subscription", "path":"` + outData.Name + `"}`
+					udsChan <- message
+				}
 			}
-		case actuatorData := <-udsChan:
-			inputChan <- actuatorData
 		}
 	}
 }
@@ -211,38 +231,71 @@ func statestorageSet(path string, val string, ts string) int {
 	return -1
 }
 
-func initUdsEndpoint(udsChan chan DomainData) {
-	os.Remove("/var/tmp/vissv2/serverFeeder.sock")
-	listener, err := net.Listen("unix", "/var/tmp/vissv2/serverFeeder.sock") //the file must be the same as declared in the feeder-registration.json that the service mgr reads
-	if err != nil {
-		utils.Error.Printf("initUdsEndpoint:UDS listen failed, err = %s", err)
-		os.Exit(-1)
-	}
-	conn, err := listener.Accept()
-	if err != nil {
-		utils.Error.Printf("initUdsEndpoint:UDS accept failed, err = %s", err)
-		os.Exit(-1)
-	}
+func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string) {
 	defer conn.Close()
 	buf := make([]byte, 512)
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			utils.Error.Printf("initUdsEndpoint:Read failed, err = %s", err)
+			utils.Error.Printf("udsReader:Read failed, err = %s", err)
 			continue
 		}
-		utils.Info.Printf("Feeder:Server message: %s", string(buf[:n]))
+		utils.Info.Printf("udsReader:Server message: %s", string(buf[:n]))
 		var serverMessageMap map[string]interface{}
 		err = json.Unmarshal(buf[:n], &serverMessageMap)
 		if err != nil {
-			utils.Error.Printf("splitToDomainDataAndTs:Unmarshal error=%s", err)
+			utils.Error.Printf("udsReader:Unmarshal error=%s", err)
 			continue
 		}
-		if serverMessageMap["action"] != nil && serverMessageMap["action"].(string) == "set" {
-			domainData, _ := splitToDomainDataAndTs(serverMessageMap["data"].(map[string]interface{}))
-			udsChan <- domainData
+		if serverMessageMap["action"] != nil {
+			switch serverMessageMap["action"].(string) {
+				case "set":
+					domainData, _ := splitToDomainDataAndTs(serverMessageMap["data"].(map[string]interface{}))
+					inputChan <- domainData
+				case "subscribe":
+					pathList := serverMessageMap["path"].([]interface{})
+					for i := 0; i < len(pathList); i++ {
+						if onNotificationList(pathList[i].(string)) == -1 {
+							notificationList = append(notificationList, pathList[i].(string))
+						}
+					}
+					response := `{"action": "subscribe", "status": "ok"}`
+					udsChan <- response
+				case "unsubscribe":
+					pathList := serverMessageMap["path"].([]interface{})
+					for i := 0; i < len(pathList); i++ {
+						if onNotificationList(pathList[i].(string)) != -1 {
+							notificationList = slices.Delete(notificationList, i, i+1)
+						}
+					}
+				default:
+					utils.Error.Printf("udsReader:Message action unknown = %s", serverMessageMap["action"].(string))
+			}
 		}
 	}
+}
+
+func udsWriter(conn net.Conn, udsChan chan string) {
+	defer conn.Close()
+	for {
+		select {
+		case message := <-udsChan:
+		utils.Info.Printf("udsWriter:Server message: %s", message)
+			_, err := conn.Write([]byte(message))
+			if err != nil {
+				utils.Error.Printf("udsWriter:Write failed, err = %s", err)
+			}
+		}
+	}
+}
+
+func onNotificationList(path string) int {
+	for i := 0; i < len(notificationList); i++ {
+		if notificationList[i] == path {
+			return i
+		}
+	}
+	return -1
 }
 
 func splitToDomainDataAndTs(serverMessageMap map[string]interface{}) (DomainData, string) { // server={"dp": {"ts": "Z","value": "Y"},"path": "X"}, redis={"value":"xxx", "ts":"zzz"}

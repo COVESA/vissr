@@ -107,6 +107,36 @@ SwCs that use this file:
 * The protobuf encoding scheme.
 * The live simulator.
 
+### Feeder interface
+As described in the [VISSR Feeders](/vissr/feeder/) chapter there are two template versions of feeders.
+Version 2 only supports reception of Set requests from the server, while version 3 can also act on subscribe/unsubscribe requests from the server,
+and then issue an event to the server when it has updated a subscribed signal in the data store.
+The figure below shows the communication network that implements this.
+![Network for feeder event communication](/vissr/images/feeder-event-comm.jpg?width=50pc)
+* Figure 1. Network for feeder event communication
+
+The feeder, running in a separate process, is communicating with the server over a Unix domain socket interface.
+This interface is on the server side managed by the "feeder front end" thread.
+The "service manager" thread of the server receives set/subscribe/unsubscribe requests from clients (get requests do not affect this network)
+that it passes on to the feeder front end, which then analyzes the requests and decides to which other entities this should be forwarded.
+The subscribe request types that benefit from switching from polling to an event based paradigm are change, range, curvelog, and historic data capture.
+This solution supports events for the change, range, and curvelog type.
+The historic data capture may later also be updated to support this.
+The message formats for the messages passed over the UDS interface are shown below.
+For the message formats over the other Golang channel based interfaces, please read the code.
+
+Feeder front end to Feeder:
+* {”action”: ”set”, "data": {"path":"x", "dp":{"value":"y", "ts":"z"}}}
+* {”action”: ”subscribe”, ”path”: [”p1”, ..., ”pN”]}
+* {”action”: ”unsubscribe”, ”path”: [”p1”, ..., ”pN”]}
+
+Feeder to Feeder front end:
+* {”action”: ”subscribe”, ”status”: “ok/nok”}
+* {”action”: ”subscription”, ”path”: ”p”}
+
+A feeder implementing version 2 may discard messages from the Feeder front end that have the "action" set to either "subcribe" or "unsubscribe",
+while a feeder implementing version 3 must respond to a subscribe request with "status" set to "ok".
+
 ### History control
 The VISSv2 specification provides a capability for clients to issue a request for [historic data](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation).
 This server supports temporary recording of data that can then be requested by a client using a history filter.

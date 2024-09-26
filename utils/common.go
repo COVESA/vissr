@@ -75,7 +75,7 @@ func ReadUdsRegistrations(sockFile string) []UdsReg {
 func GetUdsConn(path string, connectionName string) net.Conn {
 	root := ExtractRootName(path)
 	for i := 0; i < len(udsRegList); i++ {
-		if root == udsRegList[i].RootName {
+		if root == udsRegList[i].RootName || udsRegList[i].RootName == "*" {
 			return connectViaUds(getSocketPath(i, connectionName))
 		}
 	}
@@ -334,7 +334,6 @@ func FileExists(filename string) bool {
 func ExtractRootName(path string) string {
 	dotDelimiter := strings.Index(path, ".")
 	if dotDelimiter == -1 {
-		Info.Print("ExtractRootName():Dot limited segments not found in path=%s", path)
 		return path
 	}
 	return path[:dotDelimiter]

@@ -12,6 +12,7 @@ which spawns two threads that implement the respective interface task.
 The architecture shown handle all its communication with the server via the state storage.
 This leads to a polling paradigm and thus a potential latency and performance weakness.
 This architecture is therefore not found on the master branch, but available on the datastore-poll branch.
+There is still a feeder design for this in the feeder-template/feederv1 directory.
 ![Feeder Sw architecture, unoptimized polling](/vissr/images/feeder-sw-design-v1.jpg?width=50pc)
 * Figure 1. Feeder software architecture unoptimized polling
 
@@ -21,11 +22,15 @@ the state storage to find new write requests.
 ![Feeder Sw architecture, optimized polling](/vissr/images/feeder-sw-design-v2.jpg?width=50pc)
 * Figure 2. Feeder software architecture optimized polling
 
-A feeder implementing the optimized polling version of the SwA is found at the master branch.
+A feeder implementing this solution can be found in the feeder-template/feederv2 directory.
 This feeder can be configured to either use an SQLite, or a Redis state storage interface, please see the Datastore chapter for details.
 
-A design for how the polling on the server side can be mitigated is in the planning stage.
-It is likely to require an update of the feeder interface.
+However, the solution implementd in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
+For this the feeder implementation in the feeder-template/feederv3 directory needs to be used.
+
+The server is able via the interface to detect whether a feeder implements version 2 or 3 of the interface.
+In case of version 2 it keeps poling of the data store, while for version 3 it relies on event signalling from the feeder instead.
+For more details of this interface, see the [VISSR Server:Feeder interface](/vissr/server/#feeder-interface) chapter.
 
 The feeder translation task is divided into a mapping of the signal name, and a possible scaling of the value.
 The instructions for how to do this is encoded into one or more configuration files that the feeder reads at startup.

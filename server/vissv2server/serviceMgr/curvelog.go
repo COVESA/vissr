@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,7 +31,6 @@ type SubThreads struct {
 }
 
 var CLChannel chan CLPack
-var threadsChan chan SubThreads
 
 var closeClSubId int = -1
 var mcloseClSubId = &sync.Mutex{}
@@ -78,8 +78,38 @@ type PostProcessBufElement3dim struct {
 }
 
 const MAXCLBUFSIZE = 240  // something large...
-const MAXCLSESSIONS = 100 // This value depends on the HW memory and performance
+const MAXCLSESSIONS = 25 // This value depends on the HW memory and performance
+var clServerChan [MAXCLSESSIONS]chan string
 var numOfClSessions int = 0
+
+type TriggChannelElem struct {
+	Busy bool
+}
+var triggChannelList []TriggChannelElem
+
+type TriggRoutingElem struct {
+	Index int
+	Path []string
+}
+
+type TriggRoutingData struct {
+	SubscriptionId string
+	TriggRoutingList []TriggRoutingElem
+}
+
+var clRouterChan chan TriggRoutingData
+
+func initClResources() {
+	CLChannel = make(chan CLPack, 5) // allow some buffering...
+	for i := range clServerChan {
+		clServerChan[i] = make(chan string)
+	}	
+	triggChannelList = make([]TriggChannelElem, MAXCLSESSIONS)
+	for i := 0; i < MAXCLSESSIONS; i++ {
+		triggChannelList[i].Busy = false
+	}
+	clRouterChan = make(chan TriggRoutingData)
+}
 
 func createRingBuffer(bufSize int) RingBuffer {
 	var aRingBuffer RingBuffer
@@ -362,22 +392,32 @@ func is3dim(path string, index int, dim3List []Dim3Elem) bool {
 func getSleepDuration(newTime time.Time, oldTime time.Time, wantedDuration int) time.Duration {
 	workDuration := newTime.Sub(oldTime)
 	sleepDuration := time.Duration(wantedDuration) * time.Millisecond
-	return sleepDuration - workDuration
+	if sleepDuration - workDuration > 0 {
+		return sleepDuration - workDuration
+	}
+	return 1  // used by ticker that panics on <= 0
 }
 
-func curveLoggingServer(clChan chan CLPack, threadsChan chan SubThreads, subscriptionId int, opValue string, paths []string) {
+func curveLoggingDispatcher(clChan chan CLPack, subscriptionId int, opValue string, paths []string) (TriggRoutingData, SubThreads) {
 	maxError, bufSize := getCurveLoggingParams(opValue)
 	if bufSize > MAXCLBUFSIZE {
 		bufSize = MAXCLBUFSIZE
 	}
 	dim1List, dim2List, dim3List := populateDimLists(paths)
+	var triggRoutingData TriggRoutingData
+	triggRoutingData.SubscriptionId = strconv.Itoa(subscriptionId)
+	var triggRoutingElem TriggRoutingElem
 	for i := 0; i < len(dim1List); i++ {
 		if numOfClSessions > MAXCLSESSIONS {
 			utils.Error.Printf("Curve logging: All resources are utilized.")
 			break
 		}
 		returnSingleDp(clChan, subscriptionId, dim1List[i])
-		go clCapture1dim(clChan, subscriptionId, dim1List[i], bufSize, maxError)
+		triggChannelIndex := allocateTriggChannelIndex()
+		go clCapture1dim(clChan, triggChannelIndex, subscriptionId, dim1List[i], bufSize, maxError)
+		triggRoutingElem.Index = triggChannelIndex
+		triggRoutingElem.Path = dim1List
+		triggRoutingData.TriggRoutingList = append(triggRoutingData.TriggRoutingList, triggRoutingElem)
 		numOfClSessions++
 	}
 	for i := 0; i < len(dim2List); i++ {
@@ -386,7 +426,11 @@ func curveLoggingServer(clChan chan CLPack, threadsChan chan SubThreads, subscri
 			break
 		}
 		returnSingleDp2(clChan, subscriptionId, dim2List[i])
-		go clCapture2dim(clChan, subscriptionId, dim2List[i], bufSize, maxError)
+		triggChannelIndex := allocateTriggChannelIndex()
+		go clCapture2dim(clChan, triggChannelIndex, subscriptionId, dim2List[i], bufSize, maxError)
+		triggRoutingElem.Index = triggChannelIndex
+		triggRoutingElem.Path = dim1TransformDim2(dim2List[i])
+		triggRoutingData.TriggRoutingList = append(triggRoutingData.TriggRoutingList, triggRoutingElem)
 		numOfClSessions++
 	}
 	for i := 0; i < len(dim3List); i++ {
@@ -395,32 +439,163 @@ func curveLoggingServer(clChan chan CLPack, threadsChan chan SubThreads, subscri
 			break
 		}
 		returnSingleDp3(clChan, subscriptionId, dim3List[i])
-		go clCapture3dim(clChan, subscriptionId, dim3List[i], bufSize, maxError)
+		triggChannelIndex := allocateTriggChannelIndex()
+		go clCapture3dim(clChan, triggChannelIndex, subscriptionId, dim3List[i], bufSize, maxError)
+		triggRoutingElem.Index = triggChannelIndex
+		triggRoutingElem.Path = dim1TransformDim3(dim3List[i])
+		triggRoutingData.TriggRoutingList = append(triggRoutingData.TriggRoutingList, triggRoutingElem)
 		numOfClSessions++
 	}
 	var subThreads SubThreads
 	subThreads.NumofThreads = len(dim1List) + len(dim2List) + len(dim3List)
 	subThreads.SubscriptionId = subscriptionId
-	threadsChan <- subThreads
+	return triggRoutingData, subThreads
 
 }
 
-func clCapture1dim(clChan chan CLPack, subscriptionId int, path string, bufSize int, maxError float64) {
+func curveLogServer() {
+	var routingDataList []TriggRoutingData
+	for {
+		select {
+			case message := <- fromFeederCl:
+				if len(message) == 0 {
+					continue
+				}
+				var messageMap map[string]interface{}
+				err := json.Unmarshal([]byte(message), &messageMap)
+				if err != nil || messageMap["action"] == nil {
+					utils.Error.Printf("Error in trigg message=%s", message)
+					continue
+				}
+				switch messageMap["action"].(string) {
+					case "subscribe":
+						if messageMap["status"] != nil && messageMap["status"].(string) == "ok" {
+							// notify all existing compute threads
+							for i  := 0; i < len(routingDataList); i++ {
+								for j  := 0; j < len(routingDataList[i].TriggRoutingList); j++ {
+									clServerChan[routingDataList[i].TriggRoutingList[j].Index] <- message
+								}
+							}
+						}
+					case "unsubscribe":
+						if messageMap["subscriptionId"] != nil {
+							//remove from routingDataList
+							subscriptionId := messageMap["subscriptionId"].(string)
+							for i  := 0; i < len(routingDataList); i++ {
+								if routingDataList[i].SubscriptionId == subscriptionId {
+									deallocateTriggChannels(i, routingDataList)
+									slices.Delete(routingDataList, i, i+1)
+								}
+							}
+						}
+					case "subscription":
+						if messageMap["path"] != nil {
+							// notify all threads that use the path
+							path := messageMap["path"].(string)
+							for j  := 0; j < len(routingDataList); j++ {
+								for k  := 0; k < len(routingDataList[j].TriggRoutingList); k++ {
+									for l  := 0; l < len(routingDataList[j].TriggRoutingList[k].Path); l++ {
+										if routingDataList[j].TriggRoutingList[k].Path[l] == path {
+											clServerChan[routingDataList[j].TriggRoutingList[k].Index] <- message
+											break
+										}
+									}
+								}
+							}
+						}
+					default:
+						utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
+				}
+			case routingData := <- clRouterChan:
+				routingDataList = append(routingDataList, routingData)
+		}
+	}
+}
+
+func dim1TransformDim2(dim2List Dim2Elem) []string {
+	dimList := make([]string, 2)
+	dimList[0] = dim2List.Path1
+	dimList[1] = dim2List.Path2
+	return dimList
+}
+
+func dim1TransformDim3(dim3List Dim3Elem) []string {
+	dimList := make([]string, 3)
+	dimList[0] = dim3List.Path1
+	dimList[1] = dim3List.Path2
+	dimList[2] = dim3List.Path3
+	return dimList
+}
+
+func allocateTriggChannelIndex() int {
+	for i := 0; i < MAXCLSESSIONS; i++ {
+		if !triggChannelList[i].Busy {
+			triggChannelList[i].Busy = true
+			return i
+		}
+	}
+	return -1
+}
+
+func deallocateTriggChannels(i int, routingDataList []TriggRoutingData) {
+	for j  := 0; j < len(routingDataList[i].TriggRoutingList); j++ {
+		triggChannelList[routingDataList[i].TriggRoutingList[j].Index].Busy = false
+	}
+}
+
+func decodeFeederMessageCl(feederMessage string, feederNotification bool) (bool, bool) {
+	if len(feederMessage) == 0 {
+		return false, feederNotification
+	}
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(feederMessage), &messageMap)
+	if err != nil || messageMap["action"] == nil {
+		utils.Error.Printf("Error in feeder message=%s", feederMessage)
+		return false, feederNotification
+	}
+	doCapture := false
+	switch messageMap["action"].(string) {
+		case "subscribe":
+			if messageMap["status"] != nil && messageMap["status"].(string) == "ok" {
+				feederNotification = true
+			}
+		case "subscription":
+			if messageMap["path"] != nil {
+				doCapture = true
+			}
+		default:
+			utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
+	}
+	return doCapture, feederNotification
+}
+
+func clCapture1dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int, path string, bufSize int, maxError float64) {
 	aRingBuffer := createRingBuffer(bufSize + 1) // logic requires buffer to have a size of one larger than needed
 	var dpMap = make(map[string]interface{})
 	closeClSession := false
-	oldTime := getCurrentUtcTime()
+	oldTime := getCurrentUtcTime()  // captureTicker start/reset time
+	captureTicker := time.NewTicker(10 * time.Millisecond)
+	feederNotification := false
+	var doCapture bool
 	lastSelected := 0 // index into ringBuffer; zero points to last dp stored in buffer, increasing values goes backwards in time
 	postProc := make([]PostProcessBufElement1dim, 3)
 	//    { CLBufElement{0, 0}, "", -1, CLBufElement{0, 0}, "", -1, CLBufElement{0, 0}, "", -1 }
 	for {
-		newTime := getCurrentUtcTime()
-		sleepPeriod := getSleepDuration(newTime, oldTime, 90) // TODO: Iteration period should be configurable, set to less than sample freq of signal.
-		if sleepPeriod < 0 {
-			utils.Warning.Printf("Curve logging may have missed to capture.")
+		select {
+			case <- captureTicker.C:
+				if !feederNotification {
+					newTime := getCurrentUtcTime()
+					captureTicker.Reset(getSleepDuration(newTime, oldTime, 900)) // 90 msec too slow?
+					oldTime = newTime
+				} else {
+					captureTicker.Stop()
+				}
+			case feederMessage := <- clServerChan[triggChannelIndex]:
+				doCapture, feederNotification = decodeFeederMessageCl(feederMessage, feederNotification)
+				if !doCapture {
+					continue
+				}
 		}
-		time.Sleep(sleepPeriod)
-		oldTime = getCurrentUtcTime()
 		mcloseClSubId.Lock()
 		if closeClSubId == subscriptionId {
 			closeClSession = true
@@ -665,22 +840,33 @@ func returnSingleDp3(clChan chan CLPack, subscriptionId int, paths Dim3Elem) {
 	clChan <- clPack
 }
 
-func clCapture2dim(clChan chan CLPack, subscriptionId int, paths Dim2Elem, bufSize int, maxError float64) {
+func clCapture2dim(clChan chan CLPack,triggChannelIndex int, subscriptionId int, paths Dim2Elem, bufSize int, maxError float64) {
 	aRingBuffer1 := createRingBuffer(bufSize + 1)
 	aRingBuffer2 := createRingBuffer(bufSize + 1)
 	var dpMap1 = make(map[string]interface{})
 	var dpMap2 = make(map[string]interface{})
 	closeClSession := false
-	oldTime := getCurrentUtcTime()
+	oldTime := getCurrentUtcTime()  // captureTicker start/reset time
+	captureTicker := time.NewTicker(10 * time.Millisecond)
+	feederNotification := false
+	var doCapture bool
 	updatedTail := 0
 	for {
-		newTime := getCurrentUtcTime()
-		sleepPeriod := getSleepDuration(newTime, oldTime, 800) // TODO: Iteration period should be configurable, set to less than sample freq of signal.
-		if sleepPeriod < 0 {
-			utils.Warning.Printf("Curve logging may have missed to capture.")
+		select {
+			case <- captureTicker.C:
+				if !feederNotification {
+					newTime := getCurrentUtcTime()
+					captureTicker.Reset(getSleepDuration(newTime, oldTime, 90)) // 90 msec sufficient?
+					oldTime = newTime
+				} else {
+					captureTicker.Stop()
+				}
+			case feederMessage := <- clServerChan[triggChannelIndex]:
+				doCapture, feederNotification = decodeFeederMessageCl(feederMessage, feederNotification)
+				if !doCapture {
+					continue
+				}
 		}
-		time.Sleep(sleepPeriod)
-		oldTime = getCurrentUtcTime()
 		mcloseClSubId.Lock()
 		if closeClSubId == subscriptionId {
 			closeClSession = true
@@ -786,7 +972,7 @@ func clReduction2Dim(clBuffer1 []CLBufElement, clBuffer2 []CLBufElement, firstIn
 	return nil
 }
 
-func clCapture3dim(clChan chan CLPack, subscriptionId int, paths Dim3Elem, bufSize int, maxError float64) {
+func clCapture3dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int, paths Dim3Elem, bufSize int, maxError float64) {
 	aRingBuffer1 := createRingBuffer(bufSize + 1)
 	aRingBuffer2 := createRingBuffer(bufSize + 1)
 	aRingBuffer3 := createRingBuffer(bufSize + 1)
@@ -794,16 +980,27 @@ func clCapture3dim(clChan chan CLPack, subscriptionId int, paths Dim3Elem, bufSi
 	var dpMap2 = make(map[string]interface{})
 	var dpMap3 = make(map[string]interface{})
 	closeClSession := false
-	oldTime := getCurrentUtcTime()
+	oldTime := getCurrentUtcTime()  // captureTicker start/reset time
+	captureTicker := time.NewTicker(10 * time.Millisecond)
+	feederNotification := false
+	var doCapture bool
 	updatedTail := 0
 	for {
-		newTime := getCurrentUtcTime()
-		sleepPeriod := getSleepDuration(newTime, oldTime, 800) // TODO: Iteration period should be configurable, set to less than sample freq of signal.
-		if sleepPeriod < 0 {
-			utils.Warning.Printf("Curve logging may have missed to capture.")
+		select {
+			case <- captureTicker.C:
+				if !feederNotification {
+					newTime := getCurrentUtcTime()
+					captureTicker.Reset(getSleepDuration(newTime, oldTime, 90)) // 90 msec sufficient?
+					oldTime = newTime
+				} else {
+					captureTicker.Stop()
+				}
+			case feederMessage := <- clServerChan[triggChannelIndex]:
+				doCapture, feederNotification = decodeFeederMessageCl(feederMessage, feederNotification)
+				if !doCapture {
+					continue
+				}
 		}
-		time.Sleep(sleepPeriod)
-		oldTime = getCurrentUtcTime()
 		mcloseClSubId.Lock()
 		if closeClSubId == subscriptionId {
 			closeClSession = true
