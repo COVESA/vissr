@@ -2,6 +2,9 @@ module github.com/covesa/vissr
 
 go 1.22.1
 
+//replace github.com/COVESA/vss-tools/binary/go_parser/datamodel => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/datamodel
+//replace github.com/COVESA/vss-tools/binary/go_parser/parserlib => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/parserlib
+
 require (
 	github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20240827143318-9495c70b56c2
 	github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20240827143318-9495c70b56c2

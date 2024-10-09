@@ -989,12 +989,31 @@ func getValidation(path string) string {
 	return "read-write" //dummy return
 }
 
+func configureDefault(udsConn net.Conn) {
+	defaultFile := "defaultList.json" //created at server startup if defaults found in any tree. TODO:Handle multiple trees
+	if utils.FileExists(defaultFile) {
+		data, err := os.ReadFile(defaultFile)
+		if err != nil {
+			utils.Error.Printf("configureDefault: Failed to read default configuration from %s with error = %s", defaultFile, err)
+			return
+		}
+		defaultMessage := `{"action": "update", "default": ` + string(data) + "}"
+utils.Info.Printf("configureDefault:message = %s", defaultMessage)
+		_, err = udsConn.Write([]byte(defaultMessage))
+		if err != nil {
+			utils.Error.Printf("configureDefault:Feeder write failed, err = %s", err)
+		}
+		os.Remove(defaultFile)
+	}
+}
+
 func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeederCl chan string) {
 	udsConn := utils.GetUdsConn("*", "serverFeeder")
 	if udsConn == nil {
 		utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
 		return // ???
 	}
+	configureDefault(udsConn)
 	fromFeeder := make(chan string)
 	go feederReader(udsConn, fromFeeder)
 	feederNotification := "not-verified"  // possible alues ["not-verified", "not-supported", "supported"]
