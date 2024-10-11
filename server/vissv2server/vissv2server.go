@@ -17,18 +17,18 @@ import (
 
 	"fmt"
 	"io"
-	"log"
+//	"log"
 	"os"
-	"bufio"
+//	"bufio"
 
 	"github.com/akamensky/argparse"
-	"github.com/gorilla/mux"
+//	"github.com/gorilla/mux"
 
 	"bytes"
 	"encoding/json"
 	//"io/ioutil"
 	"net/http"
-	"sort"
+//	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,20 +42,6 @@ import (
 
 	"github.com/covesa/vissr/utils"
 )
-
-var VSSTreeRoot *utils.Node_t
-
-type HimTree struct {
-	RootName string
-	Handle *utils.Node_t
-	TreeType string
-	Domain string
-	Version string
-	FileName string
-	Description string
-}
-
-var himForest []HimTree
 
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
@@ -82,7 +68,7 @@ var transportMgrChannel = []chan string{
 }
 
 var serviceMgrChannel = []chan string{
-	make(chan string), // Vehicle service
+	make(chan string),
 }
 
 var atsChannel = []chan string{
@@ -169,90 +155,15 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 	}
 }
 
-func initForest(himPath string) []HimTree {
-	var himForest []HimTree
-	file, err := os.Open(himPath)
-	if err != nil {
-		utils.Error.Printf("Error reading %s: %s", himPath, err)
-		return nil
-	}
-	scanner := bufio.NewScanner(file)
-	scanner.Split(bufio.ScanLines)
-	var text string
-	continueScan := true
-	i := -1
-	for continueScan {
-		continueScan = scanner.Scan()
-		text = scanner.Text()
-		if len(text) == 0 {
-			continue
-		}
-		rootIndex := strings.Index(text, "HIM.") + 4
-		if rootIndex != 3 && text[len(text)-1] == ':' {
-			i++
-			himForest = append(himForest, HimTree{})
-			himForest[i].RootName = text[rootIndex:len(text)-1]
-		} else if text[0] != '#' && strings.Contains(text, "type:") && i != -1 {
-			typeIndex := strings.Index(text, "type:") + 5
-			himForest[i].TreeType = strings.TrimSpace(text[typeIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "domain:") {
-			domainIndex := strings.Index(text, "domain:") + 7
-			himForest[i].Domain = strings.TrimSpace(text[domainIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "version:") {
-			versionIndex := strings.Index(text, "version:") + 8
-			himForest[i].Version = strings.TrimSpace(text[versionIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "local:") {
-			localIndex := strings.Index(text, "local:") + 6
-			localPath := strings.TrimSpace(text[localIndex:len(text)])
-			sameHandle := searchForSameTree(himForest)
-			if sameHandle == nil {
-				himForest[i].Handle = utils.VSSReadTree(localPath)
-			} else {
-				himForest[i].Handle = sameHandle
-			}
-			if himForest[i].Handle == nil {
-				utils.Error.Printf("Error parsing %s", localPath)
-				return nil
-			}
-		}
-		
-	}
-	file.Close()
-	return himForest
-}
-
-func searchForSameTree(himForest []HimTree) *utils.Node_t {
-	lastIndex := len(himForest) - 1
-	for i := 0; i < lastIndex; i++ {
-		if himForest[i].Domain == himForest[lastIndex].Domain && himForest[i].Version == himForest[lastIndex].Version {
-			return himForest[i].Handle
-		}
-	}
-	return nil
-}
-
 func searchTree(rootNode *utils.Node_t, path string, anyDepth bool, leafNodesOnly bool, listSize int, noScopeList []string, validation *int) (int, []utils.SearchData_t) {
 	utils.Info.Printf("searchTree(): path=%s, anyDepth=%t, leafNodesOnly=%t", path, anyDepth, leafNodesOnly)
 	if len(path) > 0 {
 		var searchData []utils.SearchData_t
 		var matches int
 		searchData, matches = utils.VSSsearchNodes(path, rootNode, MAXFOUNDNODES, anyDepth, leafNodesOnly, listSize, noScopeList, validation)
-		return matches, rootNodeNameUpdate(path, searchData, matches)
+		return matches, searchData
 	}
 	return 0, nil
-}
-
-func rootNodeNameUpdate(path string, searchData []utils.SearchData_t, matches int)  []utils.SearchData_t {
-	pathDotIndex := getDotIndex(path)
-	pathRootName := path[:pathDotIndex]
-	searchDataDotIndex := getDotIndex(searchData[0].NodePath)
-	searchDataRootName := searchData[0].NodePath[:searchDataDotIndex]
-	if pathRootName != searchDataRootName {
-		for i := 0; i < matches; i++ {
-			searchData[i].NodePath = pathRootName + searchData[i].NodePath[searchDataDotIndex:]
-		}
-	}
-	return searchData
 }
 
 func getPathLen(path string) int {
@@ -510,7 +421,7 @@ func extractNoScopeElementsLevel2(noScopeMap []interface{}) ([]string, int) {
 }
 
 // Gets node and childs data as string from VSS tree
-func synthesizeJsonTree(path string, depth int, tokenContext string) string {
+func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot *utils.Node_t) string {
 	var jsonBuffer string
 	var searchData []utils.SearchData_t
 	var matches int
@@ -690,7 +601,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	rootPath := requestMap["path"].(string)
-	VSSTreeRoot = setRootNodePointer(rootPath)
+	VSSTreeRoot := utils.SetRootNodePointer(rootPath)
 	if VSSTreeRoot == nil {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
@@ -732,7 +643,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 					tokenContext = "Undefined+Undefined+Undefined"
 				}
 				metadata := ""
-				metadata = synthesizeJsonTree(requestMap["path"].(string), 2, tokenContext) // TODO: depth setting via filtering?
+				metadata = synthesizeJsonTree(requestMap["path"].(string), 2, tokenContext, VSSTreeRoot) // TODO: depth setting via filtering?
 				if len(metadata) > 0 {
 					delete(requestMap, "path")
 					delete(requestMap, "filter")
@@ -836,58 +747,9 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap)
 }
 
-func getDotIndex(path string) int {
-	dotIndex := strings.Index(path, ".")
-	if dotIndex == -1 {
-		dotIndex = len(path) // assume only root name in path
-	}
-	return dotIndex
-}
-
-func setRootNodePointer(rootPath string) *utils.Node_t {
-	dotIndex := getDotIndex(rootPath)
-	rootNodeName := rootPath[:dotIndex]
-	for i:=0; i < len(himForest); i++ {
-		if himForest[i].RootName == rootNodeName {
-utils.Info.Printf("setRootNodePointer: Found handle for:%s", rootNodeName)
-			return himForest[i].Handle
-		}
-	}
-utils.Info.Printf("setRootNodePointer: Did not find handle for:%s", rootNodeName)
-	return nil
-}
-
-type CoreInterface interface {
+/*type CoreInterface interface {
 	vssPathListHandler(w http.ResponseWriter, r *http.Request)
-}
-
-type PathList struct {
-	LeafPaths []string
-}
-
-var pathList PathList
-
-func sortPathList(listFname string) {
-	data, err := os.ReadFile(listFname)
-	if err != nil {
-		utils.Error.Printf("Error reading %s: %s", listFname, err)
-		return
-	}
-	err = json.Unmarshal([]byte(data), &pathList)
-	if err != nil {
-		utils.Error.Printf("Error unmarshal json=%s", err)
-		return
-	}
-	sort.Strings(pathList.LeafPaths)
-	file, _ := json.Marshal(pathList)
-	_ = os.WriteFile(listFname, file, 0644)
-}
-
-func createPathListFile(listFname string) {
-	// call int VSSGetLeafNodesList(long rootNode, char* leafNodeList);
-	utils.VSSGetLeafNodesList(VSSTreeRoot, listFname)
-	sortPathList(listFname)
-}
+}*/
 
 func main() {
 	// Create new parser object
@@ -898,8 +760,9 @@ func main() {
 		Required: false,
 		Help:     "changes log output level",
 		Default:  "info"})
-	dryRun := parser.Flag("", "dryrun", &argparse.Options{Required: false, Help: "dry run to generate vsspathlist file", Default: false})
-//	vssJson := parser.String("", "vssJson", &argparse.Options{Required: false, Help: "path and name vssPathlist json file", Default: "../vsspathlist.json"})
+	dPop := parser.Flag("d", "dpop", &argparse.Options{Required: false, Help: "Populate tree defaults", Default: false})
+	pList := parser.Flag("p", "pathlist", &argparse.Options{Required: false, Help: "Generate pathlist file", Default: false})
+	pListPath := parser.String("", "pListPath", &argparse.Options{Required: false, Help: "path to pathlist file", Default: "../"})
 	stateDB := parser.Selector("s", "statestorage", []string{"sqlite", "redis", "memcache", "apache-iotdb", "none"}, &argparse.Options{Required: false,
 		Help: "Statestorage must be either sqlite, redis, memcache, apache-iotdb, or none", Default: "redis"})
 	historySupport := parser.Flag("j", "history", &argparse.Options{Required: false, Help: "Support for historic data requests", Default: false})
@@ -917,20 +780,19 @@ func main() {
 
 	utils.InitLog("servercore-log.txt", "./logs", *logFile, *logLevel)
 
-	himForest = initForest("viss.him")
-	if himForest == nil {
-		utils.Error.Printf("Failed to initialize himForest")
+	if !utils.InitForest("viss.him") {
+		utils.Error.Printf("Failed to initialize viss.him")
 		return
 	}
 
-	utils.VSSGetDefaultList(setRootNodePointer("Server"),"defaultList.json") //should be exercised on all trees...This file is read and then deleted by the Feeder frontend
-//	createPathListFile(*vssJson) // save in server directory, where transport managers will expect it to be TODO: (Either execute on all trees,) or move to separate tool
-	if *dryRun {
-		utils.Info.Printf("vsspathlist.json created. Job done.")
-		return
+	if *dPop {
+		utils.PopulateDefault()
+	}
+	if *pList {
+		utils.CreatePathListFile(*pListPath)
 	}
 
-	router := mux.NewRouter()
+/*	router := mux.NewRouter()
 	router.HandleFunc("/vsspathlist", pathList.VssPathListHandler).Methods("GET")
 
 	srv := &http.Server{
@@ -949,7 +811,7 @@ func main() {
 		if err := srv.ListenAndServe(); err != nil {
 			log.Fatal("ListenAndServe: ", err)
 		}
-	}()
+	}()*/
 
 	for _, serverComponent := range serverComponents {
 		switch serverComponent {
@@ -969,7 +831,7 @@ func main() {
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
 		case "atServer":
-			go atServer.AtServerInit(atsChannel[0], atsChannel[1], VSSTreeRoot, *consentSupport)
+			go atServer.AtServerInit(atsChannel[0], atsChannel[1], *consentSupport)
 		}
 	}
 

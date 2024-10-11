@@ -233,14 +233,18 @@ func statestorageSet(path string, val string, ts string) int {
 
 func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string) {
 	defer conn.Close()
-	buf := make([]byte, 512)
+	buf := make([]byte, 8192)
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
 			utils.Error.Printf("udsReader:Read failed, err = %s", err)
 			continue
 		}
-		utils.Info.Printf("udsReader:Server message: %s", string(buf[:n]))
+//		utils.Info.Printf("udsReader:Server message: %s", string(buf[:n]))
+		if n > 8192 {
+			utils.Error.Printf("udsReader:Max message size of 8192 chars exceeded. Message dropped")
+			continue
+		}
 		var serverMessageMap map[string]interface{}
 		err = json.Unmarshal(buf[:n], &serverMessageMap)
 		if err != nil {
@@ -267,6 +271,20 @@ func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string) {
 						if onNotificationList(pathList[i].(string)) != -1 {
 							notificationList = slices.Delete(notificationList, i, i+1)
 						}
+					}
+				case "update":
+					defaultArray := serverMessageMap["defaultList"].([]interface{})
+					var domainData DomainData
+					for i := 0; i < len(defaultArray); i++ {
+						for k, v := range defaultArray[i].(map[string]interface{}) {
+//							utils.Info.Printf("%d: key=%s, value=%s", i, k, v.(string))
+							if k == "path" {
+								domainData.Name = v.(string)
+							} else if k == "default" {
+								domainData.Value = v.(string)
+							}
+						}
+						statestorageSet(domainData.Name, domainData.Value, utils.GetRfcTime())
 					}
 				default:
 					utils.Error.Printf("udsReader:Message action unknown = %s", serverMessageMap["action"].(string))

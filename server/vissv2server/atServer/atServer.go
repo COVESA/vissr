@@ -29,8 +29,6 @@ import (
 	"github.com/google/uuid"
 )
 
-var VSSTreeRoot *utils.Node_t
-
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
 
@@ -352,6 +350,7 @@ func validateRequestAccess(purpose string, action string, paths []string) int {
 		var searchData []utils.SearchData_t
 		numOfWildcardPaths := 1
 		if strings.Contains(paths[i], "*") {
+			VSSTreeRoot := utils.SetRootNodePointer(paths[i])
 			searchData, numOfWildcardPaths = utils.VSSsearchNodes(paths[i], VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, nil)
 			pathSubList = make([]string, numOfWildcardPaths)
 			for j := 0; j < numOfWildcardPaths; j++ {
@@ -636,6 +635,7 @@ func checkifConsent(purpose string) bool {
 		if pList[i].Short == purpose {
 			for j := 0; j < len(pList[i].Access); j++ {
 				validation := -1
+				VSSTreeRoot := utils.SetRootNodePointer(pList[i].Access[j].Path)
 				utils.VSSsearchNodes(pList[i].Access[j].Path, VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, &validation)
 				if validation/10 == 1 {
 					return true
@@ -1318,8 +1318,7 @@ func setExpiryTicker() {
 	}
 }
 
-func AtServerInit(viss2Chan chan string, viss2CancelChan chan string, vssRootReference *utils.Node_t, consentSupport bool) {
-	VSSTreeRoot = vssRootReference
+func AtServerInit(viss2Chan chan string, viss2CancelChan chan string, consentSupport bool) {
 	clientChan := make(chan string)
 	ecfReceiveChan := make(chan string)
 	ecfSendChan := make(chan string)

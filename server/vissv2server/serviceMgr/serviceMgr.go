@@ -990,20 +990,21 @@ func getValidation(path string) string {
 }
 
 func configureDefault(udsConn net.Conn) {
-	defaultFile := "defaultList.json" //created at server startup if defaults found in any tree. TODO:Handle multiple trees
-	if utils.FileExists(defaultFile) {
+	defaultFile := "defaultList1.json" //created at server startup if defaults found in any tree.
+	for i := 2; utils.FileExists(defaultFile); i++ {
 		data, err := os.ReadFile(defaultFile)
 		if err != nil {
 			utils.Error.Printf("configureDefault: Failed to read default configuration from %s with error = %s", defaultFile, err)
 			return
 		}
-		defaultMessage := `{"action": "update", "default": ` + string(data) + "}"
-utils.Info.Printf("configureDefault:message = %s", defaultMessage)
+		defaultMessage := `{"action": "update", "defaultList": ` + string(data) + "}"
 		_, err = udsConn.Write([]byte(defaultMessage))
 		if err != nil {
 			utils.Error.Printf("configureDefault:Feeder write failed, err = %s", err)
 		}
 		os.Remove(defaultFile)
+		defaultFile = "defaultList" + strconv.Itoa(i) + ".json"
+		time.Sleep(50 * time.Millisecond)  // give feeder some time to process the message sent
 	}
 }
 
@@ -1334,13 +1335,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 	subscriptionList := []SubscriptionState{}
 	subscriptionId = 1 // do not start with zero!
 
-	var serverCoreIP string = utils.GetModelIP(2)
+/*	var serverCoreIP string = utils.GetModelIP(2)
 
 	vss_data := getVssPathList(serverCoreIP, 8081, "/vsspathlist")
-	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	if historySupport {
 		go historyServer(historyAccessChannel, vss_data)
-	}
+	}*/
+	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	toFeeder = make(chan string)
 	fromFeederRorC = make(chan string)
 	fromFeederCl = make(chan string)
