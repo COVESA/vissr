@@ -989,12 +989,32 @@ func getValidation(path string) string {
 	return "read-write" //dummy return
 }
 
+func configureDefault(udsConn net.Conn) {
+	defaultFile := "defaultList1.json" //created at server startup if defaults found in any tree.
+	for i := 2; utils.FileExists(defaultFile); i++ {
+		data, err := os.ReadFile(defaultFile)
+		if err != nil {
+			utils.Error.Printf("configureDefault: Failed to read default configuration from %s with error = %s", defaultFile, err)
+			return
+		}
+		defaultMessage := `{"action": "update", "defaultList": ` + string(data) + "}"
+		_, err = udsConn.Write([]byte(defaultMessage))
+		if err != nil {
+			utils.Error.Printf("configureDefault:Feeder write failed, err = %s", err)
+		}
+		os.Remove(defaultFile)
+		defaultFile = "defaultList" + strconv.Itoa(i) + ".json"
+		time.Sleep(50 * time.Millisecond)  // give feeder some time to process the message sent
+	}
+}
+
 func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeederCl chan string) {
 	udsConn := utils.GetUdsConn("*", "serverFeeder")
 	if udsConn == nil {
 		utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
 		return // ???
 	}
+	configureDefault(udsConn)
 	fromFeeder := make(chan string)
 	go feederReader(udsConn, fromFeeder)
 	feederNotification := "not-verified"  // possible alues ["not-verified", "not-supported", "supported"]
@@ -1315,13 +1335,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 	subscriptionList := []SubscriptionState{}
 	subscriptionId = 1 // do not start with zero!
 
-	var serverCoreIP string = utils.GetModelIP(2)
+/*	var serverCoreIP string = utils.GetModelIP(2)
 
 	vss_data := getVssPathList(serverCoreIP, 8081, "/vsspathlist")
-	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	if historySupport {
 		go historyServer(historyAccessChannel, vss_data)
-	}
+	}*/
+	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	toFeeder = make(chan string)
 	fromFeederRorC = make(chan string)
 	fromFeederCl = make(chan string)

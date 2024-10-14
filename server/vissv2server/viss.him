@@ -1,0 +1,36 @@
+HIM:
+  type: branch
+  description: Defines the set of trees that are managed as one virtual domain.
+
+
+HIM.Vehicle:
+  type: direct
+  domain: Vehicle.Car.ResourceData
+  version: 5.0
+  local: forest/vss_vissv2.binary
+#  public: https://himrepo.oem.com?instance=Vehicle.Car.ResourceData.X.Y.Z
+  description: A VSS tree.
+
+HIM.Vehicle2:
+  type: direct
+  domain: Vehicle.Car.ResourceData
+  version: 5.0
+  local: forest/vss_vissv2.binary
+#  public: https://himrepo.oem.com?instance=Vehicle.Car.ResourceData.X.Y.Z
+  description: Another VSS tree.
+
+HIM.Types:
+  type: direct
+  domain: Vehicle.Car.TypeDefinition
+  version: 0.1
+#  local: forest/viss_types.binary
+#  public: https://himrepo.oem.com?instance=Vehicle.Car.DataType.X.Y.Z
+  description: A type definition tree.
+
+HIM.Server:
+  type: direct
+  domain: Server.Capabilities.ResourceData
+  version: 0.1
+  local: forest/server.binary
+#  public: https://himrepo.oem.com?instance=Vehicle.Car.ResourceData.X.Y.Z
+  description: The server capabilities tree.

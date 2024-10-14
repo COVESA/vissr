@@ -9,6 +9,9 @@
 Get request:
 {"action":"get","path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen","requestId":"232"}
 {"action":"get","path":"Vehicle.Acceleration.Longitudinal","requestId":"233"}
+{"action":"get","path":"Server.Support.Protocol","requestId":"133"}
+{"action":"get","path":"Vehicle.Chassis.AxleCount","requestId":"321"}
+
 
 Get request for historic data:
 {"action":"get","path":"Vehicle.Acceleration.Longitudinal","filter":{"type":"history","parameter":"P2DT12H"},"requestId":"234"}

@@ -11,7 +11,8 @@ Ulf Björkengren - Ford Motor Company
 Peter Winzell - Volvo Cars
 
 # COVESA VISS Reference Implementation - VISSR 
-This project implements the COVESA VISS v2 specification under development at [https://github.com/COVESA/vehicle-information-service-specification](https://github.com/COVESA/vehicle-information-service-specification).
+This project provides a reference implementation of the released [COVESA VISSv2.0 specification](https://github.com/COVESA/vehicle-information-service-specification/releases/tag/v2.0) on the v2.0 branch,
+and an ongoing development of a reference implementation of the [VISSv3.0 specification](https://github.com/COVESA/vehicle-information-service-specification) on the master branch.
 
 # Tutorial
 A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.

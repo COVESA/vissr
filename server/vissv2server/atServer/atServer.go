@@ -23,13 +23,11 @@ import (
 	"strings"
 	"time"
 
-	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
-	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
+//	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
+//	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
 	"github.com/covesa/vissr/utils"
 	"github.com/google/uuid"
 )
-
-var VSSTreeRoot *gomodel.Node_t
 
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
@@ -349,10 +347,11 @@ func validateRequestAccess(purpose string, action string, paths []string) int {
 	numOfPaths := len(paths)
 	var pathSubList []string
 	for i := 0; i < numOfPaths; i++ {
-		var searchData []golib.SearchData_t
+		var searchData []utils.SearchData_t
 		numOfWildcardPaths := 1
 		if strings.Contains(paths[i], "*") {
-			searchData, numOfWildcardPaths = golib.VSSsearchNodes(paths[i], VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, nil)
+			VSSTreeRoot := utils.SetRootNodePointer(paths[i])
+			searchData, numOfWildcardPaths = utils.VSSsearchNodes(paths[i], VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, nil)
 			pathSubList = make([]string, numOfWildcardPaths)
 			for j := 0; j < numOfWildcardPaths; j++ {
 				pathLen := getPathLen(string(searchData[j].NodePath[:]))
@@ -636,7 +635,8 @@ func checkifConsent(purpose string) bool {
 		if pList[i].Short == purpose {
 			for j := 0; j < len(pList[i].Access); j++ {
 				validation := -1
-				golib.VSSsearchNodes(pList[i].Access[j].Path, VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, &validation)
+				VSSTreeRoot := utils.SetRootNodePointer(pList[i].Access[j].Path)
+				utils.VSSsearchNodes(pList[i].Access[j].Path, VSSTreeRoot, MAXFOUNDNODES, true, true, 0, nil, &validation)
 				if validation/10 == 1 {
 					return true
 				}
@@ -1318,8 +1318,7 @@ func setExpiryTicker() {
 	}
 }
 
-func AtServerInit(viss2Chan chan string, viss2CancelChan chan string, vssRootReference *gomodel.Node_t, consentSupport bool) {
-	VSSTreeRoot = vssRootReference
+func AtServerInit(viss2Chan chan string, viss2CancelChan chan string, consentSupport bool) {
 	clientChan := make(chan string)
 	ecfReceiveChan := make(chan string)
 	ecfSendChan := make(chan string)

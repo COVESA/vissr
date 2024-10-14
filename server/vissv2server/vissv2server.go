@@ -17,17 +17,18 @@ import (
 
 	"fmt"
 	"io"
-	"log"
+//	"log"
 	"os"
+//	"bufio"
 
 	"github.com/akamensky/argparse"
-	"github.com/gorilla/mux"
+//	"github.com/gorilla/mux"
 
 	"bytes"
 	"encoding/json"
 	//"io/ioutil"
 	"net/http"
-	"sort"
+//	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -39,12 +40,8 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 
-	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
-	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
 	"github.com/covesa/vissr/utils"
 )
-
-var VSSTreeRoot *gomodel.Node_t
 
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
@@ -71,7 +68,7 @@ var transportMgrChannel = []chan string{
 }
 
 var serviceMgrChannel = []chan string{
-	make(chan string), // Vehicle service
+	make(chan string),
 }
 
 var atsChannel = []chan string{
@@ -158,25 +155,12 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 	}
 }
 
-func initVssFile() bool {
-	filePath := "vss_vissv2.binary"
-	VSSTreeRoot = golib.VSSReadTree(filePath)
-
-	if VSSTreeRoot == nil {
-		//		utils.Error.Println("Tree file not found")
-		return false
-	}
-
-	return true
-}
-
-func searchTree(rootNode *gomodel.Node_t, path string, anyDepth bool, leafNodesOnly bool, listSize int, noScopeList []string, validation *int) (int, []golib.SearchData_t) {
+func searchTree(rootNode *utils.Node_t, path string, anyDepth bool, leafNodesOnly bool, listSize int, noScopeList []string, validation *int) (int, []utils.SearchData_t) {
 	utils.Info.Printf("searchTree(): path=%s, anyDepth=%t, leafNodesOnly=%t", path, anyDepth, leafNodesOnly)
 	if len(path) > 0 {
-		var searchData []golib.SearchData_t
+		var searchData []utils.SearchData_t
 		var matches int
-		searchData, matches = golib.VSSsearchNodes(path, rootNode, MAXFOUNDNODES, anyDepth, leafNodesOnly, listSize, noScopeList, validation)
-		//		searchData, matches = golib.VSSsearchNodes(path, rootNode, MAXFOUNDNODES, anyDepth, leafNodesOnly, validation)
+		searchData, matches = utils.VSSsearchNodes(path, rootNode, MAXFOUNDNODES, anyDepth, leafNodesOnly, listSize, noScopeList, validation)
 		return matches, searchData
 	}
 	return 0, nil
@@ -307,20 +291,20 @@ func nodeDataTypesToString(nodeType int) string {
 	}
 }
 
-func jsonifyTreeNode(nodeHandle *gomodel.Node_t, jsonBuffer string, depth int, maxDepth int) string {
+func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, maxDepth int) string {
 	if depth >= maxDepth {
 		return jsonBuffer
 	}
 	depth++
 	var newJsonBuffer string
-	nodeName := golib.VSSgetName(nodeHandle)
+	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
-	nodeType := int(golib.VSSgetType(nodeHandle))
+	nodeType := int(utils.VSSgetType(nodeHandle))
 	utils.Info.Printf("nodeType=%d", nodeType)
 	newJsonBuffer += `"type":` + `"` + nodeTypesToString(nodeType) + `",`
-	nodeDescr := golib.VSSgetDescr(nodeHandle)
+	nodeDescr := utils.VSSgetDescr(nodeHandle)
 	newJsonBuffer += `"description":` + `"` + nodeDescr + `",`
-	nodeNumofChildren := golib.VSSgetNumOfChildren(nodeHandle)
+	nodeNumofChildren := utils.VSSgetNumOfChildren(nodeHandle)
 	switch nodeType {
 	case 4: // branch
 	case 1: // sensor
@@ -329,7 +313,7 @@ func jsonifyTreeNode(nodeHandle *gomodel.Node_t, jsonBuffer string, depth int, m
 		fallthrough
 	case 3: // attribute
 		// TODO Look for other metadata, unit, enum, ...
-		nodeDatatype := golib.VSSgetDatatype(nodeHandle)
+		nodeDatatype := utils.VSSgetDatatype(nodeHandle)
 		newJsonBuffer += `"datatype":` + `"` + nodeDatatype + `",`
 	default:
 		return ""
@@ -340,7 +324,7 @@ func jsonifyTreeNode(nodeHandle *gomodel.Node_t, jsonBuffer string, depth int, m
 			newJsonBuffer += `"children":` + "{"
 		}
 		for i := 0; i < nodeNumofChildren; i++ {
-			childNode := golib.VSSgetChild(nodeHandle, i)
+			childNode := utils.VSSgetChild(nodeHandle, i)
 			newJsonBuffer += jsonifyTreeNode(childNode, jsonBuffer, depth, maxDepth)
 		}
 		if nodeNumofChildren > 0 {
@@ -437,9 +421,9 @@ func extractNoScopeElementsLevel2(noScopeMap []interface{}) ([]string, int) {
 }
 
 // Gets node and childs data as string from VSS tree
-func synthesizeJsonTree(path string, depth int, tokenContext string) string {
+func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot *utils.Node_t) string {
 	var jsonBuffer string
-	var searchData []golib.SearchData_t
+	var searchData []utils.SearchData_t
 	var matches int
 	noScopeList, numOfListElem := getNoScopeList(tokenContext)
 	//utils.Info.Printf("noScopeList[0]=%s", noScopeList[0])
@@ -448,7 +432,7 @@ func synthesizeJsonTree(path string, depth int, tokenContext string) string {
 		return ""
 	}
 	subTreeRoot := searchData[matches-1].NodeHandle
-	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", golib.VSSgetName(subTreeRoot))
+	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", utils.VSSgetName(subTreeRoot))
 	if depth == 0 {
 		depth = 100
 	}
@@ -617,6 +601,12 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	rootPath := requestMap["path"].(string)
+	VSSTreeRoot := utils.SetRootNodePointer(rootPath)
+	if VSSTreeRoot == nil {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		return
+	}
 	var searchPath []string
 
 	// Manages Filter Request
@@ -653,7 +643,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 					tokenContext = "Undefined+Undefined+Undefined"
 				}
 				metadata := ""
-				metadata = synthesizeJsonTree(requestMap["path"].(string), 2, tokenContext) // TODO: depth setting via filtering?
+				metadata = synthesizeJsonTree(requestMap["path"].(string), 2, tokenContext, VSSTreeRoot) // TODO: depth setting via filtering?
 				if len(metadata) > 0 {
 					delete(requestMap, "path")
 					delete(requestMap, "filter")
@@ -677,7 +667,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		searchPath = make([]string, 1)
 		searchPath[0] = rootPath
 	}
-	var searchData []golib.SearchData_t
+	var searchData []utils.SearchData_t
 	var matches int
 	totalMatches := 0
 	paths := ""
@@ -700,7 +690,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
 	}
-	if requestMap["action"] == "set" && golib.VSSgetType(searchData[0].NodeHandle) != gomodel.ACTUATOR {
+	if requestMap["action"] == "set" && utils.VSSgetType(searchData[0].NodeHandle) != utils.ACTUATOR {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
@@ -757,37 +747,9 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap)
 }
 
-type CoreInterface interface {
+/*type CoreInterface interface {
 	vssPathListHandler(w http.ResponseWriter, r *http.Request)
-}
-
-type PathList struct {
-	LeafPaths []string
-}
-
-var pathList PathList
-
-func sortPathList(listFname string) {
-	data, err := os.ReadFile(listFname)
-	if err != nil {
-		utils.Error.Printf("Error reading %s: %s\n", listFname, err)
-		return
-	}
-	err = json.Unmarshal([]byte(data), &pathList)
-	if err != nil {
-		utils.Error.Printf("Error unmarshal json=%s\n", err)
-		return
-	}
-	sort.Strings(pathList.LeafPaths)
-	file, _ := json.Marshal(pathList)
-	_ = os.WriteFile(listFname, file, 0644)
-}
-
-func createPathListFile(listFname string) {
-	// call int VSSGetLeafNodesList(long rootNode, char* leafNodeList);
-	golib.VSSGetLeafNodesList(VSSTreeRoot, listFname)
-	sortPathList(listFname)
-}
+}*/
 
 func main() {
 	// Create new parser object
@@ -798,8 +760,9 @@ func main() {
 		Required: false,
 		Help:     "changes log output level",
 		Default:  "info"})
-	dryRun := parser.Flag("", "dryrun", &argparse.Options{Required: false, Help: "dry run to generate vsspathlist file", Default: false})
-	vssJson := parser.String("", "vssJson", &argparse.Options{Required: false, Help: "path and name vssPathlist json file", Default: "../vsspathlist.json"})
+	dPop := parser.Flag("d", "dpop", &argparse.Options{Required: false, Help: "Populate tree defaults", Default: false})
+	pList := parser.Flag("p", "pathlist", &argparse.Options{Required: false, Help: "Generate pathlist file", Default: false})
+	pListPath := parser.String("", "pListPath", &argparse.Options{Required: false, Help: "path to pathlist file", Default: "../"})
 	stateDB := parser.Selector("s", "statestorage", []string{"sqlite", "redis", "memcache", "apache-iotdb", "none"}, &argparse.Options{Required: false,
 		Help: "Statestorage must be either sqlite, redis, memcache, apache-iotdb, or none", Default: "redis"})
 	historySupport := parser.Flag("j", "history", &argparse.Options{Required: false, Help: "Support for historic data requests", Default: false})
@@ -817,18 +780,19 @@ func main() {
 
 	utils.InitLog("servercore-log.txt", "./logs", *logFile, *logLevel)
 
-	if !initVssFile() {
-		utils.Error.Fatal(" Tree file not found")
+	if !utils.InitForest("viss.him") {
+		utils.Error.Printf("Failed to initialize viss.him")
 		return
 	}
 
-	createPathListFile(*vssJson) // save in server directory, where transport managers will expect it to be
-	if *dryRun {
-		utils.Info.Printf("vsspathlist.json created. Job done.")
-		return
+	if *dPop {
+		utils.PopulateDefault()
+	}
+	if *pList {
+		utils.CreatePathListFile(*pListPath)
 	}
 
-	router := mux.NewRouter()
+/*	router := mux.NewRouter()
 	router.HandleFunc("/vsspathlist", pathList.VssPathListHandler).Methods("GET")
 
 	srv := &http.Server{
@@ -847,7 +811,7 @@ func main() {
 		if err := srv.ListenAndServe(); err != nil {
 			log.Fatal("ListenAndServe: ", err)
 		}
-	}()
+	}()*/
 
 	for _, serverComponent := range serverComponents {
 		switch serverComponent {
@@ -867,7 +831,7 @@ func main() {
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
 		case "atServer":
-			go atServer.AtServerInit(atsChannel[0], atsChannel[1], VSSTreeRoot, *consentSupport)
+			go atServer.AtServerInit(atsChannel[0], atsChannel[1], *consentSupport)
 		}
 	}
 
