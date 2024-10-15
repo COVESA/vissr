@@ -2,13 +2,28 @@
 title: "VISSR Feeders"
 ---
 
-A feeder is a Sw component that needs to implement three tasks:
-* Implement an interface to the data storage
-* Implement an interface to the underlying vehicle interface
-* Translate data from the format used in the "VSS domain" to te format used in the "Vehicle domain".
+A feeder is a Sw component that needs to implement the following tasks, depending on which template version they implement:
 
-The SW architecture shown in figure 1 reflects the division of the three tasks in that the translation (map & scale) is done in the min process,
-which spawns two threads that implement the respective interface task.
+The soon to be deprecated template version 1:
+* Use an interface to the data storage for writing and reading data.
+* Use an interface to the underlying vehicle interface for reading and writing data.
+* Translate data from the format used in the "VSS domain" to the format used in the "Vehicle domain", and vice versa.
+
+Template version 2:
+* Use an interface to the data storage for writing data.
+* Use an interface to the underlying vehicle interface for reading and writing data.
+* Translate data from the format used in the "VSS domain" to the format used in the "Vehicle domain", and vice versa.
+* Use an Unix domain socket interface for receiving "client set data" from the server. 
+ 
+Template version 3:
+* Use an interface to the data storage for writing data.
+* Use an interface to the underlying vehicle interface for reading and writing data.
+* Translate data from the format used in the "VSS domain" to the format used in the "Vehicle domain", and vice versa.
+* Use an Unix domain socket interface for receiving "client set data" from the server. 
+* Use the UDS interface to receive instructions from the server on which signals to begin/stop issuing events after writing to the data store.
+* Use the UDS interface to issue events when instructed by he server to do so.
+
+The SW architecture shown in figure 1 shows a logical partition into the three main tasks of template version 1.
 The architecture shown handle all its communication with the server via the state storage.
 This leads to a polling paradigm and thus a potential latency and performance weakness.
 This architecture is therefore not found on the master branch, but available on the datastore-poll branch.
@@ -25,7 +40,7 @@ the state storage to find new write requests.
 A feeder implementing this solution can be found in the feeder-template/feederv2 directory.
 This feeder can be configured to either use an SQLite, or a Redis state storage interface, please see the Datastore chapter for details.
 
-However, the solution implementd in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
+However, the solution implemented in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
 For this the feeder implementation in the feeder-template/feederv3 directory needs to be used.
 
 The server is able via the interface to detect whether a feeder implements version 2 or 3 of the interface.
@@ -49,6 +64,12 @@ where the Vehicle interface is implemented to connect to a RemotiveLabs broker.
 
 There is also an External Vehicle Interface Client [EVIC](https://github.com/covesa/vissr/tree/master/feeder/feeder-evic)
 feeder that enables the interface client to be implemented in a separate executable.
+
+## Data storage interface
+If the feeder is implemented to support multiple data base solutions, see the Data store chapter for which are currently supported,
+then to configure which to use could be done at startup via a CLI parameter,
+see e. g. how it is done in the feeder/feeder-template/feederv3/feederv3.go.
+There also the interface implementations to some DB solutions can be seen in the method statestorageSet(path, val, ts).
 
 ## Simulated vehicle data sources
 The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.

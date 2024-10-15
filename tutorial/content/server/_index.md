@@ -50,14 +50,40 @@ The AT server uses the purposelist.json file to validate that a client request t
 It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.
 
 #### Command line configuration
-The server has the following command line configurations:
-* Data storage implementation. Select one of the following options: SQLite (-s sqlite), Redis (-s redis) or Apache IoTDB (-s apache-iotdb). Default is SQLite.
-* Data storage file name (--dbfile 'file-name'). Only relevant for SQLite configuration. Default is "serviceMgr/statestorage.db".
-* Request the server to generate a pathlist file, then terminate (--dryrun). Default is not to terminate after generating it.
-* Pathlist file name (--vssjson 'file-name'. Default is "../vsspathlist.json".
-* UDS path for history control (--uds 'file-name'). Name of the Unix domain socket file. Default is "/var/tmp/vissv2/histctrlserver.sock".
-* Level of logging (--loglevel levelx). Levelx is one of [trace, debug, info, warn, error, fatal, panic]. Default is "info".
-* Whether logging should end up in standard output (false) or in a log file (true) (--logfile false/true). The default is 'false'.
+Starting the server with the command line option -h will show the screen below.
+```
+usage: print [-h|--help] [--logfile] [--loglevel
+             (trace|debug|info|warn|error|fatal|panic)] [-d|--dpop]
+             [-p|--pathlist] [--pListPath "<value>"] [-s|--statestorage
+             (sqlite|redis|memcache|apache-iotdb|none)] [-j|--history]
+             [--dbfile "<value>"] [-c|--consentsupport]
+
+             VISS v3.0 Server
+
+Arguments:
+
+  -h  --help            Print help information
+      --logfile         outputs to logfile in ./logs folder
+      --loglevel        changes log output level. Default: info
+  -d  --dpop            Populate tree defaults. Default: false
+  -p  --pathlist        Generate pathlist file. Default: false
+      --pListPath       path to pathlist file. Default: ../
+  -s  --statestorage    Statestorage must be either sqlite, redis, memcache,
+                        apache-iotdb, or none. Default: redis
+  -j  --history         Support for historic data requests. Default: false
+      --dbfile          statestorage database filename. Default:
+                        serviceMgr/statestorage.db
+  -c  --consentsupport  try to connect to ECF. Default: false
+```
+More information for some of the options:
+* -p: Whether pathlist files should be generated or not at startup. True if is set, false if not set.
+* --pListPath 'path: Path to where "pathlistX.json" file(s) are stored. X=[1..] Default is "../".
+* -d: Whether default values defined in the tree(s) should be copied to the data store or not at startup. True if is set, false if not set.
+* --loglevel levelx: Levelx is one of [trace, debug, info, warn, error, fatal, panic]. Default is "info".
+* --logfile: Whether logging should end up in standard output (false) or in a log file (true). True if is set, false if not set.
+* --dbfile filepath: Only relevant if SQLite is configured via "-s sqlite".
+* -j: Starts up an internal server thread if true. Currently not supported even if set to true. True if is set, false if not set.
+* -c: If set to true an ECF SwC must be available to connect to the server. True if is set, false if not set.
 
 #### Data storage configuration
 Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.

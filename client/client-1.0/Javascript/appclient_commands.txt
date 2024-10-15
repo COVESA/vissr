@@ -27,9 +27,7 @@ Get request with AT token (XXX must be replaced with actual token):
 {"action":"get","path":"Vehicle.Body.BodyType","authorization":"XXX","requestId":"243"}
 
 Metadata request:
-{"action":"get","path":"Vehicle/ADAS/ABS","filter":{"type":"static-metadata","parameter":""},"requestId":"244"}
-{"action":"get","path":"Vehicle","filter":{"type":"dynamic-metadata","parameter":"server_capabilities"},"requestId":"244"}
-{"action":"get","path":"Vehicle/ADAS","filter":[{"type":"paths","parameter":["ABS/*","CruiseControl/Error"]},{"type":"dynamic-metadata","parameter":"availability"}],"requestId":"237"}
+{"action":"get","path":"Vehicle/ADAS/ABS","filter":{"type":"metadata","parameter":""},"requestId":"244"}
 
 Set request:
 {"action":"set", "path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen", "value":"999", "requestId":"245"}
@@ -70,7 +68,7 @@ Payload: 0.123
 
 Service discovery request:
 HTTP GET 
-URL: Vehicle/ADAS/ABS?filter={"type":"static-metadata", "parameter":""}
+URL: Vehicle/ADAS/ABS?filter={"type":"metadata", "parameter":""}
 
 // ********* Access control testing *************
 // requires that a binary VSS file has been generated with "validate" tags added into vspec file(s) for the requested signals.

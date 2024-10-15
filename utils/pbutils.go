@@ -289,8 +289,7 @@ func createPbFilter_pb(index int, filterExpression map[string]interface{}, proto
 	}
 	if protoMessage.Method == pb.MessageMethod_SUBSCRIBE &&
 		(filterType == pb.FilterExpressions_FilterExpression_HISTORY ||
-			filterType == pb.FilterExpressions_FilterExpression_STATIC_METADATA ||
-			filterType == pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA) {
+			filterType == pb.FilterExpressions_FilterExpression_METADATA) {
 		Error.Printf("Filter function is not supported for SUBSCRIBE requests.")
 		return
 	}
@@ -337,12 +336,8 @@ func createPbFilter_pb(index int, filterExpression map[string]interface{}, proto
 		protoMessage.Get.Request.Filter.FilterExp[index].Value.ValueHistory =
 			&pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{}
 		protoMessage.Get.Request.Filter.FilterExp[index].Value.ValueHistory.TimePeriod = filterExpression["parameter"].(string)
-	case pb.FilterExpressions_FilterExpression_STATIC_METADATA:
+	case pb.FilterExpressions_FilterExpression_METADATA:
 		Warning.Printf("Filter type is not supported by protobuf compression.")
-	case pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA:
-		protoMessage.Get.Request.Filter.FilterExp[index].Value.ValueDynamicMetadata =
-			&pb.FilterExpressions_FilterExpression_FilterValue_DynamicMetadataValue{}
-		protoMessage.Get.Request.Filter.FilterExp[index].Value.ValueDynamicMetadata.MetadataDomain = filterExpression["parameter"].(string)
 	default:
 		Error.Printf("Filter type is unknown.")
 	}
@@ -426,12 +421,10 @@ func getFilterType_pb(filterType string) pb.FilterExpressions_FilterExpression_F
 		return pb.FilterExpressions_FilterExpression_CURVELOG
 	case "history":
 		return pb.FilterExpressions_FilterExpression_HISTORY
-	case "static-metadata":
-		return pb.FilterExpressions_FilterExpression_STATIC_METADATA
-	case "dynamic-metadata":
-		return pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA
+	case "metadata":
+		return pb.FilterExpressions_FilterExpression_METADATA
 	}
-	return pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA + 100 //undefined filter type
+	return pb.FilterExpressions_FilterExpression_METADATA + 100 //undefined filter type
 }
 
 func createSubscribePb(protoMessage *pb.ProtobufMessage, messageMap map[string]interface{}, mType pb.MessageType) {
@@ -716,11 +709,8 @@ func getJsonFilter_pb(protoMessage *pb.ProtobufMessage, mMethod pb.MessageMethod
 		fType = "history"
 		value = getJsonFilterValueHistory_pb(filterExp[0])
 	case 6:
-		fType = "static-metadata"
-		value = getJsonFilterValueStaticMetadata_pb(filterExp[0])
-	case 7:
-		fType = "dynamic-metadata"
-		value = getJsonFilterValueDynamicMetadata_pb(filterExp[0])
+		fType = "metadata"
+		value = getJsonFilterValueMetadata_pb(filterExp[0])
 	}
 	return `,"filter":{"type":"` + fType + `","parameter":` + value + `}`
 }
@@ -781,14 +771,9 @@ func getJsonFilterValueHistory_pb(filterExp *pb.FilterExpressions_FilterExpressi
 	return `"` + timePeriod + `"`
 }
 
-func getJsonFilterValueStaticMetadata_pb(filterExp *pb.FilterExpressions_FilterExpression) string {
-	tree := filterExp.GetValue().GetValueStaticMetadata().GetTree()
+func getJsonFilterValueMetadata_pb(filterExp *pb.FilterExpressions_FilterExpression) string {
+	tree := filterExp.GetValue().GetValueMetadata().GetTree()
 	return tree
-}
-
-func getJsonFilterValueDynamicMetadata_pb(filterExp *pb.FilterExpressions_FilterExpression) string {
-	metadataDomain := filterExp.GetValue().GetValueDynamicMetadata().GetMetadataDomain()
-	return metadataDomain
 }
 
 func getJsonAuthorization(protoMessage *pb.ProtobufMessage, mMethod pb.MessageMethod, mType pb.MessageType) string {

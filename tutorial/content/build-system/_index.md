@@ -53,7 +53,8 @@ If it says "package main" it is a separate executable and shall then be built an
 Logging can be command line configured at startup.
 * logging level can be set to either of [trace, debug, info, warn, error, fatal, panic].
 * logging output destination. It can either be written to file, or directed to standard output.
-The levels currently used are mainly info, warn, error. Info is appropriate during testing and debugging, while error is appropriate when performance is important.
+
+The levels currently used are mainly info, warning, error. Info is appropriate during testing and debugging, while error is appropriate when performance is important.
 
 ### Transport protocols
 Besides the transport protocols
