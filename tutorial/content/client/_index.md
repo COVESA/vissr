@@ -2,9 +2,38 @@
 title: "VISSv2 Clients"
 ---
 
-There are a number of different clients avaliable on this repo in the client/client-1.0 directory.
+## Client deployment options
+As is shown in the figure above the VISS interface is well suited to serve clients deployed in different environments:
+* Cloud deployment. Typically connected via Internet connectivity.
+* Proximity deployment. Typcially in a mobile phone connected via any short range connectivity such as Bluetooth or WiFi.
+* In-vehicle deployment. Typically as an app in the infotainment environment.
 
-## Compression client
+The payloads handled by the clients at any of these deployments are identical.
+
+The MQTT transport protocol option, with the broker deployed in the cloud,
+is well suited for the client cloud deployment as the communication can traverse across subnets.
+The thin application layer protocol on top of MQTT that VISS defines makes it possible
+to keep the client-server communication, and payload compatibility.
+
+## Client implementations
+There are a number of different clients avaliable on this repo, mainly in the client/client-1.0 directory.
+
+### gRPC client
+The gRPC implementation uses the protobuf encoding in the VISSv2messages.proto file found [here](https://github.com/covesa/vissr/tree/master/grpc_pb).
+The server currently only supports the protobuf level 1 encoding.
+
+### MQTT client
+The [MQTT client](https://github.com/UlfBj/vissr/tree/master/client/client-1.0/mqtt_client) implements the application level protocol described in the
+[specification](https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Transport.html#application-level-protocol).
+
+### CSV client
+The [CSV client]() is developed for testing the [curve logging algorithm](https://www.geotab.com/blog/gps-logging-curve-algorithm/) that Geotab has opened for public cuse.
+A client can equest it to be aplied to data by using a [filter](https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation) option.
+
+It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
+The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.
+
+### Compression client
 The [compression client](https://github.com/covesa/vissr/blob/master/client/client-1.0/compress_client/compress_client.go) can be used for testing three payload compression variants.
 * Proprietary compression algorithm
 * Protobuf encoding, level 1
@@ -30,21 +59,6 @@ Finding the index in the array for a given path is done by applying a binary sea
 Going the other way, the array is simply indexed by the integer value from the protobuf encoded payload.
 The string based timestamps are replaced by an int32 as shown in the CompressTS() procedure found in [computils.go](https://github.com/covesa/vissr/blob/master/utils/computils.go).
 Level 2 achieves compression rates of around 5 or better.
-
-## gRPC client
-The gRPC implementation uses the protobuf encoding in the VISSv2messages.proto file found [here](https://github.com/covesa/vissr/tree/master/grpc_pb).
-The server currently only supports the protobuf level 1 encoding.
-
-## MQTT client
-The [MQTT client](https://github.com/UlfBj/vissr/tree/master/client/client-1.0/mqtt_client) implements the application level protocol described in the
-[specification](https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Transport.html#application-level-protocol).
-
-## CSV client
-The [CSV client]() is developed for testing the [curve logging algorithm](https://www.geotab.com/blog/gps-logging-curve-algorithm/) that Geotab has opened for public cuse.
-A client can equest it to be aplied to data by using a [filter](https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation) option.
-
-It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
-The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.
 
 ## Java script clients
 There are a few clients that are written in Javascript, and thus when started opens in a browser.
@@ -88,6 +102,12 @@ It requires the AT server IP address/URL to be written into the field for it, an
 In the leftmost field below "atserver" (no quotes) must be written, then in the rightmost field a request payload shall be written.
 A payload example can be found in the [appclient_commands.txt](https://github.com/covesa/vissr/blob/master/client/client-1.0/Javascript/appclient_commands.txt) file.
 The token that is provided in the request must include an Access Grant token from the response of a successful reuquest to the AGT server.
+
+## Android app client
+The client/android/covesa-vissr-app-demo directory contains an Android app that realizes a VISSv2.0 client.
+This was demoed at the COVESA spring 2024 AMM in Gothenburg.
+[Presentation](https://wiki.covesa.global/download/attachments/98271360/Empowering%20digital%20services%20-%20COVESA%20AMM%20Gbg%202024.pdf?version=1&modificationDate=1714401997052&api=v2),
+[Demo recording](https://wiki.covesa.global/download/attachments/98271360/Empowering%20digital%20services%20-%20COVESA%20AMM%20Gbg%202024_Demo.mp4?version=1&modificationDate=1714634868645&api=v2)
 
 ## Clients on other repos
 

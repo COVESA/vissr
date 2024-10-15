@@ -18,6 +18,11 @@ It is with a few small exceptions backwards compatible with VISSv2.0. The except
 * gRPC support. This wa already available on an experimental level in VISSR @v2.0.
 * Any further new features added to the VISSv3.0 specification will become implemented.
 
+### Non-backwards compatible changes from VISSv2.0
+* The filter keyname "type" is changed to "variant".
+* The filter variants "static-metadata" and "dynamic-metadata" are replaced by the variant "metadata".
+* The "subscriptionId" parameter in unsubscribe response messages is deleted.
+
 Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.
 
 ![VISSv2 communication tech stack](/vissr/images/WAII-tech-stack.jpg?width=40pc)
@@ -32,16 +37,3 @@ These software components (SwCs) can be categorized as follows:
 The tutorial describes each SwC category in a separate chapter.
 It also contains a few Proof of concept (POC) examples, and information about installing,
 building and running Golang based SwCs, a Docker containerization, and about some peripheral components.
-
-### Client deployment options
-As is shown in the figure above the VISS interface is well suited to serve clients deployed in different environments:
-* Cloud deployment. Typically connected via Internet connectivity.
-* Proximity deployment. Typcially in a mobile phone connected via any short range connectivity such as Bluetooth or WiFi.
-* In-vehicle deployment. Typically as an app in the infotainment environment.
-
-The payloads handled by the clients at any of these deployments are identical.
-
-The MQTT transport protocol option, with the broker deployed in the cloud,
-is well suited for the client cloud deployment as the communication can traverse across subnets.
-The thin application layer protocol on top of MQTT that VISS defines makes it possible
-to keep the client-server communication, and payload compatibility.

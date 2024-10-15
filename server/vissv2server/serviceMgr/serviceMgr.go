@@ -894,11 +894,6 @@ func getDataPack(pathArray []string, filterList []utils.FilterObject) string {
 				utils.Info.Printf("Historic data request, period=%s", period)
 				getHistory = true
 				break
-			} else if filterList[i].Type == "dynamic-metadata" {
-				domain = filterList[i].Parameter
-				utils.Info.Printf("Dynamic metadata request, domain=%s", domain)
-				getDomain = true
-				break
 			}
 		}
 	}
@@ -1400,11 +1395,6 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 						utils.Error.Printf("Request filter malformed.")
 						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 						dataChan <- utils.FinalizeMessage(errorResponseMap)
-						break
-					}
-					if filterList[0].Type == "dynamic-metadata" && filterList[0].Parameter == "server_capabilities" {
-						metadataPack := `{"filter":["paths","timebased","change","range","curvelog","history","dynamic-metadata","static-metadata"],"access_ctrl":["short_term","long_term","signalset_claim"],"transport_protocol":["https","wss","mqtts"]}`
-						dataChan <- addPackage(utils.FinalizeMessage(responseMap), "metadata", metadataPack)
 						break
 					}
 				}

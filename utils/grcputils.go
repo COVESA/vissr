@@ -363,11 +363,8 @@ func createPbFilter(index int, filterExpression map[string]interface{}, filter *
 	case pb.FilterExpressions_FilterExpression_HISTORY:
 		filter.FilterExp[index].Value.ValueHistory = &pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{}
 		filter.FilterExp[index].Value.ValueHistory.TimePeriod = filterExpression["parameter"].(string)
-	case pb.FilterExpressions_FilterExpression_STATIC_METADATA:
+	case pb.FilterExpressions_FilterExpression_METADATA:
 		Warning.Printf("Filter type is not supported by protobuf compression.")
-	case pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA:
-		filter.FilterExp[index].Value.ValueDynamicMetadata = &pb.FilterExpressions_FilterExpression_FilterValue_DynamicMetadataValue{}
-		filter.FilterExp[index].Value.ValueDynamicMetadata.MetadataDomain = filterExpression["parameter"].(string)
 	default:
 		Error.Printf("Filter type is unknown.")
 	}
@@ -451,12 +448,10 @@ func getFilterType(filterType string) pb.FilterExpressions_FilterExpression_Filt
 		return pb.FilterExpressions_FilterExpression_CURVELOG
 	case "history":
 		return pb.FilterExpressions_FilterExpression_HISTORY
-	case "static-metadata":
-		return pb.FilterExpressions_FilterExpression_STATIC_METADATA
-	case "dynamic-metadata":
-		return pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA
+	case "metadata":
+		return pb.FilterExpressions_FilterExpression_METADATA
 	}
-	return pb.FilterExpressions_FilterExpression_DYNAMIC_METADATA + 100 //undefined filter type
+	return pb.FilterExpressions_FilterExpression_METADATA + 100 //undefined filter type
 }
 
 func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageMap map[string]interface{}) {
@@ -740,11 +735,8 @@ func synthesizeFilter(filterExp *pb.FilterExpressions_FilterExpression) string {
 		fType = "history"
 		value = getJsonFilterValueHistory(filterExp)
 	case 6:
-		fType = "static-metadata"
-		value = getJsonFilterValueStaticMetadata(filterExp)
-	case 7:
-		fType = "dynamic-metadata"
-		value = getJsonFilterValueDynamicMetadata(filterExp)
+		fType = "metadata"
+		value = getJsonFilterValueMetadata(filterExp)
 	}
 	return `{"type":"` + fType + `","parameter":` + value + `}`
 }
@@ -805,14 +797,9 @@ func getJsonFilterValueHistory(filterExp *pb.FilterExpressions_FilterExpression)
 	return `"` + timePeriod + `"`
 }
 
-func getJsonFilterValueStaticMetadata(filterExp *pb.FilterExpressions_FilterExpression) string {
-	tree := filterExp.GetValue().GetValueStaticMetadata().GetTree()
+func getJsonFilterValueMetadata(filterExp *pb.FilterExpressions_FilterExpression) string {
+	tree := filterExp.GetValue().GetValueMetadata().GetTree()
 	return tree
-}
-
-func getJsonFilterValueDynamicMetadata(filterExp *pb.FilterExpressions_FilterExpression) string {
-	metadataDomain := filterExp.GetValue().GetValueDynamicMetadata().GetMetadataDomain()
-	return metadataDomain
 }
 
 func createJSON(value string, key string) string {

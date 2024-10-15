@@ -478,7 +478,7 @@ func isValidGetParams(request string) bool {
 	return true
 }
 
-func isValidGetFilter(request string) bool { // paths, history,static-metadata, dynamic-metadata supported
+func isValidGetFilter(request string) bool { // paths, history, metadata supported
 	if strings.Contains(request, "paths") == true {
 		if strings.Contains(request, "parameter") == true {
 			return true
@@ -489,12 +489,7 @@ func isValidGetFilter(request string) bool { // paths, history,static-metadata, 
 			return true
 		}
 	}
-	if strings.Contains(request, "static-metadata") == true {
-		if strings.Contains(request, "parameter") == true {
-			return true
-		}
-	}
-	if strings.Contains(request, "dynamic-metadata") == true {
+	if strings.Contains(request, "metadata") == true {
 		if strings.Contains(request, "parameter") == true {
 			return true
 		}
@@ -516,7 +511,7 @@ func isValidSubscribeParams(request string) bool {
 	return true
 }
 
-func isValidSubscribeFilter(request string) bool { // paths, history, timebased, range, change, curvelog, static-metadata, dynamic-metadata supported
+func isValidSubscribeFilter(request string) bool { // paths, history, timebased, range, change, curvelog, metadata supported
 	if isValidGetFilter(request) == true {
 		return true
 	}
@@ -636,8 +631,8 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				break // only one paths object is allowed
 			}
 
-			// STATIC METADATA FILTER
-			if filterList[i].Type == "static-metadata" {
+			// METADATA FILTER
+			if filterList[i].Type == "metadata" {
 				tokenContext := getTokenContext(requestMap) // Gets the client context from the token in the request
 				if len(tokenContext) == 0 {
 					tokenContext = "Undefined+Undefined+Undefined"
@@ -654,11 +649,6 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				utils.Error.Printf("Metadata not available.")
 				utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 				backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
-				return
-			}
-			// DYNAMIC METADATA FILTER
-			if filterList[i].Type == "dynamic-metadata" && filterList[i].Parameter == "server_capabilities" {
-				serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // no further verification
 				return
 			}
 		}
@@ -753,7 +743,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 
 func main() {
 	// Create new parser object
-	parser := argparse.NewParser("print", "Server Core")
+	parser := argparse.NewParser("print", "VISS v3.0 Server")
 	// Create string flag
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{

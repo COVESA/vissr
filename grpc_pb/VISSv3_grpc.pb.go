@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             v3.15.8
-// source: VISSv2.proto
+// source: VISSv3.proto
 
 package __
 
@@ -237,5 +237,5 @@ var VISSv2_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "VISSv2.proto",
+	Metadata: "VISSv3.proto",
 }
