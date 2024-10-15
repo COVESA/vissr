@@ -378,7 +378,7 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 		switch vv := v.(type) {
 		case string:
 			Info.Println(k, "is string", vv)
-			if k == "type" {
+			if k == "variant" {
 				(*fList)[index].Type = vv
 			} else if k == "parameter" {
 				(*fList)[index].Parameter = vv
