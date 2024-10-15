@@ -12,21 +12,21 @@
     <title>VISSR Feeders :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1729001048" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1729001048" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1728907710"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1729001048"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1728907710"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1729001048"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1729001048"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1729001048"></script>
 
     
   </div>
@@ -590,6 +590,7 @@
     <div class="wrapper">
 <nav id="TableOfContents">
   <ul>
+    <li><a href="#data-storage-interface">Data storage interface</a></li>
     <li><a href="#simulated-vehicle-data-sources">Simulated vehicle data sources</a></li>
   </ul>
 </nav>
@@ -616,14 +617,30 @@
 
 
 
-	<p>A feeder is a Sw component that needs to implement three tasks:</p>
+	<p>A feeder is a Sw component that needs to implement the following tasks, depending on which template version they implement:</p>
+<p>The soon to be deprecated template version 1:</p>
 <ul>
-<li>Implement an interface to the data storage</li>
-<li>Implement an interface to the underlying vehicle interface</li>
-<li>Translate data from the format used in the &ldquo;VSS domain&rdquo; to te format used in the &ldquo;Vehicle domain&rdquo;.</li>
+<li>Use an interface to the data storage for writing and reading data.</li>
+<li>Use an interface to the underlying vehicle interface for reading and writing data.</li>
+<li>Translate data from the format used in the &ldquo;VSS domain&rdquo; to the format used in the &ldquo;Vehicle domain&rdquo;, and vice versa.</li>
 </ul>
-<p>The SW architecture shown in figure 1 reflects the division of the three tasks in that the translation (map &amp; scale) is done in the min process,
-which spawns two threads that implement the respective interface task.
+<p>Template version 2:</p>
+<ul>
+<li>Use an interface to the data storage for writing data.</li>
+<li>Use an interface to the underlying vehicle interface for reading and writing data.</li>
+<li>Translate data from the format used in the &ldquo;VSS domain&rdquo; to the format used in the &ldquo;Vehicle domain&rdquo;, and vice versa.</li>
+<li>Use an Unix domain socket interface for receiving &ldquo;client set data&rdquo; from the server.</li>
+</ul>
+<p>Template version 3:</p>
+<ul>
+<li>Use an interface to the data storage for writing data.</li>
+<li>Use an interface to the underlying vehicle interface for reading and writing data.</li>
+<li>Translate data from the format used in the &ldquo;VSS domain&rdquo; to the format used in the &ldquo;Vehicle domain&rdquo;, and vice versa.</li>
+<li>Use an Unix domain socket interface for receiving &ldquo;client set data&rdquo; from the server.</li>
+<li>Use the UDS interface to receive instructions from the server on which signals to begin/stop issuing events after writing to the data store.</li>
+<li>Use the UDS interface to issue events when instructed by he server to do so.</li>
+</ul>
+<p>The SW architecture shown in figure 1 shows a logical partition into the three main tasks of template version 1.
 The architecture shown handle all its communication with the server via the state storage.
 This leads to a polling paradigm and thus a potential latency and performance weakness.
 This architecture is therefore not found on the master branch, but available on the datastore-poll branch.
@@ -641,7 +658,7 @@ the state storage to find new write requests.
 </ul>
 <p>A feeder implementing this solution can be found in the feeder-template/feederv2 directory.
 This feeder can be configured to either use an SQLite, or a Redis state storage interface, please see the Datastore chapter for details.</p>
-<p>However, the solution implementd in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
+<p>However, the solution implemented in the feederv2 template does not support that the server also can replace the polling with a more effective event based solution.
 For this the feeder implementation in the feeder-template/feederv3 directory needs to be used.</p>
 <p>The server is able via the interface to detect whether a feeder implements version 2 or 3 of the interface.
 In case of version 2 it keeps poling of the data store, while for version 3 it relies on event signalling from the feeder instead.
@@ -659,6 +676,11 @@ where the Vehicle interface is implemented to connect to a RemotiveLabs broker.
 <a href="https://remotivelabs.com/">RemotiveLabs</a> has a public cloud version of its broker that can be used to replay trip data available in VSS format.</p>
 <p>There is also an External Vehicle Interface Client <a href="https://github.com/covesa/vissr/tree/master/feeder/feeder-evic">EVIC</a>
 feeder that enables the interface client to be implemented in a separate executable.</p>
+<h2 id="data-storage-interface">Data storage interface</h2>
+<p>If the feeder is implemented to support multiple data base solutions, see the Data store chapter for which are currently supported,
+then to configure which to use could be done at startup via a CLI parameter,
+see e. g. how it is done in the feeder/feeder-template/feederv3/feederv3.go.
+There also the interface implementations to some DB solutions can be seen in the method statestorageSet(path, val, ts).</p>
 <h2 id="simulated-vehicle-data-sources">Simulated vehicle data sources</h2>
 <p>The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.</p>
 <p>The one configured by &ldquo;internal&rdquo; uses the conversion instructions data as input for which signals to simulate, which are then randomly selected and set to random values.</p>
@@ -991,19 +1013,19 @@ Extending the model to instead expect &ldquo;vehicle domain signals&rdquo; (like
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1728907710"></script>
-    <script src="/vissr/js/jquery.sticky.js?1728907710"></script>
-    <script src="/vissr/js/featherlight.min.js?1728907710"></script>
-    <script src="/vissr/js/highlight.pack.js?1728907710"></script>
+    <script src="/vissr/js/clipboard.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729001048"></script>
+    <script src="/vissr/js/jquery.sticky.js?1729001048"></script>
+    <script src="/vissr/js/featherlight.min.js?1729001048"></script>
+    <script src="/vissr/js/highlight.pack.js?1729001048"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1728907710"></script>
-    <script src="/vissr/js/learn.js?1728907710"></script>
-    <script src="/vissr/js/hugo-learn.js?1728907710"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729001048"></script>
+    <script src="/vissr/js/learn.js?1729001048"></script>
+    <script src="/vissr/js/hugo-learn.js?1729001048"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1728907710"></script>
+            <script src="/vissr/mermaid/mermaid.js?1729001048"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

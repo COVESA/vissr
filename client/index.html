@@ -12,21 +12,21 @@
     <title>VISSv2 Clients :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1729001048" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1729001048" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1728907710"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1729001048"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1728907710"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1729001048"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1729001048"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1729001048"></script>
 
     
   </div>
@@ -590,15 +590,17 @@
     <div class="wrapper">
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#compression-client">Compression client</a>
+    <li><a href="#client-deployment-options">Client deployment options</a></li>
+    <li><a href="#client-implementations">Client implementations</a>
       <ul>
+        <li><a href="#grpc-client">gRPC client</a></li>
+        <li><a href="#mqtt-client">MQTT client</a></li>
+        <li><a href="#csv-client">CSV client</a></li>
+        <li><a href="#compression-client">Compression client</a></li>
         <li><a href="#proprietary-compression-algorithm">Proprietary compression algorithm</a></li>
         <li><a href="#protobuf-encoding">Protobuf encoding</a></li>
       </ul>
     </li>
-    <li><a href="#grpc-client">gRPC client</a></li>
-    <li><a href="#mqtt-client">MQTT client</a></li>
-    <li><a href="#csv-client">CSV client</a></li>
     <li><a href="#java-script-clients">Java script clients</a>
       <ul>
         <li><a href="#http-client">HTTP client</a></li>
@@ -608,6 +610,7 @@
         <li><a href="#access-token-server-client">Access Token Server client</a></li>
       </ul>
     </li>
+    <li><a href="#android-app-client">Android app client</a></li>
     <li><a href="#clients-on-other-repos">Clients on other repos</a>
       <ul>
         <li><a href="#viss-web-client">VISS Web Client</a></li>
@@ -640,8 +643,32 @@
 
 
 
-	<p>There are a number of different clients avaliable on this repo in the client/client-1.0 directory.</p>
-<h2 id="compression-client">Compression client</h2>
+	<h2 id="client-deployment-options">Client deployment options</h2>
+<p>As is shown in the figure above the VISS interface is well suited to serve clients deployed in different environments:</p>
+<ul>
+<li>Cloud deployment. Typically connected via Internet connectivity.</li>
+<li>Proximity deployment. Typcially in a mobile phone connected via any short range connectivity such as Bluetooth or WiFi.</li>
+<li>In-vehicle deployment. Typically as an app in the infotainment environment.</li>
+</ul>
+<p>The payloads handled by the clients at any of these deployments are identical.</p>
+<p>The MQTT transport protocol option, with the broker deployed in the cloud,
+is well suited for the client cloud deployment as the communication can traverse across subnets.
+The thin application layer protocol on top of MQTT that VISS defines makes it possible
+to keep the client-server communication, and payload compatibility.</p>
+<h2 id="client-implementations">Client implementations</h2>
+<p>There are a number of different clients avaliable on this repo, mainly in the client/client-1.0 directory.</p>
+<h3 id="grpc-client">gRPC client</h3>
+<p>The gRPC implementation uses the protobuf encoding in the VISSv2messages.proto file found <a href="https://github.com/covesa/vissr/tree/master/grpc_pb">here</a>.
+The server currently only supports the protobuf level 1 encoding.</p>
+<h3 id="mqtt-client">MQTT client</h3>
+<p>The <a href="https://github.com/UlfBj/vissr/tree/master/client/client-1.0/mqtt_client">MQTT client</a> implements the application level protocol described in the
+<a href="https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Transport.html#application-level-protocol">specification</a>.</p>
+<h3 id="csv-client">CSV client</h3>
+<p>The <a href="">CSV client</a> is developed for testing the <a href="https://www.geotab.com/blog/gps-logging-curve-algorithm/">curve logging algorithm</a> that Geotab has opened for public cuse.
+A client can equest it to be aplied to data by using a <a href="https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">filter</a> option.</p>
+<p>It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
+The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.</p>
+<h3 id="compression-client">Compression client</h3>
 <p>The <a href="https://github.com/covesa/vissr/blob/master/client/client-1.0/compress_client/compress_client.go">compression client</a> can be used for testing three payload compression variants.</p>
 <ul>
 <li>Proprietary compression algorithm</li>
@@ -666,17 +693,6 @@ Finding the index in the array for a given path is done by applying a binary sea
 Going the other way, the array is simply indexed by the integer value from the protobuf encoded payload.
 The string based timestamps are replaced by an int32 as shown in the CompressTS() procedure found in <a href="https://github.com/covesa/vissr/blob/master/utils/computils.go">computils.go</a>.
 Level 2 achieves compression rates of around 5 or better.</p>
-<h2 id="grpc-client">gRPC client</h2>
-<p>The gRPC implementation uses the protobuf encoding in the VISSv2messages.proto file found <a href="https://github.com/covesa/vissr/tree/master/grpc_pb">here</a>.
-The server currently only supports the protobuf level 1 encoding.</p>
-<h2 id="mqtt-client">MQTT client</h2>
-<p>The <a href="https://github.com/UlfBj/vissr/tree/master/client/client-1.0/mqtt_client">MQTT client</a> implements the application level protocol described in the
-<a href="https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Transport.html#application-level-protocol">specification</a>.</p>
-<h2 id="csv-client">CSV client</h2>
-<p>The <a href="">CSV client</a> is developed for testing the <a href="https://www.geotab.com/blog/gps-logging-curve-algorithm/">curve logging algorithm</a> that Geotab has opened for public cuse.
-A client can equest it to be aplied to data by using a <a href="https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">filter</a> option.</p>
-<p>It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
-The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.</p>
 <h2 id="java-script-clients">Java script clients</h2>
 <p>There are a few clients that are written in Javascript, and thus when started opens in a browser.
 Thes clients can be quite handy for quick testing of the server functionality.
@@ -712,6 +728,11 @@ requests an Access Token from the Access Token server.</p>
 In the leftmost field below &ldquo;atserver&rdquo; (no quotes) must be written, then in the rightmost field a request payload shall be written.
 A payload example can be found in the <a href="https://github.com/covesa/vissr/blob/master/client/client-1.0/Javascript/appclient_commands.txt">appclient_commands.txt</a> file.
 The token that is provided in the request must include an Access Grant token from the response of a successful reuquest to the AGT server.</p>
+<h2 id="android-app-client">Android app client</h2>
+<p>The client/android/covesa-vissr-app-demo directory contains an Android app that realizes a VISSv2.0 client.
+This was demoed at the COVESA spring 2024 AMM in Gothenburg.
+<a href="https://wiki.covesa.global/download/attachments/98271360/Empowering%20digital%20services%20-%20COVESA%20AMM%20Gbg%202024.pdf?version=1&amp;modificationDate=1714401997052&amp;api=v2">Presentation</a>,
+<a href="https://wiki.covesa.global/download/attachments/98271360/Empowering%20digital%20services%20-%20COVESA%20AMM%20Gbg%202024_Demo.mp4?version=1&amp;modificationDate=1714634868645&amp;api=v2">Demo recording</a></p>
 <h2 id="clients-on-other-repos">Clients on other repos</h2>
 <h3 id="viss-web-client">VISS Web Client</h3>
 <p>The <a href="https://github.com/nicslabdev/viss-web-client">VISS web client</a> exposes a sophisticated UI that includes support for the dialogues that a client needs
@@ -1048,19 +1069,19 @@ data according to a list of paths in a config file, and then requesting an OVDS 
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1728907710"></script>
-    <script src="/vissr/js/jquery.sticky.js?1728907710"></script>
-    <script src="/vissr/js/featherlight.min.js?1728907710"></script>
-    <script src="/vissr/js/highlight.pack.js?1728907710"></script>
+    <script src="/vissr/js/clipboard.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729001048"></script>
+    <script src="/vissr/js/jquery.sticky.js?1729001048"></script>
+    <script src="/vissr/js/featherlight.min.js?1729001048"></script>
+    <script src="/vissr/js/highlight.pack.js?1729001048"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1728907710"></script>
-    <script src="/vissr/js/learn.js?1728907710"></script>
-    <script src="/vissr/js/hugo-learn.js?1728907710"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729001048"></script>
+    <script src="/vissr/js/learn.js?1729001048"></script>
+    <script src="/vissr/js/hugo-learn.js?1729001048"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1728907710"></script>
+            <script src="/vissr/mermaid/mermaid.js?1729001048"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

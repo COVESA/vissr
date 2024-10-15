@@ -12,21 +12,21 @@
     <title>VISSR Data Storage :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1729001048" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1729001048" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1728907710"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1729001048"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1728907710"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1729001048"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1729001048"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1729001048"></script>
 
     
   </div>
@@ -612,18 +612,32 @@
 
 
 
-	<p>Two realizations of data storage are available on the <a href="https://github.com/COVESA/ccs-components">COVESA/CCS-components Github</a>,
-one using an SQLite database, and the other a Redis database. In addition WAII also supports connection to an Apache IoTDB server.</p>
-<p>The server implements the APIs to these databases, which to use is selected by its command line configuration.</p>
-<p>The same support should be available on the other SwC that accesses the data storage,
-however the current feeder implementation only implements Redis support, hence it is not merged into the master branch but resides on the feeder branch.</p>
+	<p>The VISSR tech stack architecture contains a data storage component located between the server and the feeder(s).
+This data store provides a decoupling between the server data access operations and the data access operations of a feeder.
+Feeders are expected to keep the data store updated with the latest available value of the signals defined in the VSS tree,
+and for client read/subscribe requests the server reads from what is available in the data store.
+This leads to that for all client read/subscribe requests the underlying vehicle system does not get involved by instantaneously
+having to provide a signal value when asked for by a client.
+Client write requests are not passed through the data store (except for the soon to be deprecated version 1 client template type),
+but are instead communicated over an Unix Domain Socket IPC channel directly to the feeder by the server.</p>
+<p>There are currently four plugin compatible data stores available, based on the following data base solutions.</p>
+<ul>
+<li>SQLite</li>
+<li>Redis</li>
+<li>Memcached</li>
+<li>Apache IotDB</li>
+</ul>
+<p>The server is at startup configured via a CLI parameter which DB solution to use, default is Redis.
+A feeder must be configured to use the same DB, and implement the common interface for that DB.
+An example of this is e. g. found in the feeder/feeder-template/feederv3/feederv3.go in the method
+statestorageSet(path, val, ts) which implements SQLite, Redis and Memcached.</p>
 <p>It may be a bit confusing that sometimes this is referred to as &ldquo;data store/storage&rdquo; and sometimes &ldquo;state storage&rdquo;.
 The latter name is legacy from a previous COVESA project, the Cloud &amp; Connected Services project, while the former has emerged later in the COVESA architecture group work.
 An argument for keeping both could be to say that the state storage refers to a storage that only keeps the latest value of a signal,
 while the data store refers to a more general database that can also keep time series of values of a signal.
 There are two scenarios where the VISSv2 server operates on time series data, <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">curve logging</a>,
 and <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation">historic data</a>,
-but in this server implementation these data series is temporarily stored within the server, so a &ldquo;state storage&rdquo; functionality is sufficient for its needs.</p>
+but in this server implementation these data series are temporarily stored within the server, so a &ldquo;state storage&rdquo; functionality is sufficient for its needs.</p>
 
 
 
@@ -950,19 +964,19 @@ but in this server implementation these data series is temporarily stored within
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1728907710"></script>
-    <script src="/vissr/js/jquery.sticky.js?1728907710"></script>
-    <script src="/vissr/js/featherlight.min.js?1728907710"></script>
-    <script src="/vissr/js/highlight.pack.js?1728907710"></script>
+    <script src="/vissr/js/clipboard.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729001048"></script>
+    <script src="/vissr/js/jquery.sticky.js?1729001048"></script>
+    <script src="/vissr/js/featherlight.min.js?1729001048"></script>
+    <script src="/vissr/js/highlight.pack.js?1729001048"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1728907710"></script>
-    <script src="/vissr/js/learn.js?1728907710"></script>
-    <script src="/vissr/js/hugo-learn.js?1728907710"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729001048"></script>
+    <script src="/vissr/js/learn.js?1729001048"></script>
+    <script src="/vissr/js/hugo-learn.js?1729001048"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1728907710"></script>
+            <script src="/vissr/mermaid/mermaid.js?1729001048"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

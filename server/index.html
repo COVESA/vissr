@@ -12,21 +12,21 @@
     <title>VISSv2 Server :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1728907710" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1729001048" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1729001048" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1728907710" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1729001048" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1728907710"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1729001048"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1728907710"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1729001048"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1729001048"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1728907710"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1729001048"></script>
 
     
   </div>
@@ -660,15 +660,39 @@ but requiring a valid token for write requests to the data.</p>
 <p>The AT server uses the purposelist.json file to validate that a client request to access controlled data is permitted by the access token included in the request.
 It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.</p>
 <h4 id="command-line-configuration">Command line configuration</h4>
-<p>The server has the following command line configurations:</p>
+<p>Starting the server with the command line option -h will show the screen below.</p>
+<pre tabindex="0"><code>usage: print [-h|--help] [--logfile] [--loglevel
+             (trace|debug|info|warn|error|fatal|panic)] [-d|--dpop]
+             [-p|--pathlist] [--pListPath &#34;&lt;value&gt;&#34;] [-s|--statestorage
+             (sqlite|redis|memcache|apache-iotdb|none)] [-j|--history]
+             [--dbfile &#34;&lt;value&gt;&#34;] [-c|--consentsupport]
+
+             VISS v3.0 Server
+
+Arguments:
+
+  -h  --help            Print help information
+      --logfile         outputs to logfile in ./logs folder
+      --loglevel        changes log output level. Default: info
+  -d  --dpop            Populate tree defaults. Default: false
+  -p  --pathlist        Generate pathlist file. Default: false
+      --pListPath       path to pathlist file. Default: ../
+  -s  --statestorage    Statestorage must be either sqlite, redis, memcache,
+                        apache-iotdb, or none. Default: redis
+  -j  --history         Support for historic data requests. Default: false
+      --dbfile          statestorage database filename. Default:
+                        serviceMgr/statestorage.db
+  -c  --consentsupport  try to connect to ECF. Default: false
+</code></pre><p>More information for some of the options:</p>
 <ul>
-<li>Data storage implementation. Select one of the following options: SQLite (-s sqlite), Redis (-s redis) or Apache IoTDB (-s apache-iotdb). Default is SQLite.</li>
-<li>Data storage file name (&ndash;dbfile &lsquo;file-name&rsquo;). Only relevant for SQLite configuration. Default is &ldquo;serviceMgr/statestorage.db&rdquo;.</li>
-<li>Request the server to generate a pathlist file, then terminate (&ndash;dryrun). Default is not to terminate after generating it.</li>
-<li>Pathlist file name (&ndash;vssjson &lsquo;file-name&rsquo;. Default is &ldquo;../vsspathlist.json&rdquo;.</li>
-<li>UDS path for history control (&ndash;uds &lsquo;file-name&rsquo;). Name of the Unix domain socket file. Default is &ldquo;/var/tmp/vissv2/histctrlserver.sock&rdquo;.</li>
-<li>Level of logging (&ndash;loglevel levelx). Levelx is one of [trace, debug, info, warn, error, fatal, panic]. Default is &ldquo;info&rdquo;.</li>
-<li>Whether logging should end up in standard output (false) or in a log file (true) (&ndash;logfile false/true). The default is &lsquo;false&rsquo;.</li>
+<li>-p: Whether pathlist files should be generated or not at startup. True if is set, false if not set.</li>
+<li>&ndash;pListPath &lsquo;path: Path to where &ldquo;pathlistX.json&rdquo; file(s) are stored. X=[1..] Default is &ldquo;../&rdquo;.</li>
+<li>-d: Whether default values defined in the tree(s) should be copied to the data store or not at startup. True if is set, false if not set.</li>
+<li>&ndash;loglevel levelx: Levelx is one of [trace, debug, info, warn, error, fatal, panic]. Default is &ldquo;info&rdquo;.</li>
+<li>&ndash;logfile: Whether logging should end up in standard output (false) or in a log file (true). True if is set, false if not set.</li>
+<li>&ndash;dbfile filepath: Only relevant if SQLite is configured via &ldquo;-s sqlite&rdquo;.</li>
+<li>-j: Starts up an internal server thread if true. Currently not supported even if set to true. True if is set, false if not set.</li>
+<li>-c: If set to true an ECF SwC must be available to connect to the server. True if is set, false if not set.</li>
 </ul>
 <h4 id="data-storage-configuration">Data storage configuration</h4>
 <p>Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
@@ -1114,19 +1138,19 @@ For more details, see the  <a href="/vissr/client#compression-client">compressio
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1728907710"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1728907710"></script>
-    <script src="/vissr/js/jquery.sticky.js?1728907710"></script>
-    <script src="/vissr/js/featherlight.min.js?1728907710"></script>
-    <script src="/vissr/js/highlight.pack.js?1728907710"></script>
+    <script src="/vissr/js/clipboard.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1729001048"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729001048"></script>
+    <script src="/vissr/js/jquery.sticky.js?1729001048"></script>
+    <script src="/vissr/js/featherlight.min.js?1729001048"></script>
+    <script src="/vissr/js/highlight.pack.js?1729001048"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1728907710"></script>
-    <script src="/vissr/js/learn.js?1728907710"></script>
-    <script src="/vissr/js/hugo-learn.js?1728907710"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729001048"></script>
+    <script src="/vissr/js/learn.js?1729001048"></script>
+    <script src="/vissr/js/hugo-learn.js?1729001048"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1728907710"></script>
+            <script src="/vissr/mermaid/mermaid.js?1729001048"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
