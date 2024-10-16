@@ -4,41 +4,74 @@ title: "VISSv2 Server"
 
 The VISSv2 server is the Sw component that implements the interface that is exposed to the clients, and that must conform to the COVESA VISSv2 specification.
 
-### Build the server
+## Build the server
 Please check the chapter [VISSv2 Build System](/vissr/build-system) for general Golang information.
 
 To build the server, open a erminal and go to the vissr/server/vissv2 directory and issue the command:
 
 $ go build
 
-### Configure the server
+## Configure the server
 
 #### VSS tree configuration
 The server has a copy of the VSS tree that it uses to verify that client requsts are valid -
-that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token, etc.
+that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token and consent permission, etc.
 The tree parser that is used expects the tree to have the 'binary format' that the binary exporter of the VSS-Tools generates from the vspec files.
-To generate this the [VSS repo](https://github.com/COVESA/vehicle_signal_specification) must be cloned including the VSS-Tools submodule,
-and a file containing the binary representation must be created, which is done with the following command issued in the root directory.
 
-$ make binary
+### Using the VSS project to generate the binary file
+This requires that the [VSS](https://github.com/COVESA/vehicle_signal_specification) repo is cloned and configured, for th latter see instructions on the repo.
+To generate the binary file the make file in the root directory of the repo is used,
+which requires that a Python virtual environment is configured before it is used for the first time.
+This is done by entering the VSS root directory, then issuing a command to configure the environment,
+and then activating it, installing the vss-tools, and deactivate it.
+```
+$ cd vehicle_signal_specification
+$ python3 -m venv ~/.venv
+$ source ~/.venv/bin/activate
+(.venv)$ pip install --pre vss-tools
+(.venv)$ deactivate
+```
+The above is only needed to be done once.
+It might be necessary to install both python and pip if that is not already installed on the computer, see instructions in the repo documentation.
 
-However, before issuing the command above it is necessary to edit the make file to remove the --strict command parameter.
-The tool will then issue a warning in its log that an unknown attribute is detected, but the binary file is correctly generated.
+To then generate the VSS tree binary file the environment is activated, the make file is called to generate the binary file,
+and then the environment can be deactivated.
+```
+$ source ~/.venv/bin/activate
+(.venv)$ make binary
+(.venv)$ deactivate
+```
+This generates a file with a name like 'vss.binary',
+which then needs to be possibly renamed to a more descriptive name and then copied to the vissr/server/vissv2server/forest directory.
+It must also be added to the viss.him file in the same directory for the server to include it at startup.
 
-This generates a file with a name like 'vss_rel_4.1-dev.binary',
-which then needs to be renamed to 'vss_vissv2.binary' and stored in the vissr/server/vissv2server directory.
+### Using the CVIS project to generate the binary file
+Another alternative for generating the binary file is to use the HIM configurator tool in the
+[Commercial Vehicle Information Specifications](https://github.com/COVESA/commercial-vehicle-information-specifications) repo.
+The CVIS project is aiming at creating signal trees tailored to the needs of other vehicle types than the passenger cars that the VSS tree is focusing on.
+Development is ongoing for the vehicle types Truck, Trailer, and Bus, but the project is open for development initiatives for other vehicle types.
+Following the patterns and rules described on the repo it is reasonably straight forward to create your own tree on your local computer.
 
+The generation of a binary tree from the vspec files is here done by using the HIM configurator tool.
+It uses the VSS-tools exporters for the final step of generating the files,
+providing extended tree configuration options, see the [CVIS](https://covesa.github.io/commercial-vehicle-information-specifications/) documentation.
+There it is also described how the same Python virtual environment as is used in the VSS alternative is configured (if not already done so in a VSS context)
+and activated before using the HIM configurator.
+ust as in the oher alternative the binary file needs to be copied to the vissr/server/vissv2server/forest directory,
+and the viss.him file edited to include it.
+
+### Tagging the tree for access control and consent management
 If you want to configure the tree to include access control, access control tags as described in the
 [VISSv2 - Access Control Selection chapter](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-selection) needs to be added to appropriate tree nodes.
 This can either be done by editing vspec files directly (example below), or using the [VSS-Tools](https://github.com/covesa/vss-tools) overlay mechanism.
 
-Adding read-write access control to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
-If consent also should be required then switch the commenting between the two validate statements.
+Adding read-write access control and consent to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
+If consent should not be included then the commented line should be used instead.
 ```
 Vehicle:
   type: branch
-#  validate: read-write+consent
-  validate: read-write
+  validate: read-write+consent
+#  validate: read-write
   description: High-level vehicle data.
 ```
 The above validate statement is inherited by all of the descendants of the node.
@@ -46,10 +79,15 @@ It can be applied to any node in the tree to allow for some nodes to not be acce
 Changing read-write to write-only leads to that the server will allow reading of the data without a token,
 but requiring a valid token for write requests to the data.
 
+If the HIM configurator in the CVIS project is used to generate the binary tree that has been tagged as described a binary tree with the tagging data will be generated.
+In the case that it is the alternative using the VSS support that is used then it is necessary to also manually edit the make file to add '-e validate'
+in the calls to the exporters. This should be added just before the output file name in the command, c. f. how it is added in the
+[overlay example](https://covesa.github.io/vehicle_signal_specification/rule_set/overlay/index.html).
+
 The AT server uses the purposelist.json file to validate that a client request to access controlled data is permitted by the access token included in the request.
 It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.
 
-#### Command line configuration
+## Command line configuration
 Starting the server with the command line option -h will show the screen below.
 ```
 usage: print [-h|--help] [--logfile] [--loglevel
@@ -85,11 +123,11 @@ More information for some of the options:
 * -j: Starts up an internal server thread if true. Currently not supported even if set to true. True if is set, false if not set.
 * -c: If set to true an ECF SwC must be available to connect to the server. True if is set, false if not set.
 
-#### Data storage configuration
+## Data storage configuration
 Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
-However, to get it up and running there are other preparations lso needed, please see the [VISSv2 Data Storage](/vissr/datastore) chapter.
+However, to get it up and running there might be other preparations also needed, please see the [VISSv2 Data Storage](/vissr/datastore) chapter.
 
-#### Protocol support configuration
+## Protocol support configuration
 
 The server supports the following protocols:
 * HTTP
@@ -103,9 +141,13 @@ HTTP differs in that it does not support subscribe requests.
 The code is structured to make it reasonably easy to remove any of the protocols if that is desired for reducing the code footprint.
 Similarly it should be reasonably straight forward to add new protocols, given that the payload format transformation is not too complicated.
 
-The Websocket protocol manager terminates subscriptions if a client terminats the session without first terminating its ongoing subscriptions.
+The Websocket protocol manager terminates subscriptions if a client terminates the session without first terminating its ongoing subscriptions.
 
-##### TLS configuration
+Each of the transport protocol managers runs on a separate thread.
+If a transport protocol is of no interest to have listening for clients then it can be prevented from starting by commenting out
+the string element with its name in the serverComponents string array variable in the vissv2server.go file before compiling it.
+
+### TLS configuration
 The server, and several of the clients, can be configured to apply TLS to the protocols (MQTT uses it integrated model for this).
 The first step in applying TLS is to generate the credentials needed, which is done by running the testCredGen.sh script found [here](https://github.com/covesa/vissr/tree/master/testCredGen/).
 
