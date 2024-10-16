@@ -12,21 +12,21 @@
     <title>VISSv2 Server :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1729005642" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1729005642" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1729094086" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1729094086" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1729005642" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1729094086" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1729005642"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1729094086"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1729005642"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1729005642"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1729094086"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1729094086"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1729005642"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1729094086"></script>
 
     
   </div>
@@ -590,10 +590,20 @@
     <div class="wrapper">
 <nav id="TableOfContents">
   <ul>
-    <li>
+    <li><a href="#build-the-server">Build the server</a></li>
+    <li><a href="#configure-the-server">Configure the server</a>
       <ul>
-        <li><a href="#build-the-server">Build the server</a></li>
-        <li><a href="#configure-the-server">Configure the server</a></li>
+        <li></li>
+        <li><a href="#using-the-vss-project-to-generate-the-binary-file">Using the VSS project to generate the binary file</a></li>
+        <li><a href="#using-the-cvis-project-to-generate-the-binary-file">Using the CVIS project to generate the binary file</a></li>
+        <li><a href="#tagging-the-tree-for-access-control-and-consent-management">Tagging the tree for access control and consent management</a></li>
+      </ul>
+    </li>
+    <li><a href="#command-line-configuration">Command line configuration</a></li>
+    <li><a href="#data-storage-configuration">Data storage configuration</a></li>
+    <li><a href="#protocol-support-configuration">Protocol support configuration</a>
+      <ul>
+        <li><a href="#tls-configuration">TLS configuration</a></li>
         <li><a href="#pathlist-file-generation">Pathlist file generation</a></li>
         <li><a href="#feeder-interface">Feeder interface</a></li>
         <li><a href="#history-control">History control</a></li>
@@ -627,39 +637,71 @@
 
 
 	<p>The VISSv2 server is the Sw component that implements the interface that is exposed to the clients, and that must conform to the COVESA VISSv2 specification.</p>
-<h3 id="build-the-server">Build the server</h3>
+<h2 id="build-the-server">Build the server</h2>
 <p>Please check the chapter <a href="/vissr/build-system">VISSv2 Build System</a> for general Golang information.</p>
 <p>To build the server, open a erminal and go to the vissr/server/vissv2 directory and issue the command:</p>
 <p>$ go build</p>
-<h3 id="configure-the-server">Configure the server</h3>
+<h2 id="configure-the-server">Configure the server</h2>
 <h4 id="vss-tree-configuration">VSS tree configuration</h4>
 <p>The server has a copy of the VSS tree that it uses to verify that client requsts are valid -
-that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token, etc.
-The tree parser that is used expects the tree to have the &lsquo;binary format&rsquo; that the binary exporter of the VSS-Tools generates from the vspec files.
-To generate this the <a href="https://github.com/COVESA/vehicle_signal_specification">VSS repo</a> must be cloned including the VSS-Tools submodule,
-and a file containing the binary representation must be created, which is done with the following command issued in the root directory.</p>
-<p>$ make binary</p>
-<p>However, before issuing the command above it is necessary to edit the make file to remove the &ndash;strict command parameter.
-The tool will then issue a warning in its log that an unknown attribute is detected, but the binary file is correctly generated.</p>
-<p>This generates a file with a name like &lsquo;vss_rel_4.1-dev.binary&rsquo;,
-which then needs to be renamed to &lsquo;vss_vissv2.binary&rsquo; and stored in the vissr/server/vissv2server directory.</p>
+that there is a node in the tree that corresponds to the path in a request, if a node requires an access control token and consent permission, etc.
+The tree parser that is used expects the tree to have the &lsquo;binary format&rsquo; that the binary exporter of the VSS-Tools generates from the vspec files.</p>
+<h3 id="using-the-vss-project-to-generate-the-binary-file">Using the VSS project to generate the binary file</h3>
+<p>This requires that the <a href="https://github.com/COVESA/vehicle_signal_specification">VSS</a> repo is cloned and configured, for th latter see instructions on the repo.
+To generate the binary file the make file in the root directory of the repo is used,
+which requires that a Python virtual environment is configured before it is used for the first time.
+This is done by entering the VSS root directory, then issuing a command to configure the environment,
+and then activating it, installing the vss-tools, and deactivate it.</p>
+<pre tabindex="0"><code>$ cd vehicle_signal_specification
+$ python3 -m venv ~/.venv
+$ source ~/.venv/bin/activate
+(.venv)$ pip install --pre vss-tools
+(.venv)$ deactivate
+</code></pre><p>The above is only needed to be done once.
+It might be necessary to install both python and pip if that is not already installed on the computer, see instructions in the repo documentation.</p>
+<p>To then generate the VSS tree binary file the environment is activated, the make file is called to generate the binary file,
+and then the environment can be deactivated.</p>
+<pre tabindex="0"><code>$ source ~/.venv/bin/activate
+(.venv)$ make binary
+(.venv)$ deactivate
+</code></pre><p>This generates a file with a name like &lsquo;vss.binary&rsquo;,
+which then needs to be possibly renamed to a more descriptive name and then copied to the vissr/server/vissv2server/forest directory.
+It must also be added to the viss.him file in the same directory for the server to include it at startup.</p>
+<h3 id="using-the-cvis-project-to-generate-the-binary-file">Using the CVIS project to generate the binary file</h3>
+<p>Another alternative for generating the binary file is to use the HIM configurator tool in the
+<a href="https://github.com/COVESA/commercial-vehicle-information-specifications">Commercial Vehicle Information Specifications</a> repo.
+The CVIS project is aiming at creating signal trees tailored to the needs of other vehicle types than the passenger cars that the VSS tree is focusing on.
+Development is ongoing for the vehicle types Truck, Trailer, and Bus, but the project is open for development initiatives for other vehicle types.
+Following the patterns and rules described on the repo it is reasonably straight forward to create your own tree on your local computer.</p>
+<p>The generation of a binary tree from the vspec files is here done by using the HIM configurator tool.
+It uses the VSS-tools exporters for the final step of generating the files,
+providing extended tree configuration options, see the <a href="https://covesa.github.io/commercial-vehicle-information-specifications/">CVIS</a> documentation.
+There it is also described how the same Python virtual environment as is used in the VSS alternative is configured (if not already done so in a VSS context)
+and activated before using the HIM configurator.
+ust as in the oher alternative the binary file needs to be copied to the vissr/server/vissv2server/forest directory,
+and the viss.him file edited to include it.</p>
+<h3 id="tagging-the-tree-for-access-control-and-consent-management">Tagging the tree for access control and consent management</h3>
 <p>If you want to configure the tree to include access control, access control tags as described in the
 <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-selection">VISSv2 - Access Control Selection chapter</a> needs to be added to appropriate tree nodes.
 This can either be done by editing vspec files directly (example below), or using the <a href="https://github.com/covesa/vss-tools">VSS-Tools</a> overlay mechanism.</p>
-<p>Adding read-write access control to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
-If consent also should be required then switch the commenting between the two validate statements.</p>
+<p>Adding read-write access control and consent to the entire VSS tree can be done by modifying the root node in the spec/VehicleSignalSpecification.vspec file as shown below.
+If consent should not be included then the commented line should be used instead.</p>
 <pre tabindex="0"><code>Vehicle:
   type: branch
-#  validate: read-write+consent
-  validate: read-write
+  validate: read-write+consent
+#  validate: read-write
   description: High-level vehicle data.
 </code></pre><p>The above validate statement is inherited by all of the descendants of the node.
 It can be applied to any node in the tree to allow for some nodes to not be access controlled while others will be access controlled.
 Changing read-write to write-only leads to that the server will allow reading of the data without a token,
 but requiring a valid token for write requests to the data.</p>
+<p>If the HIM configurator in the CVIS project is used to generate the binary tree that has been tagged as described a binary tree with the tagging data will be generated.
+In the case that it is the alternative using the VSS support that is used then it is necessary to also manually edit the make file to add &lsquo;-e validate&rsquo;
+in the calls to the exporters. This should be added just before the output file name in the command, c. f. how it is added in the
+<a href="https://covesa.github.io/vehicle_signal_specification/rule_set/overlay/index.html">overlay example</a>.</p>
 <p>The AT server uses the purposelist.json file to validate that a client request to access controlled data is permitted by the access token included in the request.
 It therefore necessary to ensure that this file contains purpose(s) that includes the data that is access controlled tagged in the tree.</p>
-<h4 id="command-line-configuration">Command line configuration</h4>
+<h2 id="command-line-configuration">Command line configuration</h2>
 <p>Starting the server with the command line option -h will show the screen below.</p>
 <pre tabindex="0"><code>usage: print [-h|--help] [--logfile] [--loglevel
              (trace|debug|info|warn|error|fatal|panic)] [-d|--dpop]
@@ -694,10 +736,10 @@ Arguments:
 <li>-j: Starts up an internal server thread if true. Currently not supported even if set to true. True if is set, false if not set.</li>
 <li>-c: If set to true an ECF SwC must be available to connect to the server. True if is set, false if not set.</li>
 </ul>
-<h4 id="data-storage-configuration">Data storage configuration</h4>
+<h2 id="data-storage-configuration">Data storage configuration</h2>
 <p>Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
-However, to get it up and running there are other preparations lso needed, please see the <a href="/vissr/datastore">VISSv2 Data Storage</a> chapter.</p>
-<h4 id="protocol-support-configuration">Protocol support configuration</h4>
+However, to get it up and running there might be other preparations also needed, please see the <a href="/vissr/datastore">VISSv2 Data Storage</a> chapter.</p>
+<h2 id="protocol-support-configuration">Protocol support configuration</h2>
 <p>The server supports the following protocols:</p>
 <ul>
 <li>HTTP</li>
@@ -709,8 +751,11 @@ However, to get it up and running there are other preparations lso needed, pleas
 HTTP differs in that it does not support subscribe requests.</p>
 <p>The code is structured to make it reasonably easy to remove any of the protocols if that is desired for reducing the code footprint.
 Similarly it should be reasonably straight forward to add new protocols, given that the payload format transformation is not too complicated.</p>
-<p>The Websocket protocol manager terminates subscriptions if a client terminats the session without first terminating its ongoing subscriptions.</p>
-<h5 id="tls-configuration">TLS configuration</h5>
+<p>The Websocket protocol manager terminates subscriptions if a client terminates the session without first terminating its ongoing subscriptions.</p>
+<p>Each of the transport protocol managers runs on a separate thread.
+If a transport protocol is of no interest to have listening for clients then it can be prevented from starting by commenting out
+the string element with its name in the serverComponents string array variable in the vissv2server.go file before compiling it.</p>
+<h3 id="tls-configuration">TLS configuration</h3>
 <p>The server, and several of the clients, can be configured to apply TLS to the protocols (MQTT uses it integrated model for this).
 The first step in applying TLS is to generate the credentials needed, which is done by running the testCredGen.sh script found <a href="https://github.com/covesa/vissr/tree/master/testCredGen/">here</a>.</p>
 <p>For details about it, please look at the README in that directory.
@@ -1138,19 +1183,19 @@ For more details, see the  <a href="/vissr/client#compression-client">compressio
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1729005642"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1729005642"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729005642"></script>
-    <script src="/vissr/js/jquery.sticky.js?1729005642"></script>
-    <script src="/vissr/js/featherlight.min.js?1729005642"></script>
-    <script src="/vissr/js/highlight.pack.js?1729005642"></script>
+    <script src="/vissr/js/clipboard.min.js?1729094086"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1729094086"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729094086"></script>
+    <script src="/vissr/js/jquery.sticky.js?1729094086"></script>
+    <script src="/vissr/js/featherlight.min.js?1729094086"></script>
+    <script src="/vissr/js/highlight.pack.js?1729094086"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729005642"></script>
-    <script src="/vissr/js/learn.js?1729005642"></script>
-    <script src="/vissr/js/hugo-learn.js?1729005642"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729094086"></script>
+    <script src="/vissr/js/learn.js?1729094086"></script>
+    <script src="/vissr/js/hugo-learn.js?1729094086"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1729005642"></script>
+            <script src="/vissr/mermaid/mermaid.js?1729094086"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
