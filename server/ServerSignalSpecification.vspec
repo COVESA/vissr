@@ -109,7 +109,7 @@ Server.Config.Protocol.Mqtt.Protobuf:
 Server.Config.Protocol.Mqtt.Protobuf.Topic:
   type: attribute
   datatype: string
-  description: Postfix "/protobuf" added to the MQTT topic name for the protobuf encoded payload format.
+  description: Postfix '/protobuf' added to the MQTT topic name for the protobuf encoded payload format.
 
 Server.Config.Protocol.Grpc:
   type: branch
