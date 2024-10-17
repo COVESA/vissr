@@ -16,7 +16,7 @@ import (
 	//   "fmt"
 
 	"fmt"
-	"io"
+//	"io"
 //	"log"
 	"os"
 //	"bufio"
@@ -24,14 +24,14 @@ import (
 	"github.com/akamensky/argparse"
 //	"github.com/gorilla/mux"
 
-	"bytes"
+//	"bytes"
 	"encoding/json"
 	//"io/ioutil"
-	"net/http"
+//	"net/http"
 //	"sort"
 	"strconv"
 	"strings"
-	"time"
+//	"time"
 
 	"github.com/covesa/vissr/server/vissv2server/atServer"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
@@ -300,7 +300,7 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
 	nodeType := int(utils.VSSgetType(nodeHandle))
-	utils.Info.Printf("nodeType=%d", nodeType)
+//	utils.Info.Printf("nodeType=%d", nodeType)
 	newJsonBuffer += `"type":` + `"` + nodeTypesToString(nodeType) + `",`
 	nodeDescr := utils.VSSgetDescr(nodeHandle)
 	newJsonBuffer += `"description":` + `"` + nodeDescr + `",`
@@ -344,43 +344,14 @@ func countPathSegments(path string) int {
 }
 
 func getNoScopeList(tokenContext string) ([]string, int) {
-	// call ATS to get list
-	hostIp := utils.GetServerIP()
-	url := "http://" + hostIp + ":8600/atserver"
-
-	data := []byte(`{"context":"` + tokenContext + `"}`)
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
-	if err != nil {
-		utils.Error.Print("getNoScopeList: Error reading request. ", err)
-		return nil, 0
-	}
-
-	// Set headers
-	req.Header.Set("Access-Control-Allow-Origin", "*")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Host", hostIp+":8600")
-
-	// Set client timeout
-	client := &http.Client{Timeout: time.Second * 10}
-
-	// Send request
-	resp, err := client.Do(req)
-	if err != nil {
-		utils.Error.Print("getNoScopeList: Error sending request. ", err)
-		return nil, 0
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		utils.Error.Print("getNoScopeList:Error reading response. ", err)
-		return nil, 0
-	}
+	// call ATS to get noscope list
+	request := `{"context":"` + tokenContext + `"}`
+	atsChannel[0] <- request
+	body := <-atsChannel[0]
 	var noScopeMap map[string]interface{}
-	err = json.Unmarshal(body, &noScopeMap)
+	err := json.Unmarshal([]byte(body), &noScopeMap)
 	if err != nil {
-		utils.Error.Printf("initPurposelist:error data=%s, err=%s", data, err)
+		utils.Error.Printf("initPurposelist:error body=%s, err=%s", body, err)
 		return nil, 0
 	}
 	return extractNoScopeElementsLevel1(noScopeMap)
@@ -390,12 +361,12 @@ func extractNoScopeElementsLevel1(noScopeMap map[string]interface{}) ([]string, 
 	for k, v := range noScopeMap {
 		switch vv := v.(type) {
 		case string:
-			utils.Info.Println(k, "is string", vv)
+//			utils.Info.Println(k, "is string", vv)
 			noScopeList := make([]string, 1)
 			noScopeList[0] = vv
 			return noScopeList, 1
 		case []interface{}:
-			utils.Info.Println(k, "is an array:, len=", strconv.Itoa(len(vv)))
+//			utils.Info.Println(k, "is an array:, len=", strconv.Itoa(len(vv)))
 			return extractNoScopeElementsLevel2(vv)
 		default:
 			utils.Info.Println(k, "is of an unknown type")
@@ -410,7 +381,7 @@ func extractNoScopeElementsLevel2(noScopeMap []interface{}) ([]string, int) {
 	for k, v := range noScopeMap {
 		switch vv := v.(type) {
 		case string:
-			utils.Info.Println(k, "is string", vv)
+//			utils.Info.Println(k, "is string", vv)
 			noScopeList[i] = vv
 		default:
 			utils.Info.Println(k, "is of an unknown type")
@@ -427,11 +398,11 @@ func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot
 	var matches int
 	noScopeList, numOfListElem := getNoScopeList(tokenContext)
 	//utils.Info.Printf("noScopeList[0]=%s", noScopeList[0])
-	matches, searchData = searchTree(VSSTreeRoot, path, false, false, numOfListElem, noScopeList, nil)
+	matches, searchData = searchTree(VSSTreeRoot, path+".*", true, false, numOfListElem, noScopeList, nil)
 	if matches < countPathSegments(path) {
 		return ""
 	}
-	subTreeRoot := searchData[matches-1].NodeHandle
+	subTreeRoot := searchData[0].NodeHandle
 	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", utils.VSSgetName(subTreeRoot))
 	if depth == 0 {
 		depth = 100
@@ -637,8 +608,11 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				if len(tokenContext) == 0 {
 					tokenContext = "Undefined+Undefined+Undefined"
 				}
+//utils.Info.Printf("filterList[%d].Type=%s, filterList[%d].Parameter=%s", i, filterList[i].Type, i, filterList[i].Parameter)
+				treedepth, err := strconv.Atoi(filterList[i].Parameter)
+				if err == nil {
 				metadata := ""
-				metadata = synthesizeJsonTree(requestMap["path"].(string), 2, tokenContext, VSSTreeRoot) // TODO: depth setting via filtering?
+				metadata = synthesizeJsonTree(requestMap["path"].(string), treedepth, tokenContext, VSSTreeRoot)
 				if len(metadata) > 0 {
 					delete(requestMap, "path")
 					delete(requestMap, "filter")
@@ -646,7 +620,8 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 					backendChan[tDChanIndex] <- utils.AddKeyValue(utils.FinalizeMessage(requestMap), "metadata", metadata)
 					return
 				}
-				utils.Error.Printf("Metadata not available.")
+				}
+				utils.Error.Printf("Metadata error")
 				utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 				backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 				return
