@@ -1,5 +1,5 @@
 ---
-title: "VISSv2 Clients"
+title: "VISSR Clients"
 ---
 
 ## Client deployment options

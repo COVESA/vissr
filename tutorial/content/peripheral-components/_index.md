@@ -1,5 +1,5 @@
 ---
-title: "VISSv2 peripheral components"
+title: "VISSR peripheral components"
 ---
 
 A few other software components that can be useful when setting up a VISSv2 communication tech stack exists:

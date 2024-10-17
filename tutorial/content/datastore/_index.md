@@ -4,10 +4,15 @@ title: "VISSR Data Storage"
 
 The VISSR tech stack architecture contains a data storage component located between the server and the feeder(s).
 This data store provides a decoupling between the server data access operations and the data access operations of a feeder.
+
 Feeders are expected to keep the data store updated with the latest available value of the signals defined in the VSS tree,
 and for client read/subscribe requests the server reads from what is available in the data store.
 This leads to that for all client read/subscribe requests the underlying vehicle system does not get involved by instantaneously
 having to provide a signal value when asked for by a client.
+
+For subscriptions it also enables that a more versatile menu of event trigger conditions can be available to the client
+than what the underlying vehicle system actually is supporting.
+
 Client write requests are not passed through the data store (except for the soon to be deprecated version 1 client template type),
 but are instead communicated over an Unix Domain Socket IPC channel directly to the feeder by the server.
 
