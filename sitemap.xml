@@ -14,29 +14,29 @@
   </url><url>
     <loc>https://covesa.github.io/vissr/build-system/</loc>
   </url><url>
+    <loc>https://covesa.github.io/vissr/client/</loc>
+  </url><url>
     <loc>https://covesa.github.io/vissr/datastore/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/docker-step-by-step/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/feeder/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/memcached/</loc>
   </url><url>
+    <loc>https://covesa.github.io/vissr/peripheral-components/</loc>
+  </url><url>
     <loc>https://covesa.github.io/vissr/pocs/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/redis/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/server/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/sqlite/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/tools/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/server/access-control-servers/</loc>
-  </url><url>
-    <loc>https://covesa.github.io/vissr/client/</loc>
-  </url><url>
-    <loc>https://covesa.github.io/vissr/docker-step-by-step/</loc>
-  </url><url>
-    <loc>https://covesa.github.io/vissr/peripheral-components/</loc>
-  </url><url>
-    <loc>https://covesa.github.io/vissr/server/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/apache-iotdb/</loc>
   </url>
