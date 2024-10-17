@@ -1,5 +1,5 @@
 ---
-title: "VISSv2 Server"
+title: "VISSR Server"
 ---
 
 The VISSv2 server is the Sw component that implements the interface that is exposed to the clients, and that must conform to the COVESA VISSv2 specification.

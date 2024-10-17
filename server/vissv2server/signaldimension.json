@@ -1,0 +1,1 @@
+{"dim2":[{"path1":"Vehicle.CurrentLocation.Latitude", "path2":"Vehicle.CurrentLocation.Longitude"}], "dim3":[{"path1":"Vehicle.Acceleration.Lateral", "path2":"Vehicle.Acceleration.Longitudinal", "path3":"Vehicle.Acceleration.Vertical"}]}
