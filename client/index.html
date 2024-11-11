@@ -12,21 +12,21 @@
     <title>VISSR Clients :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1729180214" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1729180214" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1731326933" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1731326933" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1729180214" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1731326933" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1729180214"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1731326933"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1729180214"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1729180214"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1731326933"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1731326933"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1729180214"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1731326933"></script>
 
     
   </div>
@@ -596,6 +596,7 @@
         <li><a href="#grpc-client">gRPC client</a></li>
         <li><a href="#mqtt-client">MQTT client</a></li>
         <li><a href="#csv-client">CSV client</a></li>
+        <li><a href="#filetransfer-client">Filetransfer client</a></li>
         <li><a href="#compression-client">Compression client</a></li>
         <li><a href="#proprietary-compression-algorithm">Proprietary compression algorithm</a></li>
         <li><a href="#protobuf-encoding">Protobuf encoding</a></li>
@@ -668,6 +669,10 @@ The server currently only supports the protobuf level 1 encoding.</p>
 A client can equest it to be aplied to data by using a <a href="https://raw.githack.com/COVESA/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">filter</a> option.</p>
 <p>It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
 The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.</p>
+<h3 id="filetransfer-client">Filetransfer client</h3>
+<p>This client exercises the file transfer support by the VISSR server which supports it on the Websocket protocol.
+The CLI command enables it to be started for either upload or download, in which case a small text file is transported(upload.txt and dlFile.txt respectively).
+For this to work the binary tree must contain upload and download nodes which the vss_filetransfer.binary tree has been augmented with (the rest is VSS v5.0).</p>
 <h3 id="compression-client">Compression client</h3>
 <p>The <a href="https://github.com/covesa/vissr/blob/master/client/client-1.0/compress_client/compress_client.go">compression client</a> can be used for testing three payload compression variants.</p>
 <ul>
@@ -1069,19 +1074,19 @@ data according to a list of paths in a config file, and then requesting an OVDS 
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1729180214"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1729180214"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1729180214"></script>
-    <script src="/vissr/js/jquery.sticky.js?1729180214"></script>
-    <script src="/vissr/js/featherlight.min.js?1729180214"></script>
-    <script src="/vissr/js/highlight.pack.js?1729180214"></script>
+    <script src="/vissr/js/clipboard.min.js?1731326933"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1731326933"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1731326933"></script>
+    <script src="/vissr/js/jquery.sticky.js?1731326933"></script>
+    <script src="/vissr/js/featherlight.min.js?1731326933"></script>
+    <script src="/vissr/js/highlight.pack.js?1731326933"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1729180214"></script>
-    <script src="/vissr/js/learn.js?1729180214"></script>
-    <script src="/vissr/js/hugo-learn.js?1729180214"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1731326933"></script>
+    <script src="/vissr/js/learn.js?1731326933"></script>
+    <script src="/vissr/js/hugo-learn.js?1731326933"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1729180214"></script>
+            <script src="/vissr/mermaid/mermaid.js?1731326933"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
