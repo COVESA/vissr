@@ -33,6 +33,11 @@ A client can equest it to be aplied to data by using a [filter](https://raw.gith
 It generates a comma separated (CSV) file in which it saves the curve logged data that it has reuested from the server.
 The CSV format makes it easy to import it into an Excel sheet and visualize it as a graph which allows it e. g. to be compared with the original, non-curved data.
 
+### Filetransfer client
+This client exercises the file transfer support by the VISSR server which supports it on the Websocket protocol.
+The CLI command enables it to be started for either upload or download, in which case a small text file is transported(upload.txt and dlFile.txt respectively).
+For this to work the binary tree must contain upload and download nodes which the vss_filetransfer.binary tree has been augmented with (the rest is VSS v5.0).
+
 ### Compression client
 The [compression client](https://github.com/covesa/vissr/blob/master/client/client-1.0/compress_client/compress_client.go) can be used for testing three payload compression variants.
 * Proprietary compression algorithm

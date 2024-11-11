@@ -27,10 +27,11 @@ Get request with AT token (XXX must be replaced with actual token):
 {"action":"get","path":"Vehicle.Body.Bodyvariant","authorization":"XXX","requestId":"243"}
 
 Metadata request:
-{"action":"get","path":"Vehicle/ADAS/ABS","filter":{"variant":"metadata","parameter":""},"requestId":"244"}
+{"action":"get","path":"Vehicle.ADAS.ABS","filter":{"variant":"metadata","parameter":"0"},"requestId":"244"}
+{"action":"get","path":"Server","filter":{"variant":"metadata","parameter":"0"},"requestId":"245"}
 
 Set request:
-{"action":"set", "path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen", "value":"999", "requestId":"245"}
+{"action":"set", "path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen", "value":"true", "requestId":"245"}
 
 Subscribe request:
 {"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"variant":"timebased","parameter":{"period":"3000"}},"requestId":"246"}
@@ -68,7 +69,7 @@ Payload: 0.123
 
 Service discovery request:
 HTTP GET 
-URL: Vehicle/ADAS/ABS?filter={"variant":"metadata", "parameter":""}
+URL: Vehicle/ADAS/ABS?filter={"variant":"metadata", "parameter":"0"}
 
 // ********* Access control testing *************
 // requires that a binary VSS file has been generated with "validate" tags added into vspec file(s) for the requested signals.

@@ -9,6 +9,7 @@
 package utils
 
 import (
+	"os"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -26,6 +27,22 @@ import (
 
 	"github.com/google/uuid"
 )
+
+const UIDLEN = 4
+type FileTransferCache struct {
+	Uid [UIDLEN]byte
+	UploadTransfer bool //true=upload, false=download
+	Path string  // from statestorage
+	Name string  // incl file ext. Download from client, upload from statestorage.
+	FileDescriptor *os.File
+	FileOffset int
+	ChunkSize int
+	Hash string  // hex format. SHA-1 ger 20 bytes output vilet i hex blir 40 chars + 2 för 0x
+	MessageNo int32
+	PreviousChunksize int32
+	Timestamp uint64  //time of creation
+	Status int  //zero=ok, non-zero=nok
+}
 
 // Gets Json string (or nothing) and adds received key and value, if it doesnt receive a value or key, it does nothing
 func JsonRecursiveMarshall(key string, value string, jplain *string) {

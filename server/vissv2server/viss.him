@@ -7,7 +7,7 @@ HIM.Vehicle:
   type: direct
   domain: Vehicle.Car.ResourceData
   version: 5.0.0
-  local: forest/vss_v5.0.0.binary
+  local: forest/vss_filetransfer.binary
 #  public: https://himrepo.oem.com?instance=Vehicle.Car.ResourceData.X.Y.Z
   description: A VSS tree.
 
@@ -23,7 +23,7 @@ HIM.Types:
   type: direct
   domain: Vehicle.Car.TypeDefinition
   version: 0.1
-#  local: forest/viss_types.binary
+#  local: forest/vss_datatypes.binary
 #  public: https://himrepo.oem.com?instance=Vehicle.Car.DataType.X.Y.Z
   description: A type definition tree.
 
