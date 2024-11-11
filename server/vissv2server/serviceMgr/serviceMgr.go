@@ -1510,11 +1510,12 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				subscriptTicker.Stop()
 			}
 		case feederMessage := <-fromFeederRorC:
-utils.Info.Printf("Feeder message=%s", feederMessage)
+//utils.Info.Printf("Feeder message=%s", feederMessage)
 			triggeredPath, feederNotification = decodeFeederMessage(feederMessage, feederNotification)
 			subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
 		} // select
 	} // for
+utils.Info.Printf("Service manager exit")
 }
 
 func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan string) []SubscriptionState {

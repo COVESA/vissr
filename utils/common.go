@@ -156,7 +156,7 @@ func MapRequest(request string, rMap *map[string]interface{}) int {
 	decoder := json.NewDecoder(strings.NewReader(request))
 	err := decoder.Decode(rMap)
 	if err != nil {
-		Error.Printf("extractPayload: JSON decode failed for request:%s\n", request)
+		Error.Printf("extractPayload: JSON decode error=%s for request:%s", err, request)
 		return -1
 	}
 	return 0

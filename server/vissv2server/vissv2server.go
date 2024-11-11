@@ -13,20 +13,17 @@
 package main
 
 import (
-	//   "fmt"
-
 	"fmt"
-//	"io"
-//	"log"
 	"os"
 //	"bufio"
 
 	"github.com/akamensky/argparse"
 //	"github.com/gorilla/mux"
 
-//	"bytes"
+	"encoding/hex"
 	"encoding/json"
-	//"io/ioutil"
+	"crypto/sha1"
+	"io"
 //	"net/http"
 //	"sort"
 	"strconv"
@@ -39,6 +36,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
+	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
 
 	"github.com/covesa/vissr/utils"
 )
@@ -51,6 +49,7 @@ var serverComponents []string = []string{
 	"serviceMgr",
 	"httpMgr",
 	"wsMgr",
+	"wsMgrFT",
 	//	"mqttMgr",  //to avoid calls to the mosquitto broker if not used anyway
 	"grpcMgr",
 	"atServer",
@@ -60,44 +59,21 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
-var transportMgrChannel = []chan string{
-	make(chan string), // HTTP
-	make(chan string), // WS
-	make(chan string), // MQTT
-	make(chan string), // gRPC
-}
+ const NUMOFTRANSPORTMGRS = 4  // order assigned to channels: HTTP, WS, MQTT, gRPC
+var transportMgrChannel []chan string
+var transportDataChan []chan string
+var backendChan []chan string
 
-var serviceMgrChannel = []chan string{
-	make(chan string),
-}
+var serviceMgrChannel []chan string
 
-var atsChannel = []chan string{
-	make(chan string), // access token verification
-	make(chan string), // token cancellation
-}
-
-// add element to both channels if support for new transport protocol is added
-var transportDataChan = []chan string{
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-}
-
-var backendChan = []chan string{
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-}
+var atsChannel []chan string
 
 var serviceDataPortNum int = 8200 // port number interval [8200-]
 
 // add element if support for new service manager is added
-var serviceDataChan = []chan string{
-	make(chan string),
-	//	make(chan string),
-}
+var serviceDataChan []chan string
+
+var ftChannel chan utils.FileTransferCache
 
 var errorResponseMap = map[string]interface{}{
 	"RouterId":  0,
@@ -655,7 +631,13 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
 	}
-	if requestMap["action"] == "set" && utils.VSSgetType(searchData[0].NodeHandle) != utils.ACTUATOR {
+	nodeType := utils.VSSgetType(searchData[0].NodeHandle)
+	if strings.Contains (utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {
+		response := initiateFileTransfer(requestMap, nodeType, searchPath[0])
+		backendChan[tDChanIndex] <- response
+		return
+	}
+	if requestMap["action"] == "set" && nodeType != utils.ACTUATOR {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
@@ -712,6 +694,111 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap)
 }
 
+func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) string {
+utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", requestMap["action"], nodeType)
+	var ftInitData utils.FileTransferCache
+	if requestMap["action"] == "set" && nodeType == utils.ACTUATOR { // download
+		var uidString string
+		ftInitData.UploadTransfer = false
+		ftInitData.Name, ftInitData.Hash, uidString = getFileDescriptorData(requestMap["value"].(interface{}))
+		uidByte, _ := hex.DecodeString(uidString)
+		ftInitData.Uid = [utils.UIDLEN]byte(uidByte)
+		ftInitData.Path = "./"  //get it from statestorage when vss-tools have updated.
+		ftChannel <- ftInitData
+		ftInitData = <- ftChannel
+		if ftInitData.Status == 0 {
+			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "set", "ts": "` + utils.GetRfcTime() + `"}`
+		} else {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
+			return utils.FinalizeMessage(errorResponseMap)
+		}
+		
+	} else if requestMap["action"] == "get" && nodeType == utils.SENSOR { //upload
+		if requestMap["path"] != nil {
+utils.Info.Printf("initiateFileTransfer: upload!!!")
+			path := requestMap["path"].(string)
+			ftInitData.UploadTransfer = true
+			ftInitData.Path, ftInitData.Name = getInternalFileName(path)
+			ftInitData.Hash = calculateHash(ftInitData.Path + ftInitData.Name)
+			uidByte, _ := hex.DecodeString("2d878213")  //TODO: random generation
+			ftInitData.Uid = [utils.UIDLEN]byte(uidByte)
+			ftChannel <- ftInitData
+			_ = <- ftChannel
+			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "get", "path":"` + path +
+				`", "value":{"name": "` + ftInitData.Name + `", "hash":"` + ftInitData.Hash + `","uid":"` + hex.EncodeToString(ftInitData.Uid[:]) + `"}, ` +
+				`"ts": "` + utils.GetRfcTime() + `"}`
+		}
+	}
+	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+	return utils.FinalizeMessage(errorResponseMap)
+}
+
+func calculateHash(fileName string) string {
+	f, err := os.Open(fileName)
+	if err != nil {
+		utils.Error.Printf("calculateHash: failed to open %s, err=%s", fileName, err)
+		return ""
+	}
+	defer f.Close()
+
+	h := sha1.New()
+	if _, err := io.Copy(h, f); err != nil {
+		utils.Info.Printf("calculateHash: failed to read %s, err=%s", fileName, err)
+	}
+//	utils.Info.Printf("SHA-1 hash=%x", h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func getInternalFileName(path string) (string, string) {  // maps between tree paths and files in the vehicle file system
+	switch path {
+		case "Vehicle.UploadFile": return "", "upload.txt"
+	}
+	return "", "upload.txt"
+}
+
+func getFileDescriptorData(value interface{}) (string, string, string) { // {"name": "xxx","hash": "yyy","uid": "zzz"}
+	var name, hash, uid string
+	for k, v := range value.(map[string]interface{}) {
+		switch vv := v.(type) {
+		case string:
+//			utils.Info.Println(k, "is string", vv)
+			if k == "name" {
+				name = vv
+			} else if k == "hash" {
+				hash = vv
+			} else if k == "uid" {
+				uid = vv
+			} else {
+				utils.Info.Println(k, "is of an unknown type")
+				return "", "", ""
+			}
+		default:
+			utils.Info.Println(k, "is of an unknown type")
+			return "", "", ""
+		}
+	}
+	return name, hash, uid
+}
+
+func initChannels() {
+	ftChannel = make(chan utils.FileTransferCache)
+	serviceMgrChannel = make([]chan string, 1)
+	serviceMgrChannel[0] = make(chan string)
+	serviceDataChan = make([]chan string, 1)
+	serviceDataChan[0] = make(chan string)
+	transportMgrChannel = make([]chan string, NUMOFTRANSPORTMGRS)
+	transportDataChan = make([]chan string, NUMOFTRANSPORTMGRS)
+	backendChan = make([]chan string, NUMOFTRANSPORTMGRS)
+	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
+	transportMgrChannel[i] = make(chan string)
+	transportDataChan[i] = make(chan string)
+	backendChan[i] = make(chan string)
+	}
+	atsChannel = make([]chan string, 2)
+	atsChannel[0] = make(chan string) // access token verification
+	atsChannel[1] = make(chan string) // token cancellation
+}
+
 /*type CoreInterface interface {
 	vssPathListHandler(w http.ResponseWriter, r *http.Request)
 }*/
@@ -757,6 +844,8 @@ func main() {
 		utils.CreatePathListFile(*pListPath)
 	}
 
+	initChannels()
+
 /*	router := mux.NewRouter()
 	router.HandleFunc("/vsspathlist", pathList.VssPathListHandler).Methods("GET")
 
@@ -786,6 +875,8 @@ func main() {
 		case "wsMgr":
 			go wsMgr.WsMgrInit(1, transportMgrChannel[1])
 			go transportDataSession(transportMgrChannel[1], transportDataChan[1], backendChan[1])
+		case "wsMgrFT":
+			go wsMgrFT.WsMgrFTInit(ftChannel)
 		case "mqttMgr":
 			go mqttMgr.MqttMgrInit(2, transportMgrChannel[2])
 			go transportDataSession(transportMgrChannel[2], transportDataChan[2], backendChan[2])
