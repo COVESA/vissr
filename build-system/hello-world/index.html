@@ -9,7 +9,7 @@
 
     <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
 
-    <title>COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial :: COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>VISSR Hello World example :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
     <link href="/vissr/css/nucleus.css?1731411606" rel="stylesheet">
@@ -40,7 +40,7 @@
     </style>
     
   </head>
-  <body class="" data-url="/vissr/">
+  <body class="" data-url="/vissr/build-system/hello-world/">
     <nav id="sidebar" class="">
 
 
@@ -86,7 +86,7 @@
   
     
     <li data-nav-id="/vissr/build-system/" title="VISSR Build System" class="dd-item
-        
+        parent
         
         
         ">
@@ -116,7 +116,7 @@
     
     <li data-nav-id="/vissr/build-system/hello-world/" title="VISSR Hello World example" class="dd-item
         
-        
+        active
         
         ">
       <a href="/vissr/build-system/hello-world/">
@@ -581,56 +581,159 @@
         <div id="overlay"></div>
         <div class="padding highlightable">
               
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/build-system/hello-world/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            
+            
+          
+          
+            <a href='/vissr/'>COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial</a> > <a href='/vissr/build-system/'>VISSR Build System</a> > VISSR Hello World example
+          
+        
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#native-build-based-hello-world-example">Native build based Hello World example</a></li>
+    <li><a href="#docker-based-hello-world-example">Docker based Hello World example</a></li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
         <div id="head-tags">
         
         </div>
         
         <div id="body-inner">
           
+            <h1>
+              
+              VISSR Hello World example
+            </h1>
+          
 
         
 
-<span id="sidebar-toggle-span">
-<a href="#" id="sidebar-toggle" data-sidebar-toggle=""><i class="fas fa-bars"></i> navigation</a>
-</span>
 
- 
-<h2 id="covesa-vehicle-information-service-specification-ver-3-reference-implementation-tutorial">COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial</h2>
-<p>The COVESA VISSv3 specification is under development at the <a href="https://github.com/COVESA/vehicle-information-service-specification">COVESA VISS Github</a>.
-A VISSv3.0 reference implementation in the form of a server that exposes an interface according to the specification is developed on the master branch,
-while a VISSv2.0 reference implementation is available on the v2.0 branch.</p>
-<p>This documentation covers the VISSv3.0 specification.
-The new features are listed below.
-It is with a few small exceptions backwards compatible with VISSv2.0. The exceptions are listed below.</p>
-<h3 id="vissv30-new-features">VISSv3.0 new features</h3>
+
+	<p>Two Hello Worl alternatives are available:</p>
 <ul>
-<li>Multiple tree support. The server can be configured to manage multiple trees that a client can access.</li>
-<li>Server capabilities documented and client accessible in the Server tree.</li>
-<li>(File transfer.) !!Part of VISSv3.0 spec but not yet implemented!!</li>
-<li>gRPC support. This wa already available on an experimental level in VISSR @v2.0.</li>
-<li>Any further new features added to the VISSv3.0 specification will become implemented.</li>
+<li><a href="/vissr/build-system/hello-world/#native-build-based-hello-world-example">Native build</a> based example</li>
+<li><a href="/vissr/build-system/hello-world/#docker-based-hello-world-example">Docker</a> based example</li>
 </ul>
-<h3 id="non-backwards-compatible-changes-from-vissv20">Non-backwards compatible changes from VISSv2.0</h3>
-<ul>
-<li>The filter keyname &ldquo;type&rdquo; is changed to &ldquo;variant&rdquo;.</li>
-<li>The filter variants &ldquo;static-metadata&rdquo; and &ldquo;dynamic-metadata&rdquo; are replaced by the variant &ldquo;metadata&rdquo;.</li>
-<li>The &ldquo;subscriptionId&rdquo; parameter in unsubscribe response messages is deleted.</li>
-</ul>
-<p>Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.</p>
-<p><img src="/vissr/images/WAII-tech-stack.jpg?width=40pc" alt="VISSv2 communication tech stack"></p>
-<p>These software components (SwCs) can be categorized as follows:</p>
-<ul>
-<li>server</li>
-<li>clients</li>
-<li>data storage</li>
-<li>feeders</li>
-<li>tools</li>
-</ul>
-<p>The tutorial describes each SwC category in a separate chapter.
-It also contains a few Proof of concept (POC) examples, and information about installing,
-building and running Golang based SwCs, a Docker containerization, and about some peripheral components.</p>
+<h2 id="native-build-based-hello-world-example">Native build based Hello World example</h2>
+<p>Building the server and many other software components require that the Golang build system is installed on the computer,
+please see <a href="/vissr/build-system/#installing-golang">here</a> how to get that done.
+The next step is to clone the <a href="https://github.com/COVESA/vissr">VISSR</a> repo.</p>
+<pre tabindex="0"><code>$ git clone https://github.com/COVESA/vissr.git
+</code></pre><p>This is followed going to the directory where the main server code is located, and build the server.</p>
+<pre tabindex="0"><code>$ cd vissr/server/vissv2server/
+$ go build
+</code></pre><p>This could be followed by directly starting a client to issue requests to the server,
+but the server would then tr to read data from an empty data store, so all responses would say &lsquo;data-not-available&rsquo;.
+To be able to get some real data back we will therefore start a feeder that will write simulated data into the data store.</p>
+<p>To do this, open a new terminal window, go to the feederv3 directory, and build the feeder.</p>
+<pre tabindex="0"><code>$ cd vissr/feeder/feeder-template/feederv3/
+$ go build
+</code></pre><p>Now we can start the server and the feeder in respective terminal window.
+The server will connect to the feeder, so to avoid server logs complaining it cannot find the feeder it is preferred to start the feeder first.</p>
+<pre tabindex="0"><code>$ ./feederv3
+$ ./vissv2server
+</code></pre><p>Both the server and the feeder will by default be configured to use Redis for the data store.
+This requires that Redis has been installed on the computer, how to do this can be read <a href="https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/">here</a>.
+Other data stores can be configured, more info can be found <a href="/vissr/datastore/">here</a>.</p>
+<p>Now it is time to start a client, there are many clients to be found in the client directory and subdirectories.
+We will here use the Javascript based client that connects via the Websocket protocol.
+But first we need to find out the IP address of the computer as the client connects to the server over a socket based on this address.
+How to do that can e. g. be found <a href="https://www.wikihow.com/Check-a-Computer-IP-Address">here</a>, on Ubuntu the command</p>
+<pre tabindex="0"><code>$ ifconfig
+</code></pre><p>can be used. You will then have to search i a lot of information for an address that likely starts with &lsquo;192.168&rsquo; followed by two more segments.
+Please copy this and use the file browser on the computer to go to the client/client-1.0/Javascript directory.
+There you click on the file &lsquo;wsclient_uncompressed.html&rsquo;, which leads to that it starts up in the browser.
+You will there see a field whch says &lsquo;host ip&rsquo;, please paste the IP address in there and click on the button to the right that says &lsquo;Server IP&rsquo;.
+The client will then print &lsquo;Status: Connected&rsquo; in the area below if it succeeds to connect.
+Now we can start to issue client requests to the server by pasting or writing them into the field where it says &lsquo;JSON payload,
+followed by clicking on the button &lsquo;Send&rsquo;.
+Try with the command</p>
+<pre tabindex="0"><code>{&#34;action&#34;:&#34;get&#34;,&#34;path&#34;:&#34;Vehicle.Cabin.Door.Row1.DriverSide.IsOpen&#34;,&#34;requestId&#34;:&#34;232&#34;}
+</code></pre><p>which should return a response like the below.</p>
+<pre tabindex="0"><code>Server: {&#34;action&#34;:&#34;get&#34;,&#34;requestId&#34;:&#34;232&#34;,&#34;ts&#34;:&#34;2024-11-12T11:26:44.546855082Z&#34;, &#34;data&#34;:{&#34;path&#34;:&#34;Vehicle.Cabin.Door.Row1.DriverSide.IsOpen&#34;, &#34;dp&#34;:{&#34;value&#34;:&#34;Data-not-found&#34;, &#34;ts&#34;:&#34;2024-11-12T11:26:44.548180993Z&#34;}}}
+</code></pre><p>The value is set to &lsquo;Data-not-found&rsquo; which is due to that the federv3 is not instructed to create simulated values for this signal.
+At startup the feederv3 reads the file VssVehicle.cvt which has been created by the <a href="/vissr/tools/">Domain Conversion Tool</a>.
+This file contains the insructions for how signals are mapped and scaled when they traverse between the &lsquo;vehicle domain&rsquo; and the &lsquo;VSS domain&rsquo;,
+but the feederv3 also uses this information to select which signals to create simulated values for.
+The cvt-file that comes with the repo only contains the five signals that can be read in the tools/DomainConversionTool/Map-VSSv0.1-CANv0.1.yaml file.
+So if we want to get a response with a simulated value a client request to any of these signals must be issued, e. g.:</p>
+<pre tabindex="0"><code>{&#34;action&#34;:&#34;get&#34;,&#34;path&#34;:&#34;Vehicle.Speed&#34;,&#34;requestId&#34;:&#34;232&#34;}
+</code></pre><p>Please issue this request, se the response, wait about 30 secs and issue it again.
+The values returned in the two responses should differ as the feeder randomly generates new values. If not wait another 30 secs and issue it again.
+This could more easily be seen if a time-based subscribe request is issued:</p>
+<pre tabindex="0"><code>{&#34;action&#34;:&#34;subscribe&#34;,&#34;path&#34;:&#34;Vehicle.Speed&#34;,&#34;filter&#34;:{&#34;variant&#34;:&#34;timebased&#34;,&#34;parameter&#34;:{&#34;period&#34;:&#34;10000&#34;}},&#34;requestId&#34;:&#34;246&#34;}
+</code></pre><p>The server will issue event messages every ten seconds, and it can after a number of events has been received that the value is randomly changed.
+To unsubscribe, issue the request:</p>
+<pre tabindex="0"><code>{&#34;action&#34;:&#34;unsubscribe&#34;,&#34;subscriptionId&#34;:&#34;1&#34;,&#34;requestId&#34;:&#34;240&#34;}
+</code></pre><p>The file client/client-1.0/Javascript/appclient_commands.txt contains examples of different requests that can be used, either as is or modified.</p>
+<p>The feederv3 can at startup be configured to read simulated tripdata from files like &rsquo;tripdata.json&rsquo; or &lsquo;speed-sawtooth.json&rsquo;,
+the latter suitable if the curve log filter subscription is to be tested, maybe with a request like this:</p>
+<pre tabindex="0"><code>{&#34;action&#34;:&#34;subscribe&#34;,&#34;path&#34;:&#34;Vehicle.Speed&#34;,&#34;filter&#34;:{&#34;variant&#34;:&#34;curvelog&#34;,&#34;parameter&#34;:{&#34;maxerr&#34;:&#34;2&#34;,&#34;bufsize&#34;:&#34;18&#34;}},&#34;requestId&#34;:&#34;275&#34;}
+</code></pre><p>More simulation info can be found <a href="/vissr/feeder/#simulated-vehicle-data-sources">here</a>.
+These files can easily be modified and extended with data for more signals and longer trips.</p>
+<h2 id="docker-based-hello-world-example">Docker based Hello World example</h2>
+<p>This is not ready yet&hellip;</p>
+
+
+
+
+
+<footer class=" footline" >
 	
-  
+</footer>
+
         
         </div>
         
@@ -662,8 +765,6 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
                 
                     
-                        
-                        
                     
                 
                 
@@ -679,6 +780,7 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
             
                 
+                    
                     
                 
                 
@@ -698,6 +800,9 @@ building and running Golang based SwCs, a Docker containerization, and about som
             
             
                 
+                    
+                        
+                        
                     
                 
                 
@@ -949,8 +1054,10 @@ building and running Golang based SwCs, a Docker containerization, and about som
 	 
 	 
 		
+			<a class="nav nav-prev" href="/vissr/build-system/" title="VISSR Build System"> <i class="fa fa-chevron-left"></i></a>
 		
-			<a class="nav nav-next" href="/vissr/build-system/" title="VISSR Build System" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+			<a class="nav nav-next" href="/vissr/client/" title="VISSR Clients" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
@@ -982,4 +1089,3 @@ building and running Golang based SwCs, a Docker containerization, and about som
 
   </body>
 </html>
-
