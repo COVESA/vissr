@@ -2,9 +2,12 @@
 title: "VISSR Build System"
 ---
 
+For those who prefer to directly dive into running code instead of reading a lot of documentation before geting to run it
+there is a [Hello World example](/vissr/build-system/hello-world) to start with.
+
 ## Installing Golang
 
-Most of the code at this repository is written in Golang, so in order to use this repo Golang must be installed on the computer.
+The server and most of the other software components at this repository is written in Golang, so in order to use this repo Golang must be installed on the computer.
 
 Searching for "install golang" gives many hits, of which this is one:
 
