@@ -2,7 +2,7 @@
 title: "VISSR Hello World example"
 ---
 
-Two Hello Worl alternatives are available:
+Two Hello World alternatives are available:
 * [Native build](/vissr/build-system/hello-world/#native-build-based-hello-world-example) based example
 * [Docker](/vissr/build-system/hello-world/#docker-based-hello-world-example) based example
 
@@ -14,13 +14,13 @@ The next step is to clone the [VISSR](https://github.com/COVESA/vissr) repo.
 ```
 $ git clone https://github.com/COVESA/vissr.git
 ```
-This is followed going to the directory where the main server code is located, and build the server.
+This is followed by going to the directory where the main server code is located, and build the server.
 ```
 $ cd vissr/server/vissv2server/
 $ go build
 ```
 This could be followed by directly starting a client to issue requests to the server,
-but the server would then tr to read data from an empty data store, so all responses would say 'data-not-available'.
+but the server would then try to read data from an empty data store, so all responses would say 'Data-not-found'.
 To be able to get some real data back we will therefore start a feeder that will write simulated data into the data store.
 
 To do this, open a new terminal window, go to the feederv3 directory, and build the feeder.
@@ -45,7 +45,7 @@ How to do that can e. g. be found [here](https://www.wikihow.com/Check-a-Compute
 ```
 $ ifconfig
 ```
-can be used. You will then have to search i a lot of information for an address that likely starts with '192.168' followed by two more segments.
+can be used. You will then have to search through a lot of information for an address that likely starts with '192.168' followed by two more segments.
 Please copy this and use the file browser on the computer to go to the client/client-1.0/Javascript directory.
 There you click on the file 'wsclient_uncompressed.html', which leads to that it starts up in the browser.
 You will there see a field whch says 'host ip', please paste the IP address in there and click on the button to the right that says 'Server IP'.
@@ -62,10 +62,11 @@ Server: {"action":"get","requestId":"232","ts":"2024-11-12T11:26:44.546855082Z",
 ```
 The value is set to 'Data-not-found' which is due to that the federv3 is not instructed to create simulated values for this signal.
 At startup the feederv3 reads the file VssVehicle.cvt which has been created by the [Domain Conversion Tool](/vissr/tools/).
-This file contains the insructions for how signals are mapped and scaled when they traverse between the 'vehicle domain' and the 'VSS domain',
+This file contains the instructions for how signals are mapped and scaled when they traverse between the 'vehicle domain' and the 'VSS domain',
 but the feederv3 also uses this information to select which signals to create simulated values for.
 The cvt-file that comes with the repo only contains the five signals that can be read in the tools/DomainConversionTool/Map-VSSv0.1-CANv0.1.yaml file.
-So if we want to get a response with a simulated value a client request to any of these signals must be issued, e. g.:
+So if we want to get a response with a simulated value a client request to any of these signals must be issued, e. g. like below.
+An alternative would be to create a new cvt-file with more signals first.
 ```
 {"action":"get","path":"Vehicle.Speed","requestId":"232"}
 ```
@@ -75,7 +76,7 @@ This could more easily be seen if a time-based subscribe request is issued:
 ```
 {"action":"subscribe","path":"Vehicle.Speed","filter":{"variant":"timebased","parameter":{"period":"10000"}},"requestId":"246"}
 ```
-The server will issue event messages every ten seconds, and it can after a number of events has been received that the value is randomly changed.
+The server will issue event messages every ten seconds, and it can after a number of events has been received be seen that the value is randomly changed.
 To unsubscribe, issue the request:
 ```
 {"action":"unsubscribe","subscriptionId":"1","requestId":"240"}
@@ -92,4 +93,4 @@ These files can easily be modified and extended with data for more signals and l
 
 ## Docker based Hello World example
 
-This is not ready yet...
+The [README](https://github.com/COVESA/cdsp/blob/main/docker/README.md) describes how to use a Docker image to get the VISSR server up and running.

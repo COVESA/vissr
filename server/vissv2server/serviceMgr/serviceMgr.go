@@ -1004,10 +1004,15 @@ func configureDefault(udsConn net.Conn) {
 }
 
 func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeederCl chan string) {
-	udsConn := utils.GetUdsConn("*", "serverFeeder")
-	if udsConn == nil {
-		utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
-		return // ???
+	var udsConn net.Conn
+	attempts := 0
+	for udsConn == nil && attempts < 10 {
+		udsConn = utils.GetUdsConn("*", "serverFeeder")
+		if attempts >= 10 {
+			utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
+			return // ???
+		}
+		time.Sleep(3 * time.Second)
 	}
 	configureDefault(udsConn)
 	fromFeeder := make(chan string)
