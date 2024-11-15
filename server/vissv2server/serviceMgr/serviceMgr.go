@@ -1008,7 +1008,7 @@ func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeeder
 	attempts := 0
 	for udsConn == nil && attempts < 10 {
 		udsConn = utils.GetUdsConn("*", "serverFeeder")
-		if attempts >= 10 {
+		if udsConn == nil && attempts >= 10-1 {
 			utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
 			return // ???
 		}
