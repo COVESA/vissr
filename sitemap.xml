@@ -12,6 +12,10 @@
   </url><url>
     <loc>https://covesa.github.io/vissr/pocs/poc1/</loc>
   </url><url>
+    <loc>https://covesa.github.io/vissr/server/access-control-servers/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/server/binary-tree-config/</loc>
+  </url><url>
     <loc>https://covesa.github.io/vissr/build-system/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/client/</loc>
@@ -37,8 +41,6 @@
     <loc>https://covesa.github.io/vissr/datastore/sqlite/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/tools/</loc>
-  </url><url>
-    <loc>https://covesa.github.io/vissr/server/access-control-servers/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/apache-iotdb/</loc>
   </url>
