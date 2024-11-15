@@ -1,5 +1,5 @@
 ---
-title: "VISSv2 Access Control Servers"
+title: "VISSR Access Control Servers"
 ---
 
 The [VISSv2 access control model](https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#access-control-model) specifies two authorization servers:
