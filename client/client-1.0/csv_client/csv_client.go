@@ -87,6 +87,9 @@ func createListFromFile(fname string) int {
 }
 
 func initVissV2WebSocket(compression string) *websocket.Conn {
+	if compression == "proto" {
+		compression = "protoenc"
+	}
 	scheme := "ws"
 	portNum := "8080"
 	if secConfig.TransportSec == "yes" {
@@ -100,7 +103,7 @@ func initVissV2WebSocket(compression string) *websocket.Conn {
 	var addr = flag.String("addr", vissv2Url+":"+portNum, "http service address")
 	dataSessionUrl := url.URL{Scheme: scheme, Host: *addr, Path: ""}
 	subProtocol := make([]string, 1)
-	subProtocol[0] = "VISSv2" + compression
+	subProtocol[0] = "VISS-" + compression
 	dialer := websocket.Dialer{
 		HandshakeTimeout: time.Second,
 		ReadBufferSize:   1024,
