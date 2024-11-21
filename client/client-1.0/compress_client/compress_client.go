@@ -91,6 +91,9 @@ func createListFromFile(fname string) int {
 }
 
 func initVissV2WebSocket(compression string) *websocket.Conn {
+	if compression == "proto" {
+		compression = "protoenc"
+	}
 	scheme := "ws"
 	portNum := "8080"
 	if secConfig.TransportSec == "yes" {
@@ -104,7 +107,7 @@ func initVissV2WebSocket(compression string) *websocket.Conn {
 	var addr = flag.String("addr", vissv2Url+":"+portNum, "http service address")
 	dataSessionUrl := url.URL{Scheme: scheme, Host: *addr, Path: ""}
 	subProtocol := make([]string, 1)
-	subProtocol[0] = "VISSv2" + compression
+	subProtocol[0] = "VISS-" + compression
 	dialer := websocket.Dialer{
 		HandshakeTimeout: time.Second,
 		ReadBufferSize:   1024,
@@ -135,40 +138,10 @@ func getResponse(conn *websocket.Conn, request []byte) []byte {
 
 func performCommand(commandNumber int, conn *websocket.Conn, optionChannel chan string) {
 	fmt.Printf("Request: %s\n", requestList.Request[commandNumber])
-	if compression != "prop" {
+	if compression == "proto" {
 		performPbCommand(commandNumber, conn, optionChannel)
 	} else {
-		compressedRequest := utils.CompressMessage([]byte(requestList.Request[commandNumber]))
-		fmt.Printf("JSON request size= %d, Compressed request size=%d\n", len(requestList.Request[commandNumber]), len(compressedRequest))
-		fmt.Printf("Compression= %d%\n", (100*len(requestList.Request[commandNumber]))/len(compressedRequest))
-		compressedResponse := getResponse(conn, compressedRequest)
-		jsonResponse := string(utils.DecompressMessage([]byte(compressedResponse)))
-		fmt.Printf("Response: %s\n", jsonResponse)
-		fmt.Printf("JSON response size= %d, Compressed response size=%d\n", len(jsonResponse), len(compressedResponse))
-		fmt.Printf("Compression= %d%\n", (100*len(jsonResponse))/len(compressedResponse))
-		if strings.Contains(requestList.Request[commandNumber], "subscribe") == true {
-			for {
-				_, msg, err := conn.ReadMessage()
-				if err != nil {
-					fmt.Printf("Notification error: %s\n", err)
-					return
-				}
-				jsonNotification := string(utils.DecompressMessage(msg))
-				fmt.Printf("Notification: %s\n", jsonNotification)
-				fmt.Printf("JSON notification size= %d, Compressed notification size=%d\n", len(jsonNotification), len(msg))
-				fmt.Printf("Compression= %d%\n", (100*len(jsonNotification))/len(msg))
-				select {
-				case <-optionChannel:
-					// issue unsubscribe request
-					subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
-					unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
-					compressedUnsubReq := utils.CompressMessage([]byte(unsubReq))
-					getResponse(conn, compressedUnsubReq)
-					return
-				default:
-				}
-			}
-		}
+		fmt.Printf("This client does currently not support No encoding\n")
 	}
 }
 
@@ -206,14 +179,10 @@ func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel cha
 	}
 }
 
-func convertToCompression(compression string) utils.Compression {
-	switch compression {
-	case "prop":
-		return utils.PROPRIETARY
-	case "pbl1":
-		return utils.PB_LEVEL1
-	case "pbl2":
-		return utils.PB_LEVEL2
+func convertToCompression(encoding string) utils.Encoding {
+	switch encoding {
+	case "proto":
+		return utils.PROTOBUF
 	}
 	return utils.NONE
 }
@@ -243,8 +212,8 @@ func main() {
 	url_vissv2 := parser.String("v", "vissv2Url", &argparse.Options{Required: true, Help: "IP/url to VISSv2 server"})
 	prot := parser.Selector("p", "protocol", []string{"http", "ws"}, &argparse.Options{Required: false,
 		Help: "Protocol must be either http or websocket", Default: "ws"})
-	comp := parser.Selector("c", "compression", []string{"prop", "pbl1", "pbl2"}, &argparse.Options{Required: false,
-		Help: "Compression must be either proprietary or protobuf level 1 or 2", Default: "pbl1"})
+	comp := parser.Selector("c", "compression", []string{"none", "proto"}, &argparse.Options{Required: false,
+		Help: "Compression must be either none or protobuf", Default: "proto"})
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
 		Required: false,
@@ -274,11 +243,6 @@ func main() {
 
 	if createListFromFile("requests.json") == 0 {
 		fmt.Printf("Failed in creating list from requests.json")
-		os.Exit(1)
-	}
-
-	if utils.InitCompression("vsspathlist.json") != true {
-		fmt.Printf("Failed in creating list from vsspathlist.json")
 		os.Exit(1)
 	}
 

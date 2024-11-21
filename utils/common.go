@@ -404,3 +404,41 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 		}
 	}
 }
+
+func AnalyzeValueType(value string) int {
+	_, err := strconv.Atoi(value)
+	if err == nil {
+		return 1 //int type
+	}
+	if value == "true" || value == "false" {
+		return 2 // bool type
+	}
+	if isFloatType(value) == true {
+		return 3 // float type
+	}
+	return 0
+}
+
+
+func isFloatType(value string) bool {
+	fVal, err := strconv.ParseFloat(value, 32)
+	if err != nil {
+		return false
+	}
+	if fVal < 0 {
+		fVal = fVal * -1.0
+	}
+	if fVal < 1.175494351e-38 || fVal > 3.402823466e+38 { // f64 not supported
+		return false
+	}
+	return true
+}
+
+func NextQuoteMark(message []byte, offset int) int {
+	for i := offset; i < len(message); i++ {
+		if message[i] == '"' {
+			return i
+		}
+	}
+	return offset
+}

@@ -16,8 +16,7 @@ Arguments:
   -h  --help         Print help information
   -v  --vissv2Url    IP/url to VISSv2 server
   -p  --protocol     Protocol must be either http or websocket. Default: ws
-  -c  --compression  Compression must be either proprietary or protobuf level 1
-                     or 2. Default: pbl1
+  -c  --compression  Compression must be either none or protobuf. Default: proto
       --logfile      outputs to logfile in ./logs folder
       --loglevel     changes log output level. Default: info
 </pre>

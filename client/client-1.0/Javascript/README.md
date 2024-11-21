@@ -4,7 +4,7 @@
 # Project: WAII: client/client-1.0
 
 Client implementations for communication with the server found at the server/server-1.0 directory.<br>
-The functionality in the W3C VISS v2 specs shall be supported, with features such as:<br>
+The functionality in the VISS specs shall be supported, with features such as:<br>
  HTTP and WebSockets transport protocols<br>
 -- Queries<br>
 -- Access control <br><br>
@@ -23,13 +23,13 @@ Current limitations: <br>
 - Set requests do not lead to an update with the provided value.<br>
 
 The available clients are:<br>
-- httpclient.html              // uses the HTTP protocol to communicate with the W3C VISS v2 server. Payload encoding not invoked.<br>
-- wsclient_uncompressed.html   // uses the Websocket protocol to communicate with the W3C VISS v2 server. Payload encoding not invoked.<br>
-- wsclient_compressed.html   // uses the Websocket protocol to communicate with the W3C VISS v2 server. Payload encoding invoked.<br>
+- httpclient.html              // uses the HTTP protocol to communicate with the VISS server. Payload encoding not invoked.<br>
+- wsclient.html   // uses the Websocket protocol to communicate with the VISS server. Payload encoding not invoked.<br>
+- wsclient_protoencode.html   // uses the Websocket protocol to communicate with the VISS server. Protobuf payload encoding invoked.<br>
 - agtclient.html   // uses the Websocket protocol to communicate with the Access Grant server.<br>
 - atclient.html   // uses the Websocket protocol to communicate with the Access token server.<br>
 
-The appclient_commands.txt file contains some example payloads that a client may use. Depending on the VSS tree used by the W3C VISS v2 server, 
+The appclient_commands.txt file contains some example payloads that a client may use. Depending on the VSS tree used by the VISS server, 
 the paths used in the examples may not address existing nodes in the tree.
 
 ## Build instructions:
@@ -45,11 +45,11 @@ After the server URL is set, then requests can be issued to the server. <br>
 For request examples, see the file appclient_commands.txt that contains request examples for both Websockets and HTTP transport protocols.  <br>
 The VSS paths shown in the examples can be replaced by any path that the VSS tree at the VSS Github project supports (https://github.com/GENIVI/vehicle_signal_specification). <br><br>
 
-The W3C VISS v2 access control model describes two authorization servers, the Access Grant Token (AGT) server, and the Access Token (AT) server. <br>
-To obtain an Access Grant token the agtclient.html can be used. The IP address is the same as for the W3C VISS v2 server, the path is "agtserver",<br> 
+The VISS access control model describes two authorization servers, the Access Grant Token (AGT) server, and the Access Token (AT) server. <br>
+To obtain an Access Grant token the agtclient.html can be used. The IP address is the same as for the VISS server, the path is "agtserver",<br> 
 and the request to the agtserver must be a JSON formatted message with the following format<br>
 {"vin":"XXX", "context":"Independent+OEM+Cloud", "proof":"ABC", "key":"DEF"}<br>
-where the "vin" value can be replaced by any (fictious) VIN number, the "context" value with any role triplet that the W3C VISS v2 spec supports,
+where the "vin" value can be replaced by any (fictious) VIN number, the "context" value with any role triplet that the VISS spec supports,
  the "proof" value with anything as authentication is not implemented.<br>
  If a "key" parameter is included, to initiate a Long Term Flow, it may have any value as it is currently not used.<br>
 The response contains the Access Grant Token, that is used as input in the following request to the AT server.<br>
@@ -58,10 +58,10 @@ To issue this request, the atclient.html can be opened in a browser, input the s
 where the "token" value is the token received from the AGT server, 
 the "purpose" value must be a short name on the Purpose list (where only "fuel-status" is available as an example).<br>
 The "pop" parameter shall only be included if a "key" parameter was included in the AGT request, the value can be anything as it is currently not used.<br>
-If the AGT token is verified as valid, which it should be if it comes from the AGT server, the response contains the AT token that can then be used in requests to the W3C VISS v2 server.<br><br>
-The access control model implements the Access control selection model described in the W3C VISS v2 specification,so to enable testing of access control, the VSS tree must be updated with access control metadata. This is done by adding the key-value pair "validate:X" to a node in a vspec file, 
+If the AGT token is verified as valid, which it should be if it comes from the AGT server, the response contains the AT token that can then be used in requests to the VISS server.<br><br>
+The access control model implements the Access control selection model described in the VISS specification,so to enable testing of access control, the VSS tree must be updated with access control metadata. This is done by adding the key-value pair "validate:X" to a node in a vspec file, 
 where X must be either "write-only" or "read-write". 
 This can be inserted into any node, also branch nodes, in which case the access control is inherited by all nodes being descendants of that node.<br>
 E.g if in the branch node "Body" the metadata "validate:read-write" is inserted, then all signals in the subtree having "Vehicle.Body" as the root will require a token with ReadWrite scope for any read or write requests.<br>
-Please see the <a href="https://github.com/w3c/automotive/blob/gh-pages/spec/Gen2_Core.html">W3C W3C VISS v2 CORE spec, Access Control chapter</a> for more info.
+Please see the <a href="https://github.com/COVESA/vehicle-information-service-specification">COVESA VISS CORE spec, Access Control chapter</a> for more info.
 

@@ -163,7 +163,7 @@ func main() {
 	}
 
 	utils.InitLog("grpc_client-log.txt", "./logs", *logFile, *logLevel)
-	grpcCompression = utils.PB_LEVEL1
+	grpcCompression = utils.PROTOBUF
 	readTransportSecConfig()
 	utils.Info.Printf("secConfig.TransportSec=%s", secConfig.TransportSec)
 	if secConfig.TransportSec == "yes" {
