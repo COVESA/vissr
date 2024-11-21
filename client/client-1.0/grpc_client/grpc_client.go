@@ -34,7 +34,7 @@ const (
 	name    = "VISSv2-gRPC-client"
 )
 
-var grpcCompression utils.Compression
+var grpcEncoding utils.Encoding
 
 var commandList []string
 
@@ -90,24 +90,24 @@ func noStreamCall(commandIndex int) {
 	var vssResponse string
 	switch commandIndex % 10 {
 	case 0: //get
-		pbRequest := utils.GetRequestJsonToPb(vssRequest, grpcCompression)
+		pbRequest := utils.GetRequestJsonToPb(vssRequest, grpcEncoding)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err != nil {
 			log.Fatal(err)
 			return
 		}
-		vssResponse = utils.GetResponsePbToJson(pbResponse, grpcCompression)
+		vssResponse = utils.GetResponsePbToJson(pbResponse, grpcEncoding)
 	case 1: // set
-		pbRequest := utils.SetRequestJsonToPb(vssRequest, grpcCompression)
+		pbRequest := utils.SetRequestJsonToPb(vssRequest, grpcEncoding)
 		pbResponse, _ := client.SetRequest(ctx, pbRequest)
-		vssResponse = utils.SetResponsePbToJson(pbResponse, grpcCompression)
+		vssResponse = utils.SetResponsePbToJson(pbResponse, grpcEncoding)
 	case 3: //unsubscribe
 		subIdIndex := strings.Index(vssRequest, "X")
 		vssRequest = vssRequest[:subIdIndex] + strconv.Itoa(commandIndex/10) + vssRequest[subIdIndex+1:]
 		fmt.Printf("Unsubscribe request=:%s\n", vssRequest)
-		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcCompression)
+		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcEncoding)
 		pbResponse, _ := client.UnsubscribeRequest(ctx, pbRequest)
-		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcCompression)
+		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcEncoding)
 	}
 	if err != nil {
 		fmt.Printf("Error when issuing request=:%s\n", vssRequest)
@@ -140,7 +140,7 @@ func streamCall(commandIndex int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	vssRequest := commandList[commandIndex]
-	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest, grpcCompression)
+	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest, grpcEncoding)
 	stream, err := client.SubscribeRequest(ctx, pbRequest)
 	for {
 		pbResponse, err := stream.Recv()
@@ -148,7 +148,7 @@ func streamCall(commandIndex int) {
 			fmt.Printf("Error=%v when issuing request=:%s", err, vssRequest)
 			break
 		}
-		vssResponse := utils.SubscribeStreamPbToJson(pbResponse, grpcCompression)
+		vssResponse := utils.SubscribeStreamPbToJson(pbResponse, grpcEncoding)
 		fmt.Printf("Received response:%s\n", vssResponse)
 	}
 }
@@ -171,7 +171,7 @@ func main() {
 	}
 
 	utils.InitLog("grpc_client-log.txt", "./logs", *logFile, *logLevel)
-	grpcCompression = utils.PB_LEVEL1
+	grpcEncoding = utils.PROTOBUF
 	readTransportSecConfig()
 	utils.Info.Printf("secConfig.TransportSec=%s", secConfig.TransportSec)
 	if secConfig.TransportSec == "yes" {

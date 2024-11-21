@@ -14,21 +14,21 @@ import (
 	"strconv"
 )
 
-var currentCompression Compression
+var currentCompression Encoding
 
-func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage, compression Compression) string {
+func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoGetReq(pbGetReq)
 	return jsonMessage
 }
 
-func GetResponsePbToJson(pbGetResp *pb.GetResponseMessage, compression Compression) string {
+func GetResponsePbToJson(pbGetResp *pb.GetResponseMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoGetResp(pbGetResp)
 	return jsonMessage
 }
 
-func GetRequestJsonToPb(vssGetReq string, compression Compression) *pb.GetRequestMessage {
+func GetRequestJsonToPb(vssGetReq string, compression Encoding) *pb.GetRequestMessage {
 	currentCompression = compression
 	var getReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssGetReq), &getReqMessageMap)
@@ -41,7 +41,7 @@ func GetRequestJsonToPb(vssGetReq string, compression Compression) *pb.GetReques
 	return pbGetRequestMessage
 }
 
-func GetResponseJsonToPb(vssGetResp string, compression Compression) *pb.GetResponseMessage {
+func GetResponseJsonToPb(vssGetResp string, compression Encoding) *pb.GetResponseMessage {
 	currentCompression = compression
 
 	var getRespMessageMap map[string]interface{}
@@ -55,19 +55,19 @@ func GetResponseJsonToPb(vssGetResp string, compression Compression) *pb.GetResp
 	return pbGetResponseMessage
 }
 
-func SetRequestPbToJson(pbSetReq *pb.SetRequestMessage, compression Compression) string {
+func SetRequestPbToJson(pbSetReq *pb.SetRequestMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoSetReq(pbSetReq)
 	return jsonMessage
 }
 
-func SetResponsePbToJson(pbSetResp *pb.SetResponseMessage, compression Compression) string {
+func SetResponsePbToJson(pbSetResp *pb.SetResponseMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoSetResp(pbSetResp)
 	return jsonMessage
 }
 
-func SetRequestJsonToPb(vssSetReq string, compression Compression) *pb.SetRequestMessage {
+func SetRequestJsonToPb(vssSetReq string, compression Encoding) *pb.SetRequestMessage {
 	currentCompression = compression
 	var setReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSetReq), &setReqMessageMap)
@@ -80,7 +80,7 @@ func SetRequestJsonToPb(vssSetReq string, compression Compression) *pb.SetReques
 	return pbSetRequestMessage
 }
 
-func SetResponseJsonToPb(vssSetResp string, compression Compression) *pb.SetResponseMessage {
+func SetResponseJsonToPb(vssSetResp string, compression Encoding) *pb.SetResponseMessage {
 	currentCompression = compression
 	var setRespMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSetResp), &setRespMessageMap)
@@ -93,19 +93,19 @@ func SetResponseJsonToPb(vssSetResp string, compression Compression) *pb.SetResp
 	return pbSetResponseMessage
 }
 
-func SubscribeRequestPbToJson(pbSubscribeReq *pb.SubscribeRequestMessage, compression Compression) string {
+func SubscribeRequestPbToJson(pbSubscribeReq *pb.SubscribeRequestMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoSubscribeReq(pbSubscribeReq)
 	return jsonMessage
 }
 
-func SubscribeStreamPbToJson(pbSubscribeResp *pb.SubscribeStreamMessage, compression Compression) string {
+func SubscribeStreamPbToJson(pbSubscribeResp *pb.SubscribeStreamMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoSubscribeStream(pbSubscribeResp)
 	return jsonMessage
 }
 
-func SubscribeRequestJsonToPb(vssSubscribeReq string, compression Compression) *pb.SubscribeRequestMessage {
+func SubscribeRequestJsonToPb(vssSubscribeReq string, compression Encoding) *pb.SubscribeRequestMessage {
 	currentCompression = compression
 	var subscribeReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSubscribeReq), &subscribeReqMessageMap)
@@ -118,7 +118,7 @@ func SubscribeRequestJsonToPb(vssSubscribeReq string, compression Compression) *
 	return pbSubscribeRequestMessage
 }
 
-func SubscribeStreamJsonToPb(vssSubscribeStream string, compression Compression) *pb.SubscribeStreamMessage {
+func SubscribeStreamJsonToPb(vssSubscribeStream string, compression Encoding) *pb.SubscribeStreamMessage {
 	currentCompression = compression
 	var subscribeStreamMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSubscribeStream), &subscribeStreamMessageMap)
@@ -131,19 +131,19 @@ func SubscribeStreamJsonToPb(vssSubscribeStream string, compression Compression)
 	return pbSubscribeStreamMessage
 }
 
-func UnsubscribeRequestPbToJson(pbUnsubscribeReq *pb.UnsubscribeRequestMessage, compression Compression) string {
+func UnsubscribeRequestPbToJson(pbUnsubscribeReq *pb.UnsubscribeRequestMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoUnsubscribeReq(pbUnsubscribeReq)
 	return jsonMessage
 }
 
-func UnsubscribeResponsePbToJson(pbUnsubscribeResp *pb.UnsubscribeResponseMessage, compression Compression) string {
+func UnsubscribeResponsePbToJson(pbUnsubscribeResp *pb.UnsubscribeResponseMessage, compression Encoding) string {
 	currentCompression = compression
 	jsonMessage := populateJsonFromProtoUnsubscribeResp(pbUnsubscribeResp)
 	return jsonMessage
 }
 
-func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string, compression Compression) *pb.UnsubscribeRequestMessage {
+func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string, compression Encoding) *pb.UnsubscribeRequestMessage {
 	currentCompression = compression
 	var unsubscribeReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssUnsubscribeReq), &unsubscribeReqMessageMap)
@@ -156,7 +156,7 @@ func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string, compression Compressio
 	return pbUnsubscribeRequestMessage
 }
 
-func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string, compression Compression) *pb.UnsubscribeResponseMessage {
+func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string, compression Encoding) *pb.UnsubscribeResponseMessage {
 	currentCompression = compression
 	var unsubscribeRespMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssUnsubscribeResp), &unsubscribeRespMessageMap)
@@ -221,12 +221,7 @@ func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[str
 	requestId := messageMap["requestId"].(string)
 	protoMessage.RequestId = &requestId
 	ts := messageMap["ts"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoMessage.Ts = &ts
-	} else {
-		tsc := CompressTS(ts)
-		protoMessage.TsC = &tsc
-	}
+	protoMessage.Ts = &ts
 	if messageMap["authorization"] != nil {
 		auth := messageMap["authorization"].(string)
 		protoMessage.Authorization = &auth
@@ -293,11 +288,7 @@ func createDataElement(index int, messageDataMap interface{}) *pb.DataPackages_D
 	}
 	var protoDataElement pb.DataPackages_DataPackage
 	path := dataObject["path"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoDataElement.Path = &path
-	} else {
-		protoDataElement.PathC = CompressPath(path)
-	}
+	protoDataElement.Path = &path
 	numOfDataPointElements := getNumOfDataPointElements(dataObject["dp"])
 	protoDataElement.Dp = make([]*pb.DataPackages_DataPackage_DataPoint, numOfDataPointElements)
 	for i := 0; i < numOfDataPointElements; i++ {
@@ -328,12 +319,7 @@ func createDataPointElement(index int, messageDataPointMap any) *pb.DataPackages
 	var protoDataPointElement pb.DataPackages_DataPackage_DataPoint
 	protoDataPointElement.Value = dataPointObject["value"].(string)
 	ts := dataPointObject["ts"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoDataPointElement.Ts = &ts
-	} else {
-		tsc := CompressTS(ts)
-		protoDataPointElement.TsC = &tsc
-	}
+	protoDataPointElement.Ts = &ts
 	return &protoDataPointElement
 }
 
@@ -364,7 +350,7 @@ func createPbFilter(index int, filterExpression map[string]interface{}, filter *
 		filter.FilterExp[index].Value.ValueHistory = &pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{}
 		filter.FilterExp[index].Value.ValueHistory.TimePeriod = filterExpression["parameter"].(string)
 	case pb.FilterExpressions_FilterExpression_METADATA:
-		Warning.Printf("Filter type is not supported by protobuf compression.")
+		Warning.Printf("Filter type is not supported by protobuf encoding.")
 	default:
 		Error.Printf("Filter type is unknown.")
 	}
@@ -516,12 +502,7 @@ func createSubscribeStreamPb(protoMessage *pb.SubscribeStreamMessage, messageMap
 		protoMessage.Event = &pb.SubscribeStreamMessage_SubscribeEventMessage{}
 		protoMessage.Event.SubscriptionId = messageMap["subscriptionId"].(string)
 		ts := messageMap["ts"].(string)
-		if currentCompression == PB_LEVEL1 {
-			protoMessage.Event.Ts = &ts
-		} else {
-			tsc := CompressTS(ts)
-			protoMessage.Event.TsC = &tsc
-		}
+		protoMessage.Event.Ts = &ts
 		if messageMap["error"] == nil {
 			protoMessage.Status = pb.ResponseStatus_SUCCESS
 			protoMessage.Event.SuccessResponse = &pb.SubscribeStreamMessage_SubscribeEventMessage_SuccessResponseMessage{}
@@ -608,12 +589,7 @@ func populateJsonFromProtoGetResp(protoMessage *pb.GetResponseMessage) string {
 	} else { // ERROR
 		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
 	}
-	if currentCompression == PB_LEVEL1 {
-		jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId") + createJSON(protoMessage.GetAuthorization(), "authorization")
-	} else {
-		jsonMessage += `,"ts":"` + DecompressTs(protoMessage.GetTsC()) + `"` + createJSON(protoMessage.GetRequestId(), "requestId") +
-			createJSON(protoMessage.GetAuthorization(), "authorization")
-	}
+	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId") + createJSON(protoMessage.GetAuthorization(), "authorization")
 	return jsonMessage + "}"
 }
 
@@ -631,12 +607,7 @@ func populateJsonFromProtoSetResp(protoMessage *pb.SetResponseMessage) string {
 	if protoMessage.GetStatus() != 0 { //ERROR
 		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
 	}
-	//	if currentCompression == PB_LEVEL1 {
 	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId") + createJSON(protoMessage.GetAuthorization(), "authorization")
-	/*	} else {
-		jsonMessage += `,"ts":"` + DecompressTs(protoMessage.GetTsC()) + `"` + createJSON(protoMessage.GetRequestId(), "requestId") +
-		createJSON(protoMessage.GetAuthorization(), "authorization")
-	}*/
 	return jsonMessage + "}"
 }
 
@@ -665,12 +636,7 @@ func populateJsonFromProtoSubscribeStream(protoMessage *pb.SubscribeStreamMessag
 		} else { // ERROR
 			jsonMessage += getJsonError(protoMessage.Event.GetErrorResponse())
 		}
-		if currentCompression == PB_LEVEL1 {
-			jsonMessage += `,"ts":"` + protoMessage.Event.GetTs() + `"` + createJSON(protoMessage.Event.GetSubscriptionId(), "subscriptionId")
-		} else {
-			jsonMessage += `,"ts":"` + DecompressTs(protoMessage.Event.GetTsC()) + `"` +
-				createJSON(protoMessage.Event.GetSubscriptionId(), "subscriptionId")
-		}
+		jsonMessage += `,"ts":"` + protoMessage.Event.GetTs() + `"` + createJSON(protoMessage.Event.GetSubscriptionId(), "subscriptionId")
 	}
 	return jsonMessage + "}"
 }
@@ -817,11 +783,7 @@ Info.Printf("createJsonData:len(dataPack)=%d", len(dataPack))
 	}
 	for i := 0; i < len(dataPack); i++ {
 		var path string
-		if currentCompression == PB_LEVEL1 {
-			path = dataPack[i].GetPath()
-		} else {
-			path = DecompressPath(dataPack[i].GetPathC())
-		}
+		path = dataPack[i].GetPath()
 Info.Printf("createJsonData:path=%s", path)
 		dp := getJsonDp(dataPack[i])
 		data += `{"path":"` + path + `","dp":` + dp + `},`
@@ -843,11 +805,7 @@ func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
 	for i := 0; i < len(dpPack); i++ {
 		value := dpPack[i].GetValue()
 		var ts string
-		if currentCompression == PB_LEVEL1 {
-			ts = dpPack[i].GetTs()
-		} else {
-			ts = DecompressTs(dpPack[i].GetTsC())
-		}
+		ts = dpPack[i].GetTs()
 		dp += `{"value":"` + value + `","ts":"` + ts + `"},`
 	}
 	dp = dp[:len(dp)-1]

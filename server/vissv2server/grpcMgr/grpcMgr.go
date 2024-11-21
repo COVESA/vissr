@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-var grpcCompression utils.Compression
+var grpcCompression utils.Encoding
 var grpcMgrId int
 var grpcMgrChan chan string
 
@@ -297,7 +297,7 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 	grpcMgrChan = transportMgrChan
 	grpcClientIndexList = make([]bool, MAXGRPCCLIENTS)
 	grpcRoutingDataList = make([]GrpcRoutingData, MAXGRPCCLIENTS)
-	grpcCompression = utils.PB_LEVEL1 // set via viss2server command line param?
+	grpcCompression = utils.PROTOBUF // set via viss2server command line param?
 	iniGrpcRoutingDataList()
 	go initGrpcServer()
 

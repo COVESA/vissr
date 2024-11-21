@@ -34,13 +34,10 @@ type SecConfig struct {
 
 var SecureConfiguration SecConfig // name change to caps allowing to export outside utils
 
-type Compression int
-
+type Encoding int
 const (
-	NONE        Compression = 0
-	PROPRIETARY             = 1
-	PB_LEVEL1               = 2 // path has string format, e. g. "Vehicle.Acceleration.Longitudinal"
-	PB_LEVEL2               = 3 // path is represented by integer index, retrieved from vsspathlist.json
+	NONE        Encoding = 0
+	PROTOBUF             = 1
 )
 
 type ErrorInformation struct {

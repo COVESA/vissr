@@ -87,14 +87,3 @@ Values that are not of any of these types are kept uncompressed.
 6. The fact that data that does not relate to any of the mentioned compression features is left uncompressed leads to that the usage of this compression does not apply any restriction to the syntax scope of VISSv2. It also enables the client to send uncompressed requests, where the response will be compressed. 
 
 The current compression solution does not support service discovery requests.
-
-# Protobuf reference compression design
-This design provides two levels of compression:<br>
-PB_LEVEL1:<br>
-All payload data parameters are represented in string format.<br>
-PB_LEVEL2:<br>
-Paths are represented by an index into the path array found in the vsspathlist.json file. The index has int32 format.<br>
-Timestamps are represented as Unix time using int32 format.<br>
-This is currently implemented in get and subscribe responses/notifications.<br>
-All other payload data parameters are represented in string format.<br>
-

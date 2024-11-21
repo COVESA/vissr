@@ -16,19 +16,19 @@ import (
 
 //var currentCompression Compression
 
-func ProtobufToJson(serialisedMessage []byte, compression Compression) string {
+func ProtobufToJson(serialisedMessage []byte, compression Encoding) string {
 	currentCompression = compression
 	protoMessage := &pb.ProtobufMessage{}
 	err := proto.Unmarshal(serialisedMessage, protoMessage)
 	if err != nil {
-		Error.Printf("Unmarshaling error: ", err)
+		Error.Printf("Unmarshaling error:%s, message=%s", err, serialisedMessage)
 		return ""
 	}
 	jsonMessage := populateJsonFromProto(protoMessage)
 	return jsonMessage
 }
 
-func JsonToProtobuf(jsonMessage string, compression Compression) []byte {
+func JsonToProtobuf(jsonMessage string, compression Encoding) []byte {
 	currentCompression = compression
 	var protoMessage *pb.ProtobufMessage
 	protoMessage = populateProtoFromJson(jsonMessage)
@@ -160,12 +160,7 @@ func createGetResponse_Pb(protoMessage *pb.ProtobufMessage, messageMap map[strin
 	requestId := messageMap["requestId"].(string)
 	protoMessage.Get.Response.RequestId = &requestId
 	ts := messageMap["ts"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoMessage.Get.Response.Ts = &ts
-	} else {
-		tsc := CompressTS(ts)
-		protoMessage.Get.Response.TsC = &tsc
-	}
+	protoMessage.Get.Response.Ts = &ts
 	if messageMap["error"] == nil {
 		protoMessage.Get.Response.Status = pb.ResponseStatus_SUCCESS
 		protoMessage.Get.Response.SuccessResponse = &pb.GetMessage_ResponseMessage_SuccessResponseMessage{}
@@ -228,11 +223,7 @@ func createDataElement_pb(index int, messageDataMap interface{}) *pb.DataPackage
 	}
 	var protoDataElement pb.DataPackages_DataPackage
 	path := dataObject["path"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoDataElement.Path = &path
-	} else {
-		protoDataElement.PathC = CompressPath(path)
-	}
+	protoDataElement.Path = &path
 	numOfDataPointElements := getNumOfDataPointElements_pb(dataObject["dp"])
 	protoDataElement.Dp = make([]*pb.DataPackages_DataPackage_DataPoint, numOfDataPointElements)
 	for i := 0; i < numOfDataPointElements; i++ {
@@ -263,12 +254,7 @@ func createDataPointElement_pb(index int, messageDataPointMap interface{}) *pb.D
 	var protoDataPointElement pb.DataPackages_DataPackage_DataPoint
 	protoDataPointElement.Value = dataPointObject["value"].(string)
 	ts := dataPointObject["ts"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoDataPointElement.Ts = &ts
-	} else {
-		tsc := CompressTS(ts)
-		protoDataPointElement.TsC = &tsc
-	}
+	protoDataPointElement.Ts = &ts
 	return &protoDataPointElement
 }
 
@@ -496,12 +482,7 @@ func createSubscribeNotificationPb(protoMessage *pb.ProtobufMessage, messageMap 
 	protoMessage.Subscribe.Notification = &pb.SubscribeMessage_NotificationMessage{}
 	protoMessage.Subscribe.Notification.SubscriptionId = messageMap["subscriptionId"].(string)
 	ts := messageMap["ts"].(string)
-	if currentCompression == PB_LEVEL1 {
-		protoMessage.Subscribe.Notification.Ts = &ts
-	} else {
-		tsc := CompressTS(ts)
-		protoMessage.Subscribe.Notification.TsC = &tsc
-	}
+	protoMessage.Subscribe.Notification.Ts = &ts
 	if messageMap["error"] == nil {
 		protoMessage.Subscribe.Notification.Status = pb.ResponseStatus_SUCCESS
 		protoMessage.Subscribe.Notification.SuccessResponse = &pb.SubscribeMessage_NotificationMessage_SuccessResponseMessage{}
@@ -610,11 +591,7 @@ func populateJsonFromProto(protoMessage *pb.ProtobufMessage) string {
 			} else { // ERROR
 				jsonMessage += getJsonError_pb(protoMessage, 0)
 			}
-			if currentCompression == PB_LEVEL1 {
-				jsonMessage += `,"ts":"` + protoMessage.GetGet().GetResponse().GetTs() + `"` + getJsonTransactionId(protoMessage, 0, 1)
-			} else {
-				jsonMessage += `,"ts":"` + DecompressTs(protoMessage.GetGet().GetResponse().GetTsC()) + `"` + getJsonTransactionId(protoMessage, 0, 1)
-			}
+			jsonMessage += `,"ts":"` + protoMessage.GetGet().GetResponse().GetTs() + `"` + getJsonTransactionId(protoMessage, 0, 1)
 		}
 	case 1: // SET
 		jsonMessage += `"action":"set"`
@@ -649,12 +626,7 @@ func populateJsonFromProto(protoMessage *pb.ProtobufMessage) string {
 			} else { // ERROR
 				jsonMessage += getJsonError_pb(protoMessage, 2)
 			}
-			if currentCompression == PB_LEVEL1 {
-				jsonMessage += `,"ts":"` + protoMessage.GetSubscribe().GetNotification().GetTs() + `"` + getJsonTransactionId(protoMessage, 2, 2)
-			} else {
-				jsonMessage += `,"ts":"` + DecompressTs(protoMessage.GetSubscribe().GetNotification().GetTsC()) + `"` +
-					getJsonTransactionId(protoMessage, 2, 2)
-			}
+			jsonMessage += `,"ts":"` + protoMessage.GetSubscribe().GetNotification().GetTs() + `"` + getJsonTransactionId(protoMessage, 2, 2)
 		}
 	case 3: // UNSUBSCRIBE
 		jsonMessage += `"action":"unsubscribe"`
@@ -864,11 +836,7 @@ func getJsonData(protoMessage *pb.ProtobufMessage, mMethod pb.MessageMethod) str
 	}
 	for i := 0; i < len(dataPack); i++ {
 		var path string
-		if currentCompression == PB_LEVEL1 {
-			path = dataPack[i].GetPath()
-		} else {
-			path = DecompressPath(dataPack[i].GetPathC())
-		}
+		path = dataPack[i].GetPath()
 		dp := getJsonDp_pb(dataPack[i])
 		data += `{"path":"` + path + `","dp":` + dp + `},`
 	}
@@ -888,11 +856,7 @@ func getJsonDp_pb(dataPack *pb.DataPackages_DataPackage) string {
 	for i := 0; i < len(dpPack); i++ {
 		value := dpPack[i].GetValue()
 		var ts string
-		if currentCompression == PB_LEVEL1 {
-			ts = dpPack[i].GetTs()
-		} else {
-			ts = DecompressTs(dpPack[i].GetTsC())
-		}
+		ts = dpPack[i].GetTs()
 		dp += `{"value":"` + value + `","ts":"` + ts + `"},`
 	}
 	dp = dp[:len(dp)-1]

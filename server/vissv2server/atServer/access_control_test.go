@@ -409,14 +409,14 @@ func TestGetAccessControlST(t *testing.T) {
 		defer cancel()
 
 		request := infuseTokengRPCGetRequest(AT)
-		pbRequest := utils.GetRequestJsonToPb(request[1], utils.PB_LEVEL1)
+		pbRequest := utils.GetRequestJsonToPb(request[1], utils.PROTOBUF)
 		pbResponse, err := vissClient.GetRequest(ctx, pbRequest)
 
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		vssResponse := utils.GetResponsePbToJson(pbResponse, utils.PB_LEVEL1)
+		vssResponse := utils.GetResponsePbToJson(pbResponse, utils.PROTOBUF)
 		t.Log(vssResponse)
 	} else {
 		t.Error("AT token not delivered")
@@ -437,14 +437,14 @@ func TestGetAccessControlLT(t *testing.T) {
 		defer cancel()
 
 		request := infuseTokengRPCGetRequest(AT)
-		pbRequest := utils.GetRequestJsonToPb(request[1], utils.PB_LEVEL1)
+		pbRequest := utils.GetRequestJsonToPb(request[1], utils.PROTOBUF)
 		pbResponse, err := vissClient.GetRequest(ctx, pbRequest)
 
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		vssResponse := utils.GetResponsePbToJson(pbResponse, utils.PB_LEVEL1)
+		vssResponse := utils.GetResponsePbToJson(pbResponse, utils.PROTOBUF)
 		t.Log(vssResponse)
 	} else {
 		t.Error("AT token not delivered")

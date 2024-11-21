@@ -14,57 +14,21 @@ import (
 )
 
 // the number of channel array elements sets the limit for max number of parallel WS app clients
-var wsClientChan = []chan string{
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-}
-
-// array size same as for wsClientChan
-var clientBackendChan = []chan string{
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-	make(chan string),
-}
+const NUMOFWSCLIENTS = 20
+var wsClientChan []chan string
+var clientBackendChan []chan string
 
 var wsClientIndex int
-
 const isClientLocal = false
 
+func initChannels() {
+	wsClientChan = make([]chan string, NUMOFWSCLIENTS)
+	clientBackendChan = make([]chan string, NUMOFWSCLIENTS)
+	for i := 0; i < NUMOFWSCLIENTS; i++ {
+	wsClientChan[i] = make(chan string)
+	clientBackendChan[i] = make(chan string)
+	}
+}
 func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
 	if strings.Contains(trimmedResponse, "\"subscription\"") {
@@ -76,6 +40,7 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 
 func WsMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.ReadTransportSecConfig()
+	initChannels()
 
 	go utils.WsServer{ClientBackendChannel: clientBackendChan}.InitClientServer(utils.MuxServer[1], wsClientChan, mgrId, &wsClientIndex) // go routine needed due to listenAndServe call...
 
