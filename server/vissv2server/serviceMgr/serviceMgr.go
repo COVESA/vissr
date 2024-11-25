@@ -1006,14 +1006,17 @@ func configureDefault(udsConn net.Conn) {
 func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeederCl chan string) {
 	var udsConn net.Conn
 	attempts := 0
+	utils.Info.Printf("feederFrontend:Trying to connect to feeder...")
 	for udsConn == nil && attempts < 10 {
 		udsConn = utils.GetUdsConn("*", "serverFeeder")
 		if udsConn == nil && attempts >= 10-1 {
 			utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
 			return // ???
 		}
+		attempts++
 		time.Sleep(3 * time.Second)
 	}
+	utils.Info.Printf("feederFrontend:Connected to feeder.")
 	configureDefault(udsConn)
 	fromFeeder := make(chan string)
 	go feederReader(udsConn, fromFeeder)
@@ -1474,7 +1477,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 					_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
 				}
 			default:
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
 				dataChan <- utils.FinalizeMessage(errorResponseMap)
 			} // switch
 		case <-dummyTicker.C:

@@ -13,7 +13,7 @@
 <html>
 <body>
 
-<h2>Websocket client example, uncompressed messages</h2>
+<h2>Websocket client example, unencoded messages</h2>
 
 <div>
 <input id="host-ip" type="text" placeholder="host ip"/>
@@ -52,7 +52,7 @@
     try {
         function setHostIP() {
             hostIP = externHostIp.value;
-                socket = new WebSocket("ws://" + hostIP + ":8080", "VISSv2");
+                socket = new WebSocket("ws://" + hostIP + ":8080", "VISS-noenc");
 
                 socket.onopen = function () {
                     output.innerHTML += "Status: Connected\n";

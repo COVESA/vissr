@@ -113,7 +113,7 @@ func getSocketPath(listIndex int, connectionName string) string {
 func connectViaUds(sockFile string) net.Conn {
 	udsConn, err := net.Dial("unix", sockFile)
 	if err != nil {
-		Error.Printf("connectViaUds:UDS Dial failed, err = %s", err)
+//		Error.Printf("connectViaUds:UDS Dial failed, err = %s", err)
 		return nil
 	}
 	return udsConn
