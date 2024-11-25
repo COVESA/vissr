@@ -93,4 +93,5 @@ These files can easily be modified and extended with data for more signals and l
 
 ## Docker based Hello World example
 
-The [README](https://github.com/COVESA/cdsp/blob/main/docker/README.md) describes how to use a Docker image to get the VISSR server up and running.
+The COVESA Central Data Service Playground [README](https://github.com/COVESA/cdsp/blob/main/docker/README.md)
+describes a basic hello-world style sanity test for running VISSR in a Docker environment.
