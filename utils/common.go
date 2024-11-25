@@ -314,13 +314,14 @@ func GetTimeInMilliSecs() string {
 
 func GetRfcTime() string {
 	time.Now()
-	withTimeZone := time.Now().Format(time.RFC3339Nano) // 2020-05-01T15:34:35+02:00
-	if withTimeZone[len(withTimeZone)-6] == '+' {
-		return withTimeZone[:len(withTimeZone)-6] + "Z"
-	} else {
-		return withTimeZone
+	rfcTime := time.Now().Format(time.RFC3339Nano) // 2020-05-01T15:34:35.123456789+02:00
+	dotIndex := strings.Index(rfcTime, ".")
+	if dotIndex != -1 {
+		rfcTime = rfcTime[:dotIndex+4]
+	} else if rfcTime[len(rfcTime)-6] == '+' {
+		rfcTime = rfcTime[:len(rfcTime)-6]
 	}
-	return withTimeZone
+	return rfcTime + "Z"
 }
 
 func FileExists(filename string) bool {
