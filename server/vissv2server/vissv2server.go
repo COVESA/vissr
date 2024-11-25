@@ -638,7 +638,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	if requestMap["action"] == "set" && nodeType != utils.ACTUATOR {
-		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Forbidden to write to read-only resource.") //invalid_data
 		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
 		return
 	}
