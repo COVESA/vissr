@@ -146,11 +146,11 @@ func performCommand(commandNumber int, conn *websocket.Conn, optionChannel chan 
 }
 
 func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel chan string) {
-	compressedRequest := utils.JsonToProtobuf(requestList.Request[commandNumber], convertToCompression(compression))
+	compressedRequest := utils.JsonToProtobuf(requestList.Request[commandNumber])
 	fmt.Printf("JSON request size= %d, Protobuf request size=%d\n", len(requestList.Request[commandNumber]), len(compressedRequest))
 	fmt.Printf("Compression= %d%\n", (100*len(requestList.Request[commandNumber]))/len(compressedRequest))
 	compressedResponse := getResponse(conn, compressedRequest)
-	jsonResponse := utils.ProtobufToJson(compressedResponse, convertToCompression(compression))
+	jsonResponse := utils.ProtobufToJson(compressedResponse)
 	fmt.Printf("Response: %s\n", jsonResponse)
 	fmt.Printf("JSON response size= %d, Protobuf response size=%d\n", len(jsonResponse), len(compressedResponse))
 	fmt.Printf("Compression= %d%\n", (100*len(jsonResponse))/len(compressedResponse))
@@ -161,7 +161,7 @@ func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel cha
 				fmt.Printf("Notification error: %s\n", err)
 				return
 			}
-			jsonNotification := utils.ProtobufToJson(msg, convertToCompression(compression))
+			jsonNotification := utils.ProtobufToJson(msg)
 			fmt.Printf("Notification: %s\n", jsonNotification)
 			fmt.Printf("JSON notification size= %d, Protobuf notification size=%d\n", len(jsonNotification), len(msg))
 			fmt.Printf("Compression= %d%\n", (100*len(jsonNotification))/len(msg))
@@ -170,21 +170,13 @@ func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel cha
 				// issue unsubscribe request
 				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
-				pbUnsubReq := utils.JsonToProtobuf(unsubReq, convertToCompression(compression))
+				pbUnsubReq := utils.JsonToProtobuf(unsubReq)
 				getResponse(conn, pbUnsubReq)
 				return
 			default:
 			}
 		}
 	}
-}
-
-func convertToCompression(encoding string) utils.Encoding {
-	switch encoding {
-	case "proto":
-		return utils.PROTOBUF
-	}
-	return utils.NONE
 }
 
 func displayOptions() {

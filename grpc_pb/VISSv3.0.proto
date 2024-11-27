@@ -1,5 +1,5 @@
 /**
-* (C) 2023 Ford Motor Company
+* (C) 2024 Ford Motor Company
 * (C) 2021 Geotab
 *
 * All files and artifacts in the repository at https://github.com/covesa/vissr
@@ -19,11 +19,11 @@ enum ResponseStatus {
 }
 
 enum SubscribeResponseType {
-    RESPONSE = 0;
-    EVENT = 1;
+    SUB_RESPONSE = 0;
+    SUB_EVENT = 1;
 }
 
-service VISSv2 {
+service VISS {
   rpc GetRequest (GetRequestMessage) returns (GetResponseMessage);
 
   rpc SetRequest (SetRequestMessage) returns (SetResponseMessage);
@@ -41,7 +41,7 @@ message ErrorResponseMessage {
 
 message FilterExpressions {
   message FilterExpression {
-    enum FilterType {
+    enum FilterVariant {
         PATHS = 0;
         TIMEBASED = 1;
         RANGE = 2;
@@ -50,7 +50,7 @@ message FilterExpressions {
         HISTORY = 5;
         METADATA = 6;
     }
-    FilterType FType = 1;
+    FilterVariant Variant = 1;
 
     message FilterValue {
         message PathsValue {
@@ -98,15 +98,13 @@ message FilterExpressions {
 
 message DataPackages {
     message DataPackage {
-        optional string Path = 1;
-        optional int32 PathC = 2;
+        string Path = 1;
 
         message DataPoint {
             string Value = 1;
-            optional string Ts = 2;
-            optional int32 TsC = 3;
+            string Ts = 2;
         }
-        repeated DataPoint Dp = 3;
+        repeated DataPoint Dp = 2;
     }
     repeated DataPackage Data = 1;
 }
@@ -115,7 +113,8 @@ message GetRequestMessage {
         string Path = 1;
         optional FilterExpressions Filter = 2;
         optional string Authorization = 3;
-        optional string RequestId = 4;
+        optional string DataCompression = 4;
+        optional string RequestId = 5;
 }
 
 message GetResponseMessage {
@@ -127,9 +126,8 @@ message GetResponseMessage {
         optional SuccessResponseMessage SuccessResponse = 2;
         optional ErrorResponseMessage ErrorResponse = 3;
         optional string RequestId = 4;
-        optional string Ts = 5;
-        optional int32 TsC = 6;
-        optional string Authorization = 7;
+        string Ts = 5;
+        optional string Authorization = 6;
 }
 
 message SetRequestMessage {
@@ -151,7 +149,8 @@ message SubscribeRequestMessage {
         string Path = 1;
         optional FilterExpressions Filter = 2;
         optional string Authorization = 3;
-        string RequestId = 4;
+        optional string DataCompression = 4;
+        string RequestId = 5;
 }
 
 message SubscribeStreamMessage {
@@ -174,8 +173,7 @@ message SubscribeStreamMessage {
         }
         optional SuccessResponseMessage SuccessResponse = 2;
         optional ErrorResponseMessage ErrorResponse = 3;
-        optional string Ts = 4;
-        optional int32 TsC = 5;
+        string Ts = 4;
     }
     optional SubscribeEventMessage Event = 4;
 }
@@ -186,9 +184,55 @@ message UnsubscribeRequestMessage {
 }
 
 message UnsubscribeResponseMessage {
-        string SubscriptionId = 1;
-        ResponseStatus Status = 2;
-        optional ErrorResponseMessage ErrorResponse = 3;
-        optional string RequestId = 4;
-        string Ts = 5;
+        ResponseStatus Status = 1;
+        optional ErrorResponseMessage ErrorResponse = 2;
+        optional string RequestId = 3;
+        string Ts = 4;
+}
+
+// ********** For non-gRPC usage of protobuf ***********
+
+enum MessageMethod {
+    GET = 0;
+    SET = 1;
+    SUBSCRIBE = 2;
+    UNSUBSCRIBE = 3;
+}
+
+enum MessageType {
+    REQUEST = 0;
+    RESPONSE = 1;
+    STREAM = 2;
+}
+
+message ProtobufMessage {
+    MessageMethod Method = 1;
+    optional GetMessage Get = 2;
+    optional SetMessage Set = 3;
+    optional SubscribeMessage Subscribe = 4;
+    optional UnsubscribeMessage Unsubscribe = 5;
+}
+
+message GetMessage {
+    MessageType MType = 1;
+    optional GetRequestMessage Request = 2;
+    optional GetResponseMessage Response = 3;
+}
+
+message SetMessage {
+    MessageType MType = 1;
+    optional SetRequestMessage Request = 2;
+    optional SetResponseMessage Response = 3;
+}
+
+message SubscribeMessage {
+    MessageType MType = 1;
+    optional SubscribeRequestMessage Request = 2;
+    optional SubscribeStreamMessage Stream = 3;
+}
+
+message UnsubscribeMessage {
+    MessageType MType = 1;
+    optional UnsubscribeRequestMessage Request = 2;
+    optional UnsubscribeResponseMessage Response = 3;
 }
