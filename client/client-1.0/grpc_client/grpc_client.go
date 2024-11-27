@@ -34,8 +34,6 @@ const (
 	name    = "VISSv2-gRPC-client"
 )
 
-var grpcEncoding utils.Encoding
-
 var commandList []string
 
 func initCommandList() {
@@ -82,7 +80,7 @@ func noStreamCall(commandIndex int) {
 		return
 	}
 	defer conn.Close()
-	client := pb.NewVISSv2Client(conn)
+	client := pb.NewVISSClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -90,24 +88,24 @@ func noStreamCall(commandIndex int) {
 	var vssResponse string
 	switch commandIndex % 10 {
 	case 0: //get
-		pbRequest := utils.GetRequestJsonToPb(vssRequest, grpcEncoding)
+		pbRequest := utils.GetRequestJsonToPb(vssRequest)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err != nil {
 			log.Fatal(err)
 			return
 		}
-		vssResponse = utils.GetResponsePbToJson(pbResponse, grpcEncoding)
+		vssResponse = utils.GetResponsePbToJson(pbResponse)
 	case 1: // set
-		pbRequest := utils.SetRequestJsonToPb(vssRequest, grpcEncoding)
+		pbRequest := utils.SetRequestJsonToPb(vssRequest)
 		pbResponse, _ := client.SetRequest(ctx, pbRequest)
-		vssResponse = utils.SetResponsePbToJson(pbResponse, grpcEncoding)
+		vssResponse = utils.SetResponsePbToJson(pbResponse)
 	case 3: //unsubscribe
 		subIdIndex := strings.Index(vssRequest, "X")
 		vssRequest = vssRequest[:subIdIndex] + strconv.Itoa(commandIndex/10) + vssRequest[subIdIndex+1:]
 		fmt.Printf("Unsubscribe request=:%s\n", vssRequest)
-		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest, grpcEncoding)
+		pbRequest := utils.UnsubscribeRequestJsonToPb(vssRequest)
 		pbResponse, _ := client.UnsubscribeRequest(ctx, pbRequest)
-		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse, grpcEncoding)
+		vssResponse = utils.UnsubscribeResponsePbToJson(pbResponse)
 	}
 	if err != nil {
 		fmt.Printf("Error when issuing request=:%s\n", vssRequest)
@@ -135,12 +133,12 @@ func streamCall(commandIndex int) {
 		return
 	}
 	defer conn.Close()
-	client := pb.NewVISSv2Client(conn)
+	client := pb.NewVISSClient(conn)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	vssRequest := commandList[commandIndex]
-	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest, grpcEncoding)
+	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest)
 	stream, err := client.SubscribeRequest(ctx, pbRequest)
 	for {
 		pbResponse, err := stream.Recv()
@@ -148,7 +146,7 @@ func streamCall(commandIndex int) {
 			fmt.Printf("Error=%v when issuing request=:%s", err, vssRequest)
 			break
 		}
-		vssResponse := utils.SubscribeStreamPbToJson(pbResponse, grpcEncoding)
+		vssResponse := utils.SubscribeStreamPbToJson(pbResponse)
 		fmt.Printf("Received response:%s\n", vssResponse)
 	}
 }
@@ -171,7 +169,6 @@ func main() {
 	}
 
 	utils.InitLog("grpc_client-log.txt", "./logs", *logFile, *logLevel)
-	grpcEncoding = utils.PROTOBUF
 	readTransportSecConfig()
 	utils.Info.Printf("secConfig.TransportSec=%s", secConfig.TransportSec)
 	if secConfig.TransportSec == "yes" {

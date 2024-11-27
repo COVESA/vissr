@@ -14,22 +14,17 @@ import (
 	"strconv"
 )
 
-var currentCompression Encoding
-
-func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage, compression Encoding) string {
-	currentCompression = compression
+func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage) string {
 	jsonMessage := populateJsonFromProtoGetReq(pbGetReq)
 	return jsonMessage
 }
 
-func GetResponsePbToJson(pbGetResp *pb.GetResponseMessage, compression Encoding) string {
-	currentCompression = compression
+func GetResponsePbToJson(pbGetResp *pb.GetResponseMessage) string {
 	jsonMessage := populateJsonFromProtoGetResp(pbGetResp)
 	return jsonMessage
 }
 
-func GetRequestJsonToPb(vssGetReq string, compression Encoding) *pb.GetRequestMessage {
-	currentCompression = compression
+func GetRequestJsonToPb(vssGetReq string) *pb.GetRequestMessage {
 	var getReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssGetReq), &getReqMessageMap)
 	if err != nil {
@@ -41,9 +36,7 @@ func GetRequestJsonToPb(vssGetReq string, compression Encoding) *pb.GetRequestMe
 	return pbGetRequestMessage
 }
 
-func GetResponseJsonToPb(vssGetResp string, compression Encoding) *pb.GetResponseMessage {
-	currentCompression = compression
-
+func GetResponseJsonToPb(vssGetResp string) *pb.GetResponseMessage {
 	var getRespMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssGetResp), &getRespMessageMap)
 	if err != nil {
@@ -55,20 +48,17 @@ func GetResponseJsonToPb(vssGetResp string, compression Encoding) *pb.GetRespons
 	return pbGetResponseMessage
 }
 
-func SetRequestPbToJson(pbSetReq *pb.SetRequestMessage, compression Encoding) string {
-	currentCompression = compression
+func SetRequestPbToJson(pbSetReq *pb.SetRequestMessage) string {
 	jsonMessage := populateJsonFromProtoSetReq(pbSetReq)
 	return jsonMessage
 }
 
-func SetResponsePbToJson(pbSetResp *pb.SetResponseMessage, compression Encoding) string {
-	currentCompression = compression
+func SetResponsePbToJson(pbSetResp *pb.SetResponseMessage) string {
 	jsonMessage := populateJsonFromProtoSetResp(pbSetResp)
 	return jsonMessage
 }
 
-func SetRequestJsonToPb(vssSetReq string, compression Encoding) *pb.SetRequestMessage {
-	currentCompression = compression
+func SetRequestJsonToPb(vssSetReq string) *pb.SetRequestMessage {
 	var setReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSetReq), &setReqMessageMap)
 	if err != nil {
@@ -80,8 +70,7 @@ func SetRequestJsonToPb(vssSetReq string, compression Encoding) *pb.SetRequestMe
 	return pbSetRequestMessage
 }
 
-func SetResponseJsonToPb(vssSetResp string, compression Encoding) *pb.SetResponseMessage {
-	currentCompression = compression
+func SetResponseJsonToPb(vssSetResp string) *pb.SetResponseMessage {
 	var setRespMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSetResp), &setRespMessageMap)
 	if err != nil {
@@ -93,20 +82,17 @@ func SetResponseJsonToPb(vssSetResp string, compression Encoding) *pb.SetRespons
 	return pbSetResponseMessage
 }
 
-func SubscribeRequestPbToJson(pbSubscribeReq *pb.SubscribeRequestMessage, compression Encoding) string {
-	currentCompression = compression
+func SubscribeRequestPbToJson(pbSubscribeReq *pb.SubscribeRequestMessage) string {
 	jsonMessage := populateJsonFromProtoSubscribeReq(pbSubscribeReq)
 	return jsonMessage
 }
 
-func SubscribeStreamPbToJson(pbSubscribeResp *pb.SubscribeStreamMessage, compression Encoding) string {
-	currentCompression = compression
+func SubscribeStreamPbToJson(pbSubscribeResp *pb.SubscribeStreamMessage) string {
 	jsonMessage := populateJsonFromProtoSubscribeStream(pbSubscribeResp)
 	return jsonMessage
 }
 
-func SubscribeRequestJsonToPb(vssSubscribeReq string, compression Encoding) *pb.SubscribeRequestMessage {
-	currentCompression = compression
+func SubscribeRequestJsonToPb(vssSubscribeReq string) *pb.SubscribeRequestMessage {
 	var subscribeReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSubscribeReq), &subscribeReqMessageMap)
 	if err != nil {
@@ -118,8 +104,7 @@ func SubscribeRequestJsonToPb(vssSubscribeReq string, compression Encoding) *pb.
 	return pbSubscribeRequestMessage
 }
 
-func SubscribeStreamJsonToPb(vssSubscribeStream string, compression Encoding) *pb.SubscribeStreamMessage {
-	currentCompression = compression
+func SubscribeStreamJsonToPb(vssSubscribeStream string) *pb.SubscribeStreamMessage {
 	var subscribeStreamMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssSubscribeStream), &subscribeStreamMessageMap)
 	if err != nil {
@@ -131,20 +116,17 @@ func SubscribeStreamJsonToPb(vssSubscribeStream string, compression Encoding) *p
 	return pbSubscribeStreamMessage
 }
 
-func UnsubscribeRequestPbToJson(pbUnsubscribeReq *pb.UnsubscribeRequestMessage, compression Encoding) string {
-	currentCompression = compression
+func UnsubscribeRequestPbToJson(pbUnsubscribeReq *pb.UnsubscribeRequestMessage) string {
 	jsonMessage := populateJsonFromProtoUnsubscribeReq(pbUnsubscribeReq)
 	return jsonMessage
 }
 
-func UnsubscribeResponsePbToJson(pbUnsubscribeResp *pb.UnsubscribeResponseMessage, compression Encoding) string {
-	currentCompression = compression
+func UnsubscribeResponsePbToJson(pbUnsubscribeResp *pb.UnsubscribeResponseMessage) string {
 	jsonMessage := populateJsonFromProtoUnsubscribeResp(pbUnsubscribeResp)
 	return jsonMessage
 }
 
-func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string, compression Encoding) *pb.UnsubscribeRequestMessage {
-	currentCompression = compression
+func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string) *pb.UnsubscribeRequestMessage {
 	var unsubscribeReqMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssUnsubscribeReq), &unsubscribeReqMessageMap)
 	if err != nil {
@@ -156,8 +138,7 @@ func UnsubscribeRequestJsonToPb(vssUnsubscribeReq string, compression Encoding) 
 	return pbUnsubscribeRequestMessage
 }
 
-func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string, compression Encoding) *pb.UnsubscribeResponseMessage {
-	currentCompression = compression
+func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string) *pb.UnsubscribeResponseMessage {
 	var unsubscribeRespMessageMap map[string]interface{}
 	err := json.Unmarshal([]byte(vssUnsubscribeResp), &unsubscribeRespMessageMap)
 	if err != nil {
@@ -169,7 +150,7 @@ func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string, compression Encoding
 	return pbUnsubscribeResponseMessage
 }
 
-/*func ExtractSubscriptionId(jsonSubResponse string) string {
+func ExtractSubscriptionId(jsonSubResponse string) string {
 	var subResponseMap map[string]interface{}
 	err := json.Unmarshal([]byte(jsonSubResponse), &subResponseMap)
 	if err != nil {
@@ -177,7 +158,7 @@ func UnsubscribeResponseJsonToPb(vssUnsubscribeResp string, compression Encoding
 		return ""
 	}
 	return subResponseMap["subscriptionId"].(string)
-}*/
+}
 
 func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[string]interface{}) {
 	path := messageMap["path"].(string)
@@ -211,6 +192,10 @@ func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[strin
 		auth := messageMap["authorization"].(string)
 		protoMessage.Authorization = &auth
 	}
+	if messageMap["dc"] != nil {
+		dataCompression := messageMap["dc"].(string)
+		protoMessage.DataCompression = &dataCompression
+	}
 	if messageMap["requestId"] != nil {
 		reqId := messageMap["requestId"].(string)
 		protoMessage.RequestId = &reqId
@@ -221,7 +206,7 @@ func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[str
 	requestId := messageMap["requestId"].(string)
 	protoMessage.RequestId = &requestId
 	ts := messageMap["ts"].(string)
-	protoMessage.Ts = &ts
+	protoMessage.Ts = ts
 	if messageMap["authorization"] != nil {
 		auth := messageMap["authorization"].(string)
 		protoMessage.Authorization = &auth
@@ -288,7 +273,7 @@ func createDataElement(index int, messageDataMap interface{}) *pb.DataPackages_D
 	}
 	var protoDataElement pb.DataPackages_DataPackage
 	path := dataObject["path"].(string)
-	protoDataElement.Path = &path
+	protoDataElement.Path = path
 	numOfDataPointElements := getNumOfDataPointElements(dataObject["dp"])
 	protoDataElement.Dp = make([]*pb.DataPackages_DataPackage_DataPoint, numOfDataPointElements)
 	for i := 0; i < numOfDataPointElements; i++ {
@@ -319,15 +304,15 @@ func createDataPointElement(index int, messageDataPointMap any) *pb.DataPackages
 	var protoDataPointElement pb.DataPackages_DataPackage_DataPoint
 	protoDataPointElement.Value = dataPointObject["value"].(string)
 	ts := dataPointObject["ts"].(string)
-	protoDataPointElement.Ts = &ts
+	protoDataPointElement.Ts = ts
 	return &protoDataPointElement
 }
 
 func createPbFilter(index int, filterExpression map[string]interface{}, filter *pb.FilterExpressions) {
-	filterType := getFilterType(filterExpression["type"].(string))
-	filter.FilterExp[index].FType = filterType
+	filterVariant := getFilterVariant(filterExpression["variant"].(string))
+	filter.FilterExp[index].Variant = filterVariant
 	filter.FilterExp[index].Value = &pb.FilterExpressions_FilterExpression_FilterValue{}
-	switch filterType {
+	switch filterVariant {
 	case pb.FilterExpressions_FilterExpression_PATHS:
 		filter.FilterExp[index].Value.ValuePaths = &pb.FilterExpressions_FilterExpression_FilterValue_PathsValue{}
 		filter.FilterExp[index].Value.ValuePaths = getPbPathsFilterValue(filterExpression["parameter"])
@@ -420,8 +405,8 @@ func getPbCurvelogFilterValue(filterExpression map[string]interface{}) *pb.Filte
 	return &protoCurvelogValue
 }
 
-func getFilterType(filterType string) pb.FilterExpressions_FilterExpression_FilterType {
-	switch filterType {
+func getFilterVariant(filterVariant string) pb.FilterExpressions_FilterExpression_FilterVariant {
+	switch filterVariant {
 	case "paths":
 		return pb.FilterExpressions_FilterExpression_PATHS
 	case "timebased":
@@ -471,6 +456,10 @@ func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageM
 		auth := messageMap["authorization"].(string)
 		protoMessage.Authorization = &auth
 	}
+	if messageMap["dc"] != nil {
+		dataCompression := messageMap["dc"].(string)
+		protoMessage.DataCompression = &dataCompression
+	}
 	if messageMap["requestId"] != nil {
 		reqId := messageMap["requestId"].(string)
 		protoMessage.RequestId = reqId
@@ -479,7 +468,7 @@ func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageM
 
 func createSubscribeStreamPb(protoMessage *pb.SubscribeStreamMessage, messageMap map[string]interface{}) {
 	if messageMap["action"] == "subscribe" { // RESPONSE
-		protoMessage.MType = pb.SubscribeResponseType_RESPONSE
+		protoMessage.MType = pb.SubscribeResponseType_SUB_RESPONSE
 		protoMessage.Response = &pb.SubscribeStreamMessage_SubscribeResponseMessage{}
 		protoMessage.Response.RequestId = messageMap["requestId"].(string)
 		protoMessage.Response.Ts = messageMap["ts"].(string)
@@ -498,11 +487,11 @@ func createSubscribeStreamPb(protoMessage *pb.SubscribeStreamMessage, messageMap
 			protoMessage.Response.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
 		}
 	} else { //EVENT
-		protoMessage.MType = pb.SubscribeResponseType_EVENT
+		protoMessage.MType = pb.SubscribeResponseType_SUB_EVENT
 		protoMessage.Event = &pb.SubscribeStreamMessage_SubscribeEventMessage{}
 		protoMessage.Event.SubscriptionId = messageMap["subscriptionId"].(string)
 		ts := messageMap["ts"].(string)
-		protoMessage.Event.Ts = &ts
+		protoMessage.Event.Ts = ts
 		if messageMap["error"] == nil {
 			protoMessage.Status = pb.ResponseStatus_SUCCESS
 			protoMessage.Event.SuccessResponse = &pb.SubscribeStreamMessage_SubscribeEventMessage_SuccessResponseMessage{}
@@ -557,7 +546,6 @@ func createUnsubscribeRequestPb(protoMessage *pb.UnsubscribeRequestMessage, mess
 }
 
 func createUnsubscribeResponsePb(protoMessage *pb.UnsubscribeResponseMessage, messageMap map[string]interface{}) {
-	protoMessage.SubscriptionId = messageMap["subscriptionId"].(string)
 	if messageMap["requestId"] != nil {
 		reqId := messageMap["requestId"].(string)
 		protoMessage.RequestId = &reqId
@@ -576,7 +564,8 @@ func populateJsonFromProtoGetReq(protoMessage *pb.GetRequestMessage) string {
 	jsonMessage := "{"
 	jsonMessage += `"action":"get"`
 	jsonMessage += `,"path":"` + protoMessage.GetPath() + `"` + getJsonFilter(protoMessage.Filter) +
-		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetRequestId(), "requestId")
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDataCompression(), "dc") +
+		createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }
 
@@ -615,21 +604,22 @@ func populateJsonFromProtoSubscribeReq(protoMessage *pb.SubscribeRequestMessage)
 	jsonMessage := "{"
 	jsonMessage += `"action":"subscribe"`
 	jsonMessage += `,"path":"` + protoMessage.GetPath() + `"` + getJsonFilter(protoMessage.Filter) +
-		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetRequestId(), "requestId")
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDataCompression(), "dc") +
+		createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }
 
 func populateJsonFromProtoSubscribeStream(protoMessage *pb.SubscribeStreamMessage) string {
 	jsonMessage := "{"
 	switch protoMessage.GetMType() {
-	case pb.SubscribeResponseType_RESPONSE:
+	case pb.SubscribeResponseType_SUB_RESPONSE:
 		jsonMessage += `"action":"subscribe"`
 		if protoMessage.GetStatus() != 0 { //ERROR
 			jsonMessage += getJsonError(protoMessage.Response.GetErrorResponse())
 		}
 		jsonMessage += `,"ts":"` + protoMessage.Response.GetTs() + `"` + createJSON(protoMessage.Response.GetSubscriptionId(), "subscriptionId") +
 			createJSON(protoMessage.Response.GetRequestId(), "requestId") + createJSON(protoMessage.Response.GetAuthorization(), "authorization")
-	case pb.SubscribeResponseType_EVENT:
+	case pb.SubscribeResponseType_SUB_EVENT:
 		jsonMessage += `"action":"subscription"`
 		if protoMessage.GetStatus() == 0 { //SUCCESSFUL
 			jsonMessage += createJsonData(protoMessage.Event.SuccessResponse.GetDataPack().GetData())
@@ -654,7 +644,7 @@ func populateJsonFromProtoUnsubscribeResp(protoMessage *pb.UnsubscribeResponseMe
 	if protoMessage.GetStatus() != 0 { // ERROR
 		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
 	}
-	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetSubscriptionId(), "subscriptionId") + createJSON(protoMessage.GetRequestId(), "requestId")
+	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }
 
@@ -681,7 +671,7 @@ func getJsonFilter(filter *pb.FilterExpressions) string {
 func synthesizeFilter(filterExp *pb.FilterExpressions_FilterExpression) string {
 	fType := ""
 	value := ""
-	switch filterExp.GetFType() {
+	switch filterExp.GetVariant() {
 	case 0:
 		fType = "paths"
 		value = getJsonFilterValuePaths(filterExp)

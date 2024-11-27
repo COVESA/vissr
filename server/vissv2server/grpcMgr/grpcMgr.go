@@ -39,7 +39,7 @@ var clientBackendChan = []chan string{
 }
 
 type Server struct {
-	pb.UnimplementedVISSv2Server
+	pb.UnimplementedVISSServer
 }
 
 type GrpcRoutingData struct {
@@ -203,7 +203,7 @@ func initGrpcServer() {
 		portNo = "8887"
 		utils.Info.Printf("portNo =%s", portNo)
 	}
-	pb.RegisterVISSv2Server(server, &Server{})
+	pb.RegisterVISSServer(server, &Server{})
 	for {
 		lis, err := net.Listen("tcp", "0.0.0.0:"+portNo)
 		if err != nil {
@@ -219,38 +219,38 @@ func initGrpcServer() {
 }
 
 func (s *Server) GetRequest(ctx context.Context, in *pb.GetRequestMessage) (*pb.GetResponseMessage, error) {
-	vssReq := utils.GetRequestPbToJson(in, grpcCompression)
+	vssReq := utils.GetRequestPbToJson(in)
 	grpcResponseChan := make(chan string)
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
 	utils.Info.Println(grpcRequestMessage.VssReq)
 	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
 	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.GetResponseJsonToPb(vssResp, grpcCompression)
+	pbResp := utils.GetResponseJsonToPb(vssResp)
 	return pbResp, nil
 }
 
 func (s *Server) SetRequest(ctx context.Context, in *pb.SetRequestMessage) (*pb.SetResponseMessage, error) {
-	vssReq := utils.SetRequestPbToJson(in, grpcCompression)
+	vssReq := utils.SetRequestPbToJson(in)
 	grpcResponseChan := make(chan string)
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
 	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
 	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.SetResponseJsonToPb(vssResp, grpcCompression)
+	pbResp := utils.SetResponseJsonToPb(vssResp)
 	return pbResp, nil
 }
 
 func (s *Server) UnsubscribeRequest(ctx context.Context, in *pb.UnsubscribeRequestMessage) (*pb.UnsubscribeResponseMessage, error) {
-	vssReq := utils.UnsubscribeRequestPbToJson(in, grpcCompression)
+	vssReq := utils.UnsubscribeRequestPbToJson(in)
 	grpcResponseChan := make(chan string)
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
 	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
 	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.UnsubscribeResponseJsonToPb(vssResp, grpcCompression)
+	pbResp := utils.UnsubscribeResponseJsonToPb(vssResp)
 	return pbResp, nil
 }
 
-func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISSv2_SubscribeRequestServer) error {
-	vssReq := utils.SubscribeRequestPbToJson(in, grpcCompression)
+func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS_SubscribeRequestServer) error {
+	vssReq := utils.SubscribeRequestPbToJson(in)
 	grpcResponseChan := make(chan string)
 	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
 	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub
@@ -275,7 +275,7 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 			if subscribeClientId == -1 {
 				subscribeClientId, _ = getSubscribeRoutingData(vssResp)
 			}
-			pbResp := utils.SubscribeStreamJsonToPb(vssResp, grpcCompression)
+			pbResp := utils.SubscribeStreamJsonToPb(vssResp)
 			if err := stream.Send(pbResp); err != nil {
 				resetGrpcRoutingData(subscribeClientId)
 				return err

@@ -165,7 +165,7 @@ func frontendWSAppSession(conn *websocket.Conn, clientChannel chan string, clien
 		// Generates payload from encoding
 		var payload string
 		if encoding == PROTOBUF {
-			payload = ProtobufToJson(msg, encoding)
+			payload = ProtobufToJson(msg)
 		} else {
 			payload = string(msg)
 		}
@@ -193,7 +193,7 @@ func backendWSAppSession(conn *websocket.Conn, clientBackendChannel chan string,
 		var messageType int
 
 		if encoding == PROTOBUF {
-			response = []byte(JsonToProtobuf(message, encoding))
+			response = []byte(JsonToProtobuf(message))
 			messageType = websocket.BinaryMessage
 		} else {
 			response = []byte(message)
