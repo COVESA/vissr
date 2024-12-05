@@ -12,6 +12,9 @@ Get request:
 {"action":"get","path":"Server.Support.Protocol","requestId":"133"}
 {"action":"get","path":"Vehicle.Chassis.AxleCount","requestId":"321"}
 
+Get Request with request local data compression:
+{"action":"get","path":"Vehicle.Speed", "dc":"2+0","requestId":"232"}
+
 
 Get request for historic data:
 {"action":"get","path":"Vehicle.Acceleration.Longitudinal","filter":{"variant":"history","parameter":"P2DT12H"},"requestId":"234"}
