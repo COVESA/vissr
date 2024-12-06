@@ -1,5 +1,5 @@
 ---
-title: "WAII Apache IoTDB"
+title: "VISSR Apache IoTDB"
 ---
 
 ## Introduction
@@ -8,19 +8,19 @@ Description of Apache IoTDB from https://iotdb.apache.org/:
 *"Apache IoTDB (Database for Internet of Things) is an IoT native database with high performance for data management and analysis, deployable on the edge and the cloud. Due to its light-weight architecture, high performance and rich feature set together with its deep integration with Apache Hadoop, Spark and Flink, Apache IoTDB can meet the requirements of massive data storage, high-speed data ingestion and complex data analysis in the IoT industrial fields."*
 
 ## Scope
-Support for Apache IoTDB as the WAII data store is implemented by connector code in the WAII service manager, which connects WAII to an external Apache IoTDB server. This code uses the IoTDB Go client to maintain a connection session to the IoTDB server, which is then used to get/set vehicle data from the database.
+Support for Apache IoTDB as the VISSR data store is implemented by connector code in the VISSR service manager, which connects VISSR to an external Apache IoTDB server. This code uses the IoTDB Go client to maintain a connection session to the IoTDB server, which is then used to get/set vehicle data from the database.
 
-As WAII and the IoTDB server are separate processes WAII needs to be told where to find the IoTDB server and which storage prefix to use to access the data. The administration of the Apache IoTDB server itself, including startup and shutdown, is out of scope and is handled externally to WAII.
+As VISSR and the IoTDB server are separate processes VISSR needs to be told where to find the IoTDB server and which storage prefix to use to access the data. The administration of the Apache IoTDB server itself, including startup and shutdown, is out of scope and is handled externally to VISSR.
 
 ## Runtime notes
 
 ### Assumptions
 Runtime assumptions:
-1. IoTDB server lifecycle (e.g. startup and shutdown) is handled externally to WAII
-2. Management (e.g. creation/deletion) of the IoTDB timeseries containing VSS data is handled externally to WAII.
+1. IoTDB server lifecycle (e.g. startup and shutdown) is handled externally to VISSR
+2. Management (e.g. creation/deletion) of the IoTDB timeseries containing VSS data is handled externally to VISSR.
 3. Configuration of the connector code is specified in the config file iotdb-config.json. If the config file is not found then build-time defaults are used.
 
-Handling of IoTDB server and timeseries management is placed outside of WAII to allow flexible deployment through loosely coupled connections.
+Handling of IoTDB server and timeseries management is placed outside of VISSR to allow flexible deployment through loosely coupled connections.
 ### Database schema
 The connector assumes a simple key/value pair schema for accessing VSS data in an IoTDB timeseries:
 
@@ -66,7 +66,7 @@ Example `iotdb-config.json`:
 }
 ```
 ### Logging
-The connector writes information, warning and error messages to the WAII server log with the prefix ``IoTDB``. Grepping in the log for that prefix string can help you quickly identify connector messages.
+The connector writes information, warning and error messages to the VISSR server log with the prefix ``IoTDB``. Grepping in the log for that prefix string can help you quickly identify connector messages.
 
 ## Quick start notes
 The following notes are intended to help you quickly try out using Apache IoTDB as a data store.
@@ -76,7 +76,7 @@ The Apache IoTDB project [website](https://iotdb.apache.org/) has extensive docu
 ### Apache IoTDB images
 The Apache IoTDB community maintains pre-built server images upstream to [download](https://iotdb.apache.org/Download/). Including containerised Docker images in [Docker Hub](https://hub.docker.com/r/apache/iotdb). IoTDB is available in both standalone (edge) and cluster (cloud) versions. Standalone is suggested as a starting point.
 
-The [COVESA Central Data Service Playground](https://github.com/COVESA/cdsp) provides a Docker deployment that combines an Apache IoTDB server (data store) with the WAII VISS data server.
+The [COVESA Central Data Service Playground](https://github.com/COVESA/cdsp) provides a Docker deployment that combines an Apache IoTDB server (data store) with the VISSR VISS data server.
 
 ### Seeding the database with VSS data
 To seed the database with VSS data the typical steps are:
@@ -117,7 +117,7 @@ IoTDB> select last * from root.test2.dev1
 |2024-03-07T17:55:24.514Z|           root.test2.dev1.`Vehicle.CurrentLocation.Latitude`| 22.1234|   FLOAT|
 +------------------------+-------------------------------------------------------------+--------+--------+
 ```
-You have now seeded the database with some initial VSS data and can use WAII to query it.
+You have now seeded the database with some initial VSS data and can use VISSR to query it.
 
 The CLI client startup script accepts SQL commands using the `-e` parameter. We can therefore use this to codify the above in a bash script. So the VSS node names (keys) are passed correctly on the command line the backticks must be escaped.
 
@@ -139,7 +139,7 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e "sel
 Of course any of the programming language clients provided by IoTDB, e.g. go, python, C++, Rust, can also be used to achieve the same result.
 
 ## Development notes
-Please see the notes in the source commit messages and related Github pull requests for the history of the development of the Apache IoTDB connection code and its integration into the WAII Service Manager component.
+Please see the notes in the source commit messages and related Github pull requests for the history of the development of the Apache IoTDB connection code and its integration into the VISSR Service Manager component.
 
 Development followed the patterns set by the existing support for Redis and SQLite.
 
