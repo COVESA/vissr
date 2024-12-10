@@ -9,24 +9,24 @@
 
     <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
 
-    <title>WAII Apache IoTDB :: COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>VISSR Apache IoTDB :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1732705553" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1732705553" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1733823329" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1733823329" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1732705553" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1733823329" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1732705553"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1733823329"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -59,14 +59,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1732705553"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1732705553"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1733823329"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1733823329"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1732705553"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1733823329"></script>
 
     
   </div>
@@ -200,6 +200,32 @@
  
   
     
+    <li data-nav-id="/vissr/datastore/apache-iotdb/" title="VISSR Apache IoTDB" class="dd-item
+        
+        active
+        
+        ">
+      <a href="/vissr/datastore/apache-iotdb/">
+          VISSR Apache IoTDB
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
     <li data-nav-id="/vissr/datastore/memcached/" title="VISSR Memcached" class="dd-item
         
         
@@ -259,32 +285,6 @@
         ">
       <a href="/vissr/datastore/sqlite/">
           VISSR SQLite
-          
-      </a>
-      
-      
-    </li>
-  
- 
-
-            
-          
-            
-            
-
-
-
-
- 
-  
-    
-    <li data-nav-id="/vissr/datastore/apache-iotdb/" title="WAII Apache IoTDB" class="dd-item
-        
-        active
-        
-        ">
-      <a href="/vissr/datastore/apache-iotdb/">
-          WAII Apache IoTDB
           
       </a>
       
@@ -645,7 +645,7 @@
             
           
           
-            <a href='/vissr/'>COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial</a> > <a href='/vissr/datastore/'>VISSR Data Storage</a> > WAII Apache IoTDB
+            <a href='/vissr/'>COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial</a> > <a href='/vissr/datastore/'>VISSR Data Storage</a> > VISSR Apache IoTDB
           
         
           
@@ -694,7 +694,7 @@
           
             <h1>
               
-              WAII Apache IoTDB
+              VISSR Apache IoTDB
             </h1>
           
 
@@ -706,17 +706,17 @@
 <p>Description of Apache IoTDB from <a href="https://iotdb.apache.org/">https://iotdb.apache.org/</a>:</p>
 <p><em>&ldquo;Apache IoTDB (Database for Internet of Things) is an IoT native database with high performance for data management and analysis, deployable on the edge and the cloud. Due to its light-weight architecture, high performance and rich feature set together with its deep integration with Apache Hadoop, Spark and Flink, Apache IoTDB can meet the requirements of massive data storage, high-speed data ingestion and complex data analysis in the IoT industrial fields.&rdquo;</em></p>
 <h2 id="scope">Scope</h2>
-<p>Support for Apache IoTDB as the WAII data store is implemented by connector code in the WAII service manager, which connects WAII to an external Apache IoTDB server. This code uses the IoTDB Go client to maintain a connection session to the IoTDB server, which is then used to get/set vehicle data from the database.</p>
-<p>As WAII and the IoTDB server are separate processes WAII needs to be told where to find the IoTDB server and which storage prefix to use to access the data. The administration of the Apache IoTDB server itself, including startup and shutdown, is out of scope and is handled externally to WAII.</p>
+<p>Support for Apache IoTDB as the VISSR data store is implemented by connector code in the VISSR service manager, which connects VISSR to an external Apache IoTDB server. This code uses the IoTDB Go client to maintain a connection session to the IoTDB server, which is then used to get/set vehicle data from the database.</p>
+<p>As VISSR and the IoTDB server are separate processes VISSR needs to be told where to find the IoTDB server and which storage prefix to use to access the data. The administration of the Apache IoTDB server itself, including startup and shutdown, is out of scope and is handled externally to VISSR.</p>
 <h2 id="runtime-notes">Runtime notes</h2>
 <h3 id="assumptions">Assumptions</h3>
 <p>Runtime assumptions:</p>
 <ol>
-<li>IoTDB server lifecycle (e.g. startup and shutdown) is handled externally to WAII</li>
-<li>Management (e.g. creation/deletion) of the IoTDB timeseries containing VSS data is handled externally to WAII.</li>
+<li>IoTDB server lifecycle (e.g. startup and shutdown) is handled externally to VISSR</li>
+<li>Management (e.g. creation/deletion) of the IoTDB timeseries containing VSS data is handled externally to VISSR.</li>
 <li>Configuration of the connector code is specified in the config file iotdb-config.json. If the config file is not found then build-time defaults are used.</li>
 </ol>
-<p>Handling of IoTDB server and timeseries management is placed outside of WAII to allow flexible deployment through loosely coupled connections.</p>
+<p>Handling of IoTDB server and timeseries management is placed outside of VISSR to allow flexible deployment through loosely coupled connections.</p>
 <h3 id="database-schema">Database schema</h3>
 <p>The connector assumes a simple key/value pair schema for accessing VSS data in an IoTDB timeseries:</p>
 <ol>
@@ -790,13 +790,13 @@
 	&#34;queryTimeout(ms)&#34;: 5000
 }
 </code></pre><h3 id="logging">Logging</h3>
-<p>The connector writes information, warning and error messages to the WAII server log with the prefix <code>IoTDB</code>. Grepping in the log for that prefix string can help you quickly identify connector messages.</p>
+<p>The connector writes information, warning and error messages to the VISSR server log with the prefix <code>IoTDB</code>. Grepping in the log for that prefix string can help you quickly identify connector messages.</p>
 <h2 id="quick-start-notes">Quick start notes</h2>
 <p>The following notes are intended to help you quickly try out using Apache IoTDB as a data store.</p>
 <p>The Apache IoTDB project <a href="https://iotdb.apache.org/">website</a> has extensive documentation on the IoTDB server.</p>
 <h3 id="apache-iotdb-images">Apache IoTDB images</h3>
 <p>The Apache IoTDB community maintains pre-built server images upstream to <a href="https://iotdb.apache.org/Download/">download</a>. Including containerised Docker images in <a href="https://hub.docker.com/r/apache/iotdb">Docker Hub</a>. IoTDB is available in both standalone (edge) and cluster (cloud) versions. Standalone is suggested as a starting point.</p>
-<p>The <a href="https://github.com/COVESA/cdsp">COVESA Central Data Service Playground</a> provides a Docker deployment that combines an Apache IoTDB server (data store) with the WAII VISS data server.</p>
+<p>The <a href="https://github.com/COVESA/cdsp">COVESA Central Data Service Playground</a> provides a Docker deployment that combines an Apache IoTDB server (data store) with the VISSR VISS data server.</p>
 <h3 id="seeding-the-database-with-vss-data">Seeding the database with VSS data</h3>
 <p>To seed the database with VSS data the typical steps are:</p>
 <ol>
@@ -832,7 +832,7 @@
 |2024-03-07T17:55:24.514Z|root.test2.dev1.`Vehicle.Cabin.Infotainment.HMI.DistanceUnit`|   MILES|    TEXT|
 |2024-03-07T17:55:24.514Z|           root.test2.dev1.`Vehicle.CurrentLocation.Latitude`| 22.1234|   FLOAT|
 +------------------------+-------------------------------------------------------------+--------+--------+
-</code></pre><p>You have now seeded the database with some initial VSS data and can use WAII to query it.</p>
+</code></pre><p>You have now seeded the database with some initial VSS data and can use VISSR to query it.</p>
 <p>The CLI client startup script accepts SQL commands using the <code>-e</code> parameter. We can therefore use this to codify the above in a bash script. So the VSS node names (keys) are passed correctly on the command line the backticks must be escaped.</p>
 <p>For example:</p>
 <pre tabindex="0"><code># !/bin/bash
@@ -848,7 +848,7 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
 bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34;select last * from root.test2.dev1&#34;
 </code></pre><p>Of course any of the programming language clients provided by IoTDB, e.g. go, python, C++, Rust, can also be used to achieve the same result.</p>
 <h2 id="development-notes">Development notes</h2>
-<p>Please see the notes in the source commit messages and related Github pull requests for the history of the development of the Apache IoTDB connection code and its integration into the WAII Service Manager component.</p>
+<p>Please see the notes in the source commit messages and related Github pull requests for the history of the development of the Apache IoTDB connection code and its integration into the VISSR Service Manager component.</p>
 <p>Development followed the patterns set by the existing support for Redis and SQLite.</p>
 <p>The connection code was first developed with Apache IoTDB v1.2.2, using the upstream standalone pre-built image and Apache IoTDB Go Client v1.1.7.</p>
 
@@ -960,6 +960,23 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
             
                 
                     
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
                         
                         
                     
@@ -1006,23 +1023,6 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
             
         
                     
-                        
-            
-            
-                
-                    
-                    
-                
-                
-
-                    
-                    
-                    
-
-                    
-            
-        
-                    
             
         
                     
@@ -1030,9 +1030,6 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
             
             
                 
-                    
-                        
-                        
                     
                 
                 
@@ -1202,10 +1199,10 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
 	 
 	 
 		
-			<a class="nav nav-prev" href="/vissr/datastore/sqlite/" title="VISSR SQLite"> <i class="fa fa-chevron-left"></i></a>
+			<a class="nav nav-prev" href="/vissr/datastore/" title="VISSR Data Storage"> <i class="fa fa-chevron-left"></i></a>
 		
 		
-			<a class="nav nav-next" href="/vissr/docker-step-by-step/" title="VISSR Docker" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+			<a class="nav nav-next" href="/vissr/datastore/memcached/" title="VISSR Memcached" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
@@ -1215,19 +1212,19 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1732705553"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1732705553"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1732705553"></script>
-    <script src="/vissr/js/jquery.sticky.js?1732705553"></script>
-    <script src="/vissr/js/featherlight.min.js?1732705553"></script>
-    <script src="/vissr/js/highlight.pack.js?1732705553"></script>
+    <script src="/vissr/js/clipboard.min.js?1733823329"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1733823329"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1733823329"></script>
+    <script src="/vissr/js/jquery.sticky.js?1733823329"></script>
+    <script src="/vissr/js/featherlight.min.js?1733823329"></script>
+    <script src="/vissr/js/highlight.pack.js?1733823329"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1732705553"></script>
-    <script src="/vissr/js/learn.js?1732705553"></script>
-    <script src="/vissr/js/hugo-learn.js?1732705553"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1733823329"></script>
+    <script src="/vissr/js/learn.js?1733823329"></script>
+    <script src="/vissr/js/hugo-learn.js?1733823329"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1732705553"></script>
+            <script src="/vissr/mermaid/mermaid.js?1733823329"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
