@@ -12,8 +12,8 @@ Get request:
 {"action":"get","path":"Server.Support.Protocol","requestId":"133"}
 {"action":"get","path":"Vehicle.Chassis.AxleCount","requestId":"321"}
 
-Get Request with request local data compression:
-{"action":"get","path":"Vehicle.Speed", "dc":"2+0","requestId":"232"}
+Get Request with data compression:
+{"action":"get","path":"Vehicle.Speed", "dc":"2+1","requestId":"232"}
 
 
 Get request for historic data:
@@ -43,6 +43,7 @@ Subscribe request:
 {"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"variant":"range","parameter":[{"logic-op":"gt","boundary":"500"},{"logic-op":"lt","boundary":"510"}]},"requestId":"265"}
 {"action":"subscribe","path":"Vehicle.Powertrain.Transmission.Speed","filter":{"variant":"curvelog","parameter":{"maxerr":"2","bufsize":"100"}},"requestId":"275"}
 {"action":"subscribe","path":"Vehicle","filter":[{"variant":"paths","parameter":["CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"variant":"curvelog","parameter":{"maxerr":"0.00001","bufsize":"100"}}],"requestId":"285"}
+{"action":"subscribe","path":"Vehicle.CurrentLocation","filter":[{"variant":"paths","parameter":["Latitude", "Longitude"]}, {"variant":"timebased","parameter":{"period":"3000"}}], "dc":"2+1","requestId":"286"}
 
 Unsubscribe request:
 {"action":"unsubscribe","subscriptionId":"1","requestId":"240"}

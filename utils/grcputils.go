@@ -335,9 +335,9 @@ func createPbFilter(index int, filterExpression map[string]interface{}, filter *
 		filter.FilterExp[index].Value.ValueHistory = &pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{}
 		filter.FilterExp[index].Value.ValueHistory.TimePeriod = filterExpression["parameter"].(string)
 	case pb.FilterExpressions_FilterExpression_METADATA:
-		Warning.Printf("Filter type is not supported by protobuf encoding.")
+		Warning.Printf("Filter variant is not supported by protobuf encoding.")
 	default:
-		Error.Printf("Filter type is unknown.")
+		Error.Printf("Filter variant is unknown.")
 	}
 }
 
@@ -422,7 +422,7 @@ func getFilterVariant(filterVariant string) pb.FilterExpressions_FilterExpressio
 	case "metadata":
 		return pb.FilterExpressions_FilterExpression_METADATA
 	}
-	return pb.FilterExpressions_FilterExpression_METADATA + 100 //undefined filter type
+	return pb.FilterExpressions_FilterExpression_METADATA + 100 //undefined filter variant
 }
 
 func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageMap map[string]interface{}) {
@@ -694,7 +694,7 @@ func synthesizeFilter(filterExp *pb.FilterExpressions_FilterExpression) string {
 		fType = "metadata"
 		value = getJsonFilterValueMetadata(filterExp)
 	}
-	return `{"type":"` + fType + `","parameter":` + value + `}`
+	return `{"variant":"` + fType + `","parameter":` + value + `}`
 }
 
 func getJsonFilterValuePaths(filterExp *pb.FilterExpressions_FilterExpression) string {

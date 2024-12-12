@@ -1,3 +1,6 @@
-{"request":[{"action":"get","path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen","requestId":"232"},{"action":"get","path":"Vehicle.Acceleration.Longitudinal","requestId":"233"},
-{"action":"get","path":"Vehicle/ADAS","filter":{"type":"paths","parameter":["ABS/*","CruiseControl/Error"]},"requestId":"237"},
-{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"type":"timebased","parameter":{"period":"3"}},"requestId":"246"}]}
+{"request":[
+{"action":"get","path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen","requestId":"232"},{"action":"get","path":"Vehicle.Acceleration.Longitudinal","requestId":"233"},
+{"action":"get","path":"Vehicle/ADAS","filter":{"variant":"paths","parameter":["ABS/*","CruiseControl/Error"]},"requestId":"237"},
+{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen","filter":{"variant":"timebased","parameter":{"period":"3"}},"requestId":"246"},
+{"action":"subscribe","path":"Vehicle.CurrentLocation","filter":[{"variant":"paths","parameter":["Latitude", "Longitude"]}, {"variant":"timebased","parameter":{"period":"3000"}}], "dc":"2+1","requestId":"286"}
+]}
