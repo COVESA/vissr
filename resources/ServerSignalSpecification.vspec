@@ -35,8 +35,26 @@ Server.Support.Security:
 Server.Support.Filter:
   type: attribute
   datatype: string[]
-  default: ["timebased", "change", "range", "curvelog", "paths"]
+  default: ["timebased", "change", "range", "curvelog", "paths", "metadata"]
   description: List of supported filter features.
+
+Server.Support.Encoding:
+  type: attribute
+  datatype: string[]
+  default: ["protobuf"]
+  description: List of supported payload encoding features.
+
+Server.Support.Filetransfer:
+  type: attribute
+  datatype: string[]
+  default: ["upload", "download"]
+  description: List of supported file transfer features.
+
+Server.Support.DataCompression:
+  type: attribute
+  datatype: string[]
+  default: ["2+1"]
+  description: List of supported data compression features.
 
 Server.Config:
   type: branch
@@ -64,6 +82,22 @@ Server.Config.Protocol.Websocket:
   type: branch
   description: Top branch for the server supported Websocket protocol.
 
+Server.Config.Protocol.Websocket.FileTransfer:
+  type: branch
+  description: Websocket filetransfer.
+
+Server.Config.Protocol.Websocket.FileTransfer.Mode:
+  type: attribute
+  datatype: string[]
+  default: ["upload", "download"]
+  description: Websocket protocol port number for the primary payload format.
+
+Server.Config.Protocol.Websocket.FileTransfer.PortNum:
+  type: attribute
+  datatype: uint32
+  default: 8002
+  description: Websocket protocol port number for the primary payload format.
+
 Server.Config.Protocol.Websocket.Primary:
   type: branch
   description: Websocket configuration for the primary payload format.
@@ -78,10 +112,11 @@ Server.Config.Protocol.Websocket.Protobuf:
   type: branch
   description: Websocket configuration for the protobuf encoded payload format.
 
-Server.Config.Protocol.Websocket.Protobuf.PortNum:
+Server.Config.Protocol.Websocket.Protobuf.SubProtocol:
   type: attribute
-  datatype: uint32
-  description: Websocket protocol port number for the protobuf encoded payload format.
+  datatype: string
+  default: "VISS-protoenc"
+  description: Websocket sub-protocol for the protobuf encoded payload format.
 
 Server.Config.Protocol.Mqtt:
   type: branch
@@ -122,6 +157,7 @@ Server.Config.Protocol.Grpc.Protobuf:
 Server.Config.Protocol.Grpc.Protobuf.PortNum:
   type: attribute
   datatype: uint32
+  default: 5443
   description: gRPC port number for the protobuf encoded payload format.
 
 Server.Config.AccessControl:

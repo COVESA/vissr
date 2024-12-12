@@ -41,20 +41,20 @@ func initCommandList() {
 
 	commandList[0] = `{"action":"get","path":"Vehicle/Speed","requestId":"232"}`
 	commandList[1] = `{"action":"set", "path":"Vehicle/Body/Lights/IsLeftIndicatorOn", "value":"true", "requestId":"245"}`
-	commandList[2] = `{"action":"subscribe","path":"Vehicle.Speed","filter":{"type":"curvelog","parameter":{"maxerr":"2","bufsize":"15"}},"requestId":"285"}`
-/*	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},{"type":"timebased","parameter":	{"period":"5000"}}],"requestId":"246"}`*/
-	commandList[3] = `{"action":"unsubscribe","subscriptionId":"X","requestId":"240"}` // X is replaced according to input
+	commandList[2] = `{"action":"subscribe","path":"Vehicle.CurrentLocation","filter":[{"variant":"paths","parameter":["Latitude", "Longitude"]}, {"variant":"timebased","parameter":{"period":"3000"}}], "dc":"2+1","requestId":"286"}`
+	commandList[3] = `{"action":"unsubscribe","subscriptionId":"X","requestId":"240"}` // X is replaced according to input, e.g. 23 sets X=2
 
 	/* different variants
-	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed","CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
-	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","filter":{"type":"timebased","parameter":{"period":"100"}},"requestId":"246"}`
+	commandList[2] = `{"action":"subscribe","path":"Vehicle.Speed","filter":{"variant":"curvelog","parameter":{"maxerr":"2","bufsize":"15"}},"requestId":"285"}`
+	commandList[2] = `{"action":"subscribe","path":"Vehicle","filter":[{"variant":"paths","parameter":["Speed","CurrentLocation.Latitude", "CurrentLocation.Longitude"]}, {"variant":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","filter":{"variant":"timebased","parameter":{"period":"100"}},"requestId":"246"}`
 		commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","requestId":"232"}`
-	commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door","filter":{"type":"paths","parameter":"*.*.IsOpen"},"requestId":"235"}`
-		commandList[1] = `{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"timebased","parameter":{"period":"3000"}},"requestId":"246"}`
-	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
+	commandList[0] = `{"action":"get","path":"Vehicle/Cabin/Door","filter":{"variant":"paths","parameter":"*.*.IsOpen"},"requestId":"235"}`
+		commandList[1] = `{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"variant":"timebased","parameter":{"period":"3000"}},"requestId":"246"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":{"variant":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
 	commandList[1] = `{"action":"subscribe","path":"Vehicle/Speed","requestId":"258"}`
-	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"type":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
-	commandList[1] = {"action":"subscribe","path":"Vehicle","filter":{"type":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
+	commandList[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"variant":"paths","parameter":["Body.Lights.IsLeftIndicatorOn", "Chassis.Accelerator.PedalPosition"]}, {"variant":"change","parameter":{"logic-op":"ne", "diff": "0"}}],"requestId":"285"}`
+	commandList[1] = {"action":"subscribe","path":"Vehicle","filter":{"variant":"paths","parameter":["Speed", "Chassis.Accelerator.PedalPosition"]},"requestId":"246"}`
 	*/
 }
 
