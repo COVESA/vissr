@@ -276,10 +276,17 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
 	nodeType := int(utils.VSSgetType(nodeHandle))
-//	utils.Info.Printf("nodeType=%d", nodeType)
-	newJsonBuffer += `"type":` + `"` + nodeTypesToString(nodeType) + `",`
+	newJsonBuffer += `"type":"` + nodeTypesToString(nodeType) + `",`
+	nodeDefault := utils.VSSgetDefault(nodeHandle)
+	if len(nodeDefault) > 0 {
+		if nodeDefault[0] == '{' || nodeDefault[0] == '[' {
+			newJsonBuffer += `"default":` + singleToDoubleQuote(nodeDefault) + `,`
+		} else {
+			newJsonBuffer += `"default":"`+ nodeDefault + `",`
+		}
+	}
 	nodeDescr := utils.VSSgetDescr(nodeHandle)
-	newJsonBuffer += `"description":` + `"` + nodeDescr + `",`
+	newJsonBuffer += `"description":"` + nodeDescr + `",`
 	nodeNumofChildren := utils.VSSgetNumOfChildren(nodeHandle)
 	switch nodeType {
 	case 4: // branch
@@ -290,14 +297,14 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	case 3: // attribute
 		// TODO Look for other metadata, unit, enum, ...
 		nodeDatatype := utils.VSSgetDatatype(nodeHandle)
-		newJsonBuffer += `"datatype":` + `"` + nodeDatatype + `",`
+		newJsonBuffer += `"datatype":"` + nodeDatatype + `",`
 	default:
 		return ""
 
 	}
 	if depth < maxDepth {
 		if nodeNumofChildren > 0 {
-			newJsonBuffer += `"children":` + "{"
+			newJsonBuffer += `"children":{`
 		}
 		for i := 0; i < nodeNumofChildren; i++ {
 			childNode := utils.VSSgetChild(nodeHandle, i)
@@ -313,6 +320,15 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	}
 	newJsonBuffer += "},"
 	return jsonBuffer + newJsonBuffer
+}
+
+func singleToDoubleQuote(jsonObject string) string {
+	for i := 0; i < len(jsonObject); i++ {
+		if jsonObject[i] == '\'' {
+			jsonObject = jsonObject[:i] + `"` + jsonObject[i+1:]
+		}
+	}
+	return jsonObject
 }
 
 func countPathSegments(path string) int {
