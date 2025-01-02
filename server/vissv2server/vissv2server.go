@@ -64,7 +64,7 @@ var transportMgrChannel []chan string
 var transportDataChan []chan string
 var backendChan []chan string
 
-var serviceMgrChannel []chan string
+var serviceMgrChannel []chan map[string]interface{}
 
 var atsChannel []chan string
 
@@ -89,30 +89,20 @@ func extractMgrId(routerId string) int { // "RouterId" : "mgrId?clientId"
 	return mgrId
 }
 
-func getRouterId(response string) string { // "RouterId" : "mgrId?clientId",
-	afterRouterIdKey := strings.Index(response, "RouterId")
-	if afterRouterIdKey == -1 {
-		return ""
-	}
-	afterRouterIdKey += 8 + 1 // points to after quote
-	routerIdValStart := utils.NextQuoteMark([]byte(response), afterRouterIdKey) + 1
-	routerIdValStop := utils.NextQuoteMark([]byte(response), routerIdValStart)
-	utils.Info.Printf("getRouterId: %s", response[routerIdValStart:routerIdValStop])
-	return response[routerIdValStart:routerIdValStop]
-}
-
-func serviceDataSession(serviceMgrChannel chan string, serviceDataChannel chan string, backendChannel []chan string) {
+func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDataChannel chan string, backendChannel []chan string) {
 	for {
 		select {
 
 		case response := <-serviceMgrChannel:
-			utils.Info.Printf("Server core: Response from service mgr:%s", string(response))
-			mgrIndex := extractMgrId(getRouterId(string(response)))
+//			utils.Info.Printf("Server core: Response from service mgr:%s", string(response))
+			mgrIndex := extractMgrId(response["RouterId"].(string))
 			utils.Info.Printf("mgrIndex=%d", mgrIndex)
-			backendChannel[mgrIndex] <- string(response)
+			backendChannel[mgrIndex] <- utils.FinalizeMessage(response)
 		case request := <-serviceDataChannel:
 			utils.Info.Printf("Server core: Request to service:%s", request)
-			serviceMgrChannel <- request
+requestMap := make(map[string]interface{})
+utils.MapRequest(request, &requestMap)
+			serviceMgrChannel <- requestMap
 		}
 	}
 }
@@ -798,8 +788,8 @@ func getFileDescriptorData(value interface{}) (string, string, string) { // {"na
 
 func initChannels() {
 	ftChannel = make(chan utils.FileTransferCache)
-	serviceMgrChannel = make([]chan string, 1)
-	serviceMgrChannel[0] = make(chan string)
+	serviceMgrChannel = make([]chan map[string]interface{}, 1)
+	serviceMgrChannel[0] = make(chan map[string]interface{})
 	serviceDataChan = make([]chan string, 1)
 	serviceDataChan[0] = make(chan string)
 	transportMgrChannel = make([]chan string, NUMOFTRANSPORTMGRS)

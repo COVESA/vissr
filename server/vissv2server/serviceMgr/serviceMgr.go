@@ -126,16 +126,16 @@ var IoTDBConfig = IoTDBConfiguration{
 
 var dummyValue int // dummy value returned when DB configured to none. Counts from 0 to 999, wrap around, updated every 47 msec
 
-func initDataServer(serviceMgrChan chan string, clientChannel chan string, backendChannel chan string) {
+func initDataServer(serviceMgrChan chan map[string]interface{}, clientChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
 	for {
 		select {
 		case request := <-serviceMgrChan:
-			utils.Info.Printf("Service mgr request: %s", request)
+//			utils.Info.Printf("Service mgr request: %s", request)
 
 			clientChannel <- request                                              // forward to mgr hub,
-			if strings.Contains(request, "internal-killsubscriptions") == false { // no response on kill sub
+			if request["action"] != "internal-killsubscriptions" { // no response on kill sub
 				response := <-clientChannel //  and wait for response
-				utils.Info.Printf("Service mgr response: %s", response)
+//				utils.Info.Printf("Service mgr response: %s", response)
 				serviceMgrChan <- response
 			}
 		case notification := <-backendChannel: // notification
@@ -393,10 +393,6 @@ func compareValues(logicOp string, latestValue string, currentValue string, diff
 		return false
 	}
 	return false
-}
-
-func addPackage(incompleteMessage string, packName string, packValue string) string {
-	return incompleteMessage[:len(incompleteMessage)-1] + ", \"" + packName + "\":" + packValue + "}"
 }
 
 func deactivateSubscription(subscriptionList []SubscriptionState, subscriptionId string) (int, []SubscriptionState) {
@@ -1224,7 +1220,8 @@ func feederReader(udsConn net.Conn, fromFeeder chan string) {
 	}
 }
 
-func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType string, histSupport bool, dbFile string) {
+//func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType string, histSupport bool, dbFile string) {
+func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
 
@@ -1330,8 +1327,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 	}
 
-	dataChan := make(chan string)
-	backendChan := make(chan string)
+	dataChan := make(chan map[string]interface{})
+	backendChan := make(chan map[string]interface{})
 	subscriptionChan := make(chan int)
 	historyAccessChannel = make(chan string)
 	initClResources()
@@ -1360,12 +1357,10 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 
 	for {
 		select {
-		case request := <-dataChan: // request from server core
-			utils.Info.Printf("Service manager: Request from Server core:%s\n", request)
+		case requestMap := <-dataChan: // request from server core
+//			utils.Info.Printf("Service manager: Request from Server core:%s\n", request)
 			// TODO: interact with underlying subsystem to get the value
-			var requestMap = make(map[string]interface{})
 			var responseMap = make(map[string]interface{})
-			utils.MapRequest(request, &requestMap)
 			responseMap["RouterId"] = requestMap["RouterId"]
 			responseMap["action"] = requestMap["action"]
 			responseMap["requestId"] = requestMap["requestId"]
@@ -1377,23 +1372,23 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			case "set":
 				if strings.Contains(requestMap["path"].(string), "[") == true {
 					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					break
 				}
 				ts := setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
 				if len(ts) == 0 {
 					utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					break
 				}
 				responseMap["ts"] = ts
-				dataChan <- utils.FinalizeMessage(responseMap)
+				dataChan <- responseMap
 			case "get":
 				pathArray := unpackPaths(requestMap["path"].(string))
 				if pathArray == nil {
 					utils.Error.Printf("Unmarshal of path array failed.")
 					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					break
 				}
 				var filterList []utils.FilterObject
@@ -1402,7 +1397,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 					if len(filterList) == 0 {
 						utils.Error.Printf("Request filter malformed.")
 						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-						dataChan <- utils.FinalizeMessage(errorResponseMap)
+						dataChan <- errorResponseMap
 						break
 					}
 				}
@@ -1410,10 +1405,11 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				if len(dataPack) == 0 {
 					utils.Info.Printf("No historic data available")
 					utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					break
 				}
-				dataChan <- addPackage(utils.FinalizeMessage(responseMap), "data", dataPack)
+				responseMap["data"] = dataPack
+				dataChan <- responseMap
 			case "subscribe":
 				var subscriptionState SubscriptionState
 				subscriptionState.SubscriptionId = subscriptionId
@@ -1421,13 +1417,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 				subscriptionState.Path = unpackPaths(requestMap["path"].(string))
 				if requestMap["filter"] == nil || requestMap["filter"] == "" {
 					utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					break
 				}
 				utils.UnpackFilter(requestMap["filter"], &(subscriptionState.FilterList))
 				if len(subscriptionState.FilterList) == 0 {
 					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 				}
 				if requestMap["gatingId"] != nil {
 					subscriptionState.GatingId = requestMap["gatingId"].(string)
@@ -1441,7 +1437,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 					toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
 				}
 				subscriptionId++ // not to be incremented elsewhere
-				dataChan <- utils.FinalizeMessage(responseMap)
+				dataChan <- responseMap
 			case "unsubscribe":
 				if requestMap["subscriptionId"] != nil {
 					status := -1
@@ -1450,15 +1446,15 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 						status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
 						if status != -1 {
 							responseMap["subscriptionId"] = subscriptId
-							dataChan <- utils.FinalizeMessage(responseMap)
-							toFeeder <- request
+							dataChan <- responseMap
+							toFeeder <- utils.FinalizeMessage(requestMap)
 							break
 						}
 						requestMap["subscriptionId"] = subscriptId
 					}
 				}
 				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-				dataChan <- utils.FinalizeMessage(errorResponseMap)
+				dataChan <- errorResponseMap
 			case "internal-killsubscriptions":
 				isRemoved := true
 				for isRemoved == true {
@@ -1473,12 +1469,12 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 					requestMap["requestId"] = nil
 					requestMap["subscriptionId"] = subscriptionId
 					utils.SetErrorResponse(requestMap, errorResponseMap, 2, "Token expired or consent cancelled.")
-					dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 					_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
 				}
 			default:
 				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
-				dataChan <- utils.FinalizeMessage(errorResponseMap)
+					dataChan <- errorResponseMap
 			} // switch
 		case <-dummyTicker.C:
 			dummyValue++
@@ -1492,7 +1488,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			subscriptionMap["ts"] = utils.GetRfcTime()
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionState.RouterId
-			backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", getDataPack(subscriptionState.Path, nil))
+			subscriptionMap["data"] = getDataPack(subscriptionState.Path, nil)
+			backendChan <- subscriptionMap
 		case clPack := <-CLChannel: // curve logging notification
 			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
 			if index == -1 {
@@ -1510,7 +1507,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 			subscriptionMap["ts"] = utils.GetRfcTime()
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionList[index].RouterId
-			backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", clPack.DataPack)
+			subscriptionMap["data"] = clPack.DataPack
+			backendChan <- subscriptionMap
 		case <-subscriptTicker.C:
 			if feederNotification == false { // feeder does not issue notifications
 				subscriptionList = checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
@@ -1526,7 +1524,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType stri
 utils.Info.Printf("Service manager exit")
 }
 
-func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan string) []SubscriptionState {
+func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
 	// check if range or change notification triggered
 	for i := range subscriptionList {
 		if len(triggeredPath) == 0 || triggeredPath == subscriptionList[i].Path[0] {
@@ -1539,7 +1537,8 @@ func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []Subs
 				subscriptionMap["ts"] = utils.GetRfcTime()
 				subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 				subscriptionMap["RouterId"] = subscriptionState.RouterId
-				backendChan <- addPackage(utils.FinalizeMessage(subscriptionMap), "data", getDataPack(subscriptionList[i].Path, nil))
+				subscriptionMap["data"] = getDataPack(subscriptionList[i].Path, nil)
+				backendChan <- subscriptionMap
 			}
 		}
 	}
