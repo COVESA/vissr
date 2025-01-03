@@ -1408,7 +1408,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 					dataChan <- errorResponseMap
 					break
 				}
-				responseMap["data"] = dataPack
+				responseMap["data"] = string2Map(dataPack)["s2m"]
 				dataChan <- responseMap
 			case "subscribe":
 				var subscriptionState SubscriptionState
@@ -1488,7 +1488,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			subscriptionMap["ts"] = utils.GetRfcTime()
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionState.RouterId
-			subscriptionMap["data"] = getDataPack(subscriptionState.Path, nil)
+			subscriptionMap["data"] = string2Map(getDataPack(subscriptionState.Path, nil))["s2m"]
 			backendChan <- subscriptionMap
 		case clPack := <-CLChannel: // curve logging notification
 			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
@@ -1507,7 +1507,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			subscriptionMap["ts"] = utils.GetRfcTime()
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionList[index].RouterId
-			subscriptionMap["data"] = clPack.DataPack
+			subscriptionMap["data"] = string2Map(clPack.DataPack)["s2m"]
 			backendChan <- subscriptionMap
 		case <-subscriptTicker.C:
 			if feederNotification == false { // feeder does not issue notifications
@@ -1537,12 +1537,18 @@ func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []Subs
 				subscriptionMap["ts"] = utils.GetRfcTime()
 				subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 				subscriptionMap["RouterId"] = subscriptionState.RouterId
-				subscriptionMap["data"] = getDataPack(subscriptionList[i].Path, nil)
+				subscriptionMap["data"] = string2Map(getDataPack(subscriptionList[i].Path, nil))["s2m"]
 				backendChan <- subscriptionMap
 			}
 		}
 	}
 	return subscriptionList
+}
+
+func string2Map(msg string) map[string]interface{} {
+	var msgMap map[string]interface{}
+	utils.MapRequest(`{"s2m":`+msg+"}", &msgMap)
+	return msgMap
 }
 
 func decodeFeederMessage(feederMessage string, feederNotification bool) (string, bool) {

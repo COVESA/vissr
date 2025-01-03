@@ -230,31 +230,6 @@ func ExtractFromToken(token string, claim string) string { // TODO remove white 
 	return ""
 }
 
-/*func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]interface{}, number string, reason string, message string) {
-	if reqMap["RouterId"] != nil {
-		errRespMap["RouterId"] = reqMap["RouterId"]
-	}
-	if reqMap["action"] != nil {
-		errRespMap["action"] = reqMap["action"]
-	}
-	if reqMap["requestId"] != nil {
-		errRespMap["requestId"] = reqMap["requestId"]
-	} else {
-		delete(errRespMap, "requestId")
-	}
-	if reqMap["subscriptionId"] != nil {
-		errRespMap["subscriptionId"] = reqMap["subscriptionId"]
-	}
-	errMap := map[string]interface{}{
-		"number":  number,
-		"reason":  reason,
-		"message": message,
-	}
-	errRespMap["error"] = errMap
-	errRespMap["ts"] = GetRfcTime()
-}*/
-
-// func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]interface{}, number string, reason string, message string) {
 func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]interface{}, errorListIndex int, altErrorMessage string) {
 	if reqMap["RouterId"] != nil {
 		errRespMap["RouterId"] = reqMap["RouterId"]
@@ -279,11 +254,6 @@ func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]inter
 		"reason":  ErrorInfoList[errorListIndex].Reason,
 		"message": errorMessage,
 	}
-	/*	errMap := map[string]interface{}{
-		"number":  number,
-		"reason":  reason,
-		"message": message,
-	}*/
 	errRespMap["error"] = errMap
 	errRespMap["ts"] = GetRfcTime()
 }

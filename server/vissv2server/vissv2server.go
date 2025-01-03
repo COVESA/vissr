@@ -61,8 +61,9 @@ var serverComponents []string = []string{
  */
  const NUMOFTRANSPORTMGRS = 4  // order assigned to channels: HTTP, WS, MQTT, gRPC
 var transportMgrChannel []chan string
-var transportDataChan []chan string
-var backendChan []chan string
+var transportDataChan []chan map[string]interface{}
+//var transportDataChan []chan string
+var backendChan []chan map[string]interface{}
 
 var serviceMgrChannel []chan map[string]interface{}
 
@@ -71,7 +72,7 @@ var atsChannel []chan string
 var serviceDataPortNum int = 8200 // port number interval [8200-]
 
 // add element if support for new service manager is added
-var serviceDataChan []chan string
+var serviceDataChan []chan map[string]interface{}
 
 var ftChannel chan utils.FileTransferCache
 
@@ -89,7 +90,7 @@ func extractMgrId(routerId string) int { // "RouterId" : "mgrId?clientId"
 	return mgrId
 }
 
-func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDataChannel chan string, backendChannel []chan string) {
+func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDataChannel chan map[string]interface{}, backendChannel []chan map[string]interface{}) {
 	for {
 		select {
 
@@ -97,26 +98,28 @@ func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDa
 //			utils.Info.Printf("Server core: Response from service mgr:%s", string(response))
 			mgrIndex := extractMgrId(response["RouterId"].(string))
 			utils.Info.Printf("mgrIndex=%d", mgrIndex)
-			backendChannel[mgrIndex] <- utils.FinalizeMessage(response)
+			backendChannel[mgrIndex] <- response
 		case request := <-serviceDataChannel:
-			utils.Info.Printf("Server core: Request to service:%s", request)
-requestMap := make(map[string]interface{})
-utils.MapRequest(request, &requestMap)
-			serviceMgrChannel <- requestMap
+//			utils.Info.Printf("Server core: Request to service:%s", request)
+			serviceMgrChannel <- request
 		}
 	}
 }
 
-func transportDataSession(transportMgrChannel chan string, transportDataChannel chan string, backendChannel chan string) {
+func transportDataSession(transportMgrChannel chan string, transportDataChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
 	for {
 		select {
 
 		case msg := <-transportMgrChannel:
 			utils.Info.Printf("request: %s", msg)
-			transportDataChannel <- msg // send request to server hub
+var msgMap map[string]interface{}
+utils.MapRequest(msg, &msgMap)
+			transportDataChannel <- msgMap // send request to server hub
+//			transportDataChannel <- msg // send request to server hub
 		case message := <-backendChannel:
-			utils.Info.Printf("Transport mgr server: message= %s", message)
-			transportMgrChannel <- message
+//			utils.Info.Printf("Transport mgr server: message= %s", message)
+			transportMgrChannel <- utils.FinalizeMessage(message)
+//			transportMgrChannel <- message
 		}
 	}
 }
@@ -403,8 +406,8 @@ func getTokenContext(reqMap map[string]interface{}) string {
 	return ""
 }
 
-func validRequest(request string, action string) bool {
-	switch action {
+func validRequest(request map[string]interface{}) bool {
+	switch request["action"].(string) {
 	case "get":
 		return isValidGetParams(request)
 	case "set":
@@ -421,104 +424,115 @@ func validRequest(request string, action string) bool {
 	return false
 }
 
-func isValidGetParams(request string) bool {
-	if strings.Contains(request, "path") == false {
+func isValidGetParams(request map[string]interface{}) bool {
+	if request["path"] == nil {
 		return false
 	}
-	if strings.Contains(request, "filter") == true {
+	if request["filter"] != nil {
 		return isValidGetFilter(request)
 	}
 	return true
 }
 
-func isValidGetFilter(request string) bool { // paths, history, metadata supported
-	if strings.Contains(request, "paths") == true {
-		if strings.Contains(request, "parameter") == true {
+func isValidGetFilter(request map[string]interface{}) bool { // paths, history, metadata supported
+	return true // needs to be fixed
+//	if strings.Contains(request, "paths") == true {
+	if request["paths"] != nil {
+//		if strings.Contains(request, "parameter") == true {
+		if request["parameter"] != nil {
 			return true
 		}
 	}
-	if strings.Contains(request, "history") == true {
-		if strings.Contains(request, "parameter") == true {
+//	if strings.Contains(request, "history") == true {
+	if request["history"] != nil {
+//		if strings.Contains(request, "parameter") == true {
+		if request["parameter"] != nil {
 			return true
 		}
 	}
-	if strings.Contains(request, "metadata") == true {
-		if strings.Contains(request, "parameter") == true {
+//	if strings.Contains(request, "metadata") == true {
+	if request["metadata"] != nil {
+//		if strings.Contains(request, "parameter") == true {
+		if request["parameter"] != nil {
 			return true
 		}
 	}
 	return false
 }
 
-func isValidSetParams(request string) bool {
-	return strings.Contains(request, "path") && strings.Contains(request, "value")
+func isValidSetParams(request map[string]interface{}) bool {
+	return request["path"] != nil && request["value"] != nil
 }
 
-func isValidSubscribeParams(request string) bool {
-	if strings.Contains(request, "path") == false {
+func isValidSubscribeParams(request map[string]interface{}) bool {
+	if request["path"] == nil {
 		return false
 	}
-	if strings.Contains(request, "filter") == true {
-		return isValidSubscribeFilter(request)
+	if request["filter"] != nil {
+		return true
+//		return isValidSubscribeFilter(request)
 	}
 	return true
 }
 
-func isValidSubscribeFilter(request string) bool { // paths, history, timebased, range, change, curvelog, metadata supported
-	if isValidGetFilter(request) == true {
-		return true
-	}
-	if strings.Contains(request, "timebased") == true {
-		if strings.Contains(request, "parameter") == true && strings.Contains(request, "period") == true {
+func isValidSubscribeFilter(request map[string]interface{}) bool { // paths, timebased, range, change, curvelog supported
+	return true // needs to be fixed
+//	if strings.Contains(request, "paths") == true {
+	if request["paths"] != nil {
+//		if strings.Contains(request, "parameter") == true {
+		if request["parameter"] != nil {
 			return true
 		}
 	}
-	if strings.Contains(request, "range") == true {
-		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
-			strings.Contains(request, "boundary") == true {
+//	if strings.Contains(request, "timebased") == true {
+	if request["timebased"] != nil {
+//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "period") == true {
+		if request["parameter"] != nil && request["period"] != nil {
 			return true
 		}
 	}
-	if strings.Contains(request, "change") == true {
-		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
-			strings.Contains(request, "diff") == true {
+//	if strings.Contains(request, "range") == true {
+	if request["range"] != nil {
+//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
+//			strings.Contains(request, "boundary") == true {
+		if request["parameter"] != nil && request["logic-op"] != nil && request["boundary"] != nil {
 			return true
 		}
 	}
-	if strings.Contains(request, "curvelog") == true {
-		if strings.Contains(request, "parameter") == true && strings.Contains(request, "maxerr") == true &&
-			strings.Contains(request, "bufsize") == true {
+//	if strings.Contains(request, "change") == true {
+	if request["change"] != nil {
+//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
+//			strings.Contains(request, "diff") == true {
+		if request["parameter"] != nil && request["logic-op"] != nil && request["diff"] != nil {
+			return true
+		}
+	}
+//	if strings.Contains(request, "curvelog") == true {
+	if request["curvelog"] != nil {
+//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "maxerr") == true &&
+//			strings.Contains(request, "bufsize") == true {
+		if request["parameter"] != nil && request["maxerr"] != nil && request["bufsize"] != nil {
 			return true
 		}
 	}
 	return false
 }
 
-func isValidUnsubscribeParams(request string) bool {
-	return strings.Contains(request, "subscriptionId")
+func isValidUnsubscribeParams(request map[string]interface{}) bool {
+	return request["subscriptionId"] != nil
 }
 
-// Receives a request (json containing path, action, token, routerId....) and calls
-// the appropriate function to handle the request
-func serveRequest(request string, tDChanIndex int, sDChanIndex int) {
-	utils.Info.Printf("serveRequest():request=%s", request)
-	var requestMap = make(map[string]interface{})
-	if utils.MapRequest(request, &requestMap) != 0 {
-		utils.Error.Printf("serveRequest():invalid JSON format=%s", request)
-		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
-		return
-	}
-	if requestMap["action"] == nil || validRequest(request, requestMap["action"].(string)) == false {
+func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
+	if requestMap["action"] == nil || validRequest(requestMap) == false {
 		utils.Error.Printf("serveRequest():invalid action params=%s", requestMap["action"])
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	if requestMap["path"] != nil && strings.Contains(requestMap["path"].(string), "*") == true {
 		utils.Error.Printf("serveRequest():path contained wildcard=%s", requestMap["path"])
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	if requestMap["path"] != nil {
@@ -527,11 +541,11 @@ func serveRequest(request string, tDChanIndex int, sDChanIndex int) {
 	if requestMap["action"] == "set" && requestMap["filter"] != nil {
 		utils.Error.Printf("serveRequest():Set request combined with filtering.")
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	if requestMap["action"] == "unsubscribe" {
-		serviceDataChan[sDChanIndex] <- request
+		serviceDataChan[sDChanIndex] <- requestMap
 		return
 	}
 	issueServiceRequest(requestMap, tDChanIndex, sDChanIndex)
@@ -539,20 +553,20 @@ func serveRequest(request string, tDChanIndex int, sDChanIndex int) {
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
 	if requestMap["action"] == "internal-killsubscriptions" || requestMap["action"] == "internal-cancelsubscription" {
-		serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // internal message
+		serviceDataChan[sDChanIndex] <- requestMap // internal message
 		return
 	}
 	if requestMap["path"] == nil {
 		utils.Error.Printf("Unmarshal filter path array failed.")
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	rootPath := requestMap["path"].(string)
 	VSSTreeRoot := utils.SetRootNodePointer(rootPath)
 	if VSSTreeRoot == nil {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	var searchPath []string
@@ -571,7 +585,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 					if err != nil {
 						utils.Error.Printf("Unmarshal filter path array failed.")
 						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-						backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+						backendChan[tDChanIndex] <- errorResponseMap
 						return
 					}
 					for i := 0; i < len(searchPath); i++ {
@@ -599,13 +613,14 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 					delete(requestMap, "path")
 					delete(requestMap, "filter")
 					requestMap["ts"] = utils.GetRfcTime()
-					backendChan[tDChanIndex] <- utils.AddKeyValue(utils.FinalizeMessage(requestMap), "metadata", metadata)
+					requestMap["metadata"] = metadata
+					backendChan[tDChanIndex] <- requestMap
 					return
 				}
 				}
 				utils.Error.Printf("Metadata error")
 				utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-				backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+				backendChan[tDChanIndex] <- errorResponseMap
 				return
 			}
 		}
@@ -634,7 +649,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	}
 	if totalMatches == 0 {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	nodeType := utils.VSSgetType(searchData[0].NodeHandle)
@@ -645,7 +660,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	}
 	if requestMap["action"] == "set" && nodeType != utils.ACTUATOR {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Forbidden to write to read-only resource.") //invalid_data
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	paths = paths[:len(paths)-2]
@@ -679,12 +694,12 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		}
 		if errorCode != 0 {
 			setTokenErrorResponse(requestMap, errorCode)
-			backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+			backendChan[tDChanIndex] <- errorResponseMap
 			return
 		}
 	default: // should not be possible...
 		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-		backendChan[tDChanIndex] <- utils.FinalizeMessage(errorResponseMap)
+		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	if totalMatches == 1 {
@@ -697,12 +712,13 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	if gatingId != "" {
 		requestMap["gatingId"] = gatingId
 	}
-	serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap)
+	serviceDataChan[sDChanIndex] <- requestMap
 }
 
-func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) string {
+func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) map[string]interface{} {
 utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", requestMap["action"], nodeType)
 	var ftInitData utils.FileTransferCache
+	var responseMap map[string]interface{}
 	if requestMap["action"] == "set" && nodeType == utils.ACTUATOR { // download
 		var uidString string
 		ftInitData.UploadTransfer = false
@@ -713,10 +729,14 @@ utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", re
 		ftChannel <- ftInitData
 		ftInitData = <- ftChannel
 		if ftInitData.Status == 0 {
-			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "set", "ts": "` + utils.GetRfcTime() + `"}`
+			responseMap["RouterId"] = requestMap["RouterId"].(string)
+			responseMap["action"] = "set"
+			responseMap["ts"] = utils.GetRfcTime()
+			return responseMap
+//			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "set", "ts": "` + utils.GetRfcTime() + `"}`
 		} else {
 			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-			return utils.FinalizeMessage(errorResponseMap)
+			return errorResponseMap
 		}
 		
 	} else if requestMap["action"] == "get" && nodeType == utils.SENSOR { //upload
@@ -730,13 +750,19 @@ utils.Info.Printf("initiateFileTransfer: upload!!!")
 			ftInitData.Uid = [utils.UIDLEN]byte(uidByte)
 			ftChannel <- ftInitData
 			_ = <- ftChannel
-			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "get", "path":"` + path +
+			responseMap["RouterId"] = requestMap["RouterId"].(string)
+			responseMap["action"] = "get"
+			responseMap["path"] = path
+			responseMap["value"] = `{"name": "` + ftInitData.Name + `", "hash":"` + ftInitData.Hash + `","uid":"` + hex.EncodeToString(ftInitData.Uid[:]) + `"}`
+			responseMap["ts"] = utils.GetRfcTime()
+			return responseMap
+/*			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "get", "path":"` + path +
 				`", "value":{"name": "` + ftInitData.Name + `", "hash":"` + ftInitData.Hash + `","uid":"` + hex.EncodeToString(ftInitData.Uid[:]) + `"}, ` +
-				`"ts": "` + utils.GetRfcTime() + `"}`
+				`"ts": "` + utils.GetRfcTime() + `"}`*/
 		}
 	}
 	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-	return utils.FinalizeMessage(errorResponseMap)
+	return errorResponseMap
 }
 
 func calculateHash(fileName string) string {
@@ -790,15 +816,15 @@ func initChannels() {
 	ftChannel = make(chan utils.FileTransferCache)
 	serviceMgrChannel = make([]chan map[string]interface{}, 1)
 	serviceMgrChannel[0] = make(chan map[string]interface{})
-	serviceDataChan = make([]chan string, 1)
-	serviceDataChan[0] = make(chan string)
+	serviceDataChan = make([]chan map[string]interface{}, 1)
+	serviceDataChan[0] = make(chan map[string]interface{})
 	transportMgrChannel = make([]chan string, NUMOFTRANSPORTMGRS)
-	transportDataChan = make([]chan string, NUMOFTRANSPORTMGRS)
-	backendChan = make([]chan string, NUMOFTRANSPORTMGRS)
+	transportDataChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
+	backendChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
 	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
-	transportMgrChannel[i] = make(chan string)
-	transportDataChan[i] = make(chan string)
-	backendChan[i] = make(chan string)
+		transportMgrChannel[i] = make(chan string)
+		transportDataChan[i] = make(chan map[string]interface{})
+		backendChan[i] = make(chan map[string]interface{})
 	}
 	atsChannel = make([]chan string, 2)
 	atsChannel[0] = make(chan string) // access token verification
@@ -909,7 +935,10 @@ func main() {
 		case request := <-transportDataChan[3]: // request from gRPC mgr
 			serveRequest(request, 3, 0)
 		case gatingId := <-atsChannel[1]:
-			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
+//			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
+			var request map[string]interface{}
+			request["action"] = "internal-cancelsubscription"
+			request["gatingId"] = gatingId
 			serveRequest(request, 0, 0)
 			//  case request := <- transportDataChan[X]:  // implement when there is a Xth transport protocol mgr
 		}
