@@ -335,10 +335,10 @@ func replaceTs(respMessage string, messageTs string, tsList []string) string {
 		signedTimeDiffStr := signedTimeDiff(strconv.Itoa(int(diffMs)), diffMs)
 		if preIndex == 0 {
 			respMessage = strings.Replace(respMessage[:postIndex], tsList[i], signedTimeDiffStr, 1) + respFraction
+			postIndex -= len(tsList[i]) - len(signedTimeDiffStr)
 		} else {
-			respMessage = respFraction + strings.Replace(respMessage[:postIndex], tsList[i], signedTimeDiffStr, 1)
+			respMessage = respFraction + strings.Replace(respMessage[preIndex:], tsList[i], signedTimeDiffStr, 1)
 		}
-		postIndex -= len(tsList[i]) - len(signedTimeDiffStr)
 	}
 	return respMessage
 }
