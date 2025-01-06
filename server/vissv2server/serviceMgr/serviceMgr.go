@@ -77,6 +77,7 @@ type FeederPathElem struct {
 	Reference int
 }
 var feederPathList []FeederPathElem
+var feederConnected bool
 
 //var feederConn net.Conn
 //var hostIp string
@@ -617,6 +618,9 @@ func setVehicleData(path string, value string) string {
 			utils.Error.Printf("setVehicleData:Write failed, err = %s", err)
 			return ""
 		}*/
+		if !feederConnected {
+			return ""
+		}
 		message := `{"action": "set", "data": {"path":"` + path + `", "dp":{"value":"` + value + `", "ts":"` + ts + `"}}}`
 		toFeeder <- message
 		return ts
@@ -917,6 +921,26 @@ func getDataPack(pathArray []string, filterList []utils.FilterObject) string {
 	return dataPack
 }
 
+func getDataPackMap(pathArray []string) map[string]interface{} {
+	dataPack := make(map[string]interface{}, 0)
+	if len(pathArray) > 1 {
+		dataPackElement := make([]interface{}, len(pathArray))
+		for i := 0; i < len(pathArray); i++ {
+			dataPackElement[i] = map[string]interface{}{
+				"path":  pathArray[i],
+				"dp":  string2Map(getVehicleData(pathArray[i]))["s2m"],
+			}
+		}
+		dataPack["dpack"] = dataPackElement
+	} else {
+		dataPack["dpack"] = map[string]interface{}{
+				"path":  pathArray[0],
+				"dp":  string2Map(getVehicleData(pathArray[0]))["s2m"],
+		}
+	}
+	return dataPack
+}
+
 func getVssPathList(host string, port int, path string) []byte {
 	url := "http://" + host + ":" + strconv.Itoa(port) + path
 	utils.Info.Printf("url = %s", url)
@@ -1007,11 +1031,12 @@ func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeeder
 		udsConn = utils.GetUdsConn("*", "serverFeeder")
 		if udsConn == nil && attempts >= 10-1 {
 			utils.Error.Printf("feederFrontend:Failed to UDS connect to feeder.")
-			return // ???
+			return
 		}
 		attempts++
 		time.Sleep(3 * time.Second)
 	}
+	feederConnected = true
 	utils.Info.Printf("feederFrontend:Connected to feeder.")
 	configureDefault(udsConn)
 	fromFeeder := make(chan string)
@@ -1224,6 +1249,7 @@ func feederReader(udsConn net.Conn, fromFeeder chan string) {
 func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
+	feederConnected = false
 
 	utils.ReadUdsRegistrations("uds-registration.json")
 
@@ -1401,14 +1427,14 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 						break
 					}
 				}
-				dataPack := getDataPack(pathArray, filterList)
-				if len(dataPack) == 0 {
+				dataPack := getDataPackMap(pathArray)
+/*				if len(dataPack) == 0 {
 					utils.Info.Printf("No historic data available")
 					utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
 					dataChan <- errorResponseMap
 					break
-				}
-				responseMap["data"] = string2Map(dataPack)["s2m"]
+				}*/
+				responseMap["data"] = dataPack["dpack"]
 				dataChan <- responseMap
 			case "subscribe":
 				var subscriptionState SubscriptionState
@@ -1488,7 +1514,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			subscriptionMap["ts"] = utils.GetRfcTime()
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionState.RouterId
-			subscriptionMap["data"] = string2Map(getDataPack(subscriptionState.Path, nil))["s2m"]
+			subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
 			backendChan <- subscriptionMap
 		case clPack := <-CLChannel: // curve logging notification
 			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
@@ -1537,7 +1563,7 @@ func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []Subs
 				subscriptionMap["ts"] = utils.GetRfcTime()
 				subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 				subscriptionMap["RouterId"] = subscriptionState.RouterId
-				subscriptionMap["data"] = string2Map(getDataPack(subscriptionList[i].Path, nil))["s2m"]
+				subscriptionMap["data"] = getDataPackMap(subscriptionList[i].Path)["dpack"]
 				backendChan <- subscriptionMap
 			}
 		}

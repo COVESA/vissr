@@ -644,16 +644,16 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			pathLen := getPathLen(string(searchData[i].NodePath[:]))
 			paths += "\"" + string(searchData[i].NodePath[:pathLen]) + "\", "
 		}
+		if matches == 0 {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
 		totalMatches += matches
 		maxValidation = utils.GetMaxValidation(int(validation), maxValidation)
 	}
-	if totalMatches == 0 {
-		utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-		backendChan[tDChanIndex] <- errorResponseMap
-		return
-	}
 	nodeType := utils.VSSgetType(searchData[0].NodeHandle)
-	if strings.Contains (utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {
+	if strings.Contains (utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {  // path to struct def
 		response := initiateFileTransfer(requestMap, nodeType, searchPath[0])
 		backendChan[tDChanIndex] <- response
 		return
