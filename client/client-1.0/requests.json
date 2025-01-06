@@ -1,6 +1,6 @@
-{"request":[{"action":"get","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","requestId":"232"},
+{"request":[{"action":"get","path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen","requestId":"232"},
 {"action":"get","path":"Incorrect/Path","requestId":"1957"},
 {"action":"get","path":"Vehicle.Acceleration.Longitudinal","requestId":"233"},
-{"action":"get","path":"Vehicle/ADAS","filter":{"type":"paths","parameter":["ABS/*","CruiseControl/Error"]},"requestId":"237"},
-{"action":"set", "path":"Vehicle/Cabin/Door/Row1/Right/IsOpen", "value":"999", "requestId":"245"},
-{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/Right/IsOpen","filter":{"type":"timebased","parameter":{"period":"3"}},"requestId":"246"}]}
+{"action":"get","path":"Vehicle/ADAS","filter":{"variant":"paths","parameter":["ABS/*","CruiseControl/IsError"]},"requestId":"237"},
+{"action":"set", "path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen", "value":"true", "requestId":"245"},
+{"action":"subscribe","path":"Vehicle/Cabin/Door/Row1/DriverSide/IsOpen","filter":{"variant":"timebased","parameter":{"period":"3"}},"requestId":"246"}]}
