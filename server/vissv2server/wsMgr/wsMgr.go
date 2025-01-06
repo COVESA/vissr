@@ -313,6 +313,18 @@ func getDpTsList(dpMap interface{}) []string {
 func replaceTs(respMessage string, messageTs string, tsList []string) string {
 	tsRef, _ := time.Parse(time.RFC3339, messageTs)
 	refMs := tsRef.UnixMilli()
+	preIndex := 0
+	postIndex := len(respMessage)
+	var respFraction string
+	messageTsIndex := strings.Index(respMessage, messageTs)
+	if strings.Count(respMessage[:messageTsIndex], "{") == 1 {
+		preIndex = messageTsIndex
+		respFraction = respMessage[:preIndex]
+	} else {
+		messageTsIndex = strings.LastIndex(respMessage, messageTs)
+		postIndex = messageTsIndex
+		respFraction = respMessage[postIndex:]
+	}
 	for i := 0; i < len(tsList); i++ {
 		tsDp, _ := time.Parse(time.RFC3339, tsList[i])
 		dpMs := tsDp.UnixMilli()
@@ -320,21 +332,24 @@ func replaceTs(respMessage string, messageTs string, tsList []string) string {
 		if diffMs > 999999999 || diffMs < -999999999 {
 			continue  // keep iso time
 		}
-		if diffMs == 0 { // replace 2nd instance
-			firstTsIndex := strings.Index(respMessage, tsList[i]) + len(tsList[i]) + 1
-			respMessage = respMessage[:firstTsIndex] + strings.Replace(respMessage[firstTsIndex:], tsList[i], timeDiff(int(diffMs)), 1)
+		signedTimeDiffStr := signedTimeDiff(strconv.Itoa(int(diffMs)), diffMs)
+		if preIndex == 0 {
+			respMessage = strings.Replace(respMessage[:postIndex], tsList[i], signedTimeDiffStr, 1) + respFraction
 		} else {
-			respMessage = strings.Replace(respMessage, tsList[i], timeDiff(int(diffMs)), 1)
+			respMessage = respFraction + strings.Replace(respMessage[:postIndex], tsList[i], signedTimeDiffStr, 1)
 		}
+		postIndex -= len(tsList[i]) - len(signedTimeDiffStr)
 	}
 	return respMessage
 }
 
-func timeDiff(diffMs int) string {
+func signedTimeDiff(diffMsStr string, diffMs int64) string {
 	if diffMs > 0 {
-		return "-" + strconv.Itoa(diffMs)
+		return "-" + diffMsStr
+	} else if diffMs == 0 {
+		return "+" + diffMsStr
 	} else {
-		return "+" + strconv.Itoa(-diffMs)
+		return "+" + diffMsStr[1:]
 	}
 }
 
