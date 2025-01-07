@@ -19,10 +19,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"context"
+	"github.com/qri-io/jsonschema"
 )
 
 const IpModel = 0 // IpModel = [0,1,2] = [localhost,extIP,envVarIP]
 const IpEnvVarName = "GEN2MODULEIP"
+
+var jsonSchema *jsonschema.Schema
 
 // Access control values: none=0, write-only=1. read-write=2, consent +=10
 // matrix preserving inherited value with read-write having priority over write-only and consent over no consent
@@ -412,4 +416,41 @@ func NextQuoteMark(message []byte, offset int) int {
 		}
 	}
 	return offset
+}
+
+func JsonSchemaInit() {
+	if jsonSchema != nil {
+	Info.Printf("JSON schema already initiated")
+		return
+	}
+	jsonSchemaStr := readSchema()
+	if len(jsonSchemaStr) > 0{
+        	jsonSchema = jsonschema.Must(jsonSchemaStr) // jsonSchema string read from file
+		Info.Printf("JSON schema initiated")
+        }
+}
+
+func readSchema() string {
+	data, err := os.ReadFile("vissv3.0-schema.json")
+	if err != nil {
+		Error.Printf("JSON schema could not be read, error=%s", err)
+		return ""
+	}
+	return string(data)
+}
+
+func JsonSchemaValidate(request string) string {
+	errs, err := jsonSchema.ValidateBytes(context.Background(), []byte(request))
+	if err != nil {
+		return fixSyntax(err.Error())
+	}
+	if len(errs) > 0 {
+		return fixSyntax(errs[0].Error())
+	}
+	return ""
+}
+
+func fixSyntax(errMessage string) string {
+	errMessage = strings.Replace(errMessage, "/", "", -1)
+	return errMessage
 }

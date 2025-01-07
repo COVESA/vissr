@@ -112,14 +112,11 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 
 		case msg := <-transportMgrChannel:
 			utils.Info.Printf("request: %s", msg)
-var msgMap map[string]interface{}
-utils.MapRequest(msg, &msgMap)
+			var msgMap map[string]interface{}
+			utils.MapRequest(msg, &msgMap)
 			transportDataChannel <- msgMap // send request to server hub
-//			transportDataChannel <- msg // send request to server hub
 		case message := <-backendChannel:
-//			utils.Info.Printf("Transport mgr server: message= %s", message)
 			transportMgrChannel <- utils.FinalizeMessage(message)
-//			transportMgrChannel <- message
 		}
 	}
 }
@@ -406,143 +403,9 @@ func getTokenContext(reqMap map[string]interface{}) string {
 	return ""
 }
 
-func validRequest(request map[string]interface{}) bool {
-	switch request["action"].(string) {
-	case "get":
-		return isValidGetParams(request)
-	case "set":
-		return isValidSetParams(request)
-	case "subscribe":
-		return isValidSubscribeParams(request)
-	case "unsubscribe":
-		return isValidUnsubscribeParams(request)
-	case "internal-killsubscriptions":
-		return true
-	case "internal-cancelsubscription":
-		return true
-	}
-	return false
-}
-
-func isValidGetParams(request map[string]interface{}) bool {
-	if request["path"] == nil {
-		return false
-	}
-	if request["filter"] != nil {
-		return isValidGetFilter(request)
-	}
-	return true
-}
-
-func isValidGetFilter(request map[string]interface{}) bool { // paths, history, metadata supported
-	return true // needs to be fixed
-//	if strings.Contains(request, "paths") == true {
-	if request["paths"] != nil {
-//		if strings.Contains(request, "parameter") == true {
-		if request["parameter"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "history") == true {
-	if request["history"] != nil {
-//		if strings.Contains(request, "parameter") == true {
-		if request["parameter"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "metadata") == true {
-	if request["metadata"] != nil {
-//		if strings.Contains(request, "parameter") == true {
-		if request["parameter"] != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func isValidSetParams(request map[string]interface{}) bool {
-	return request["path"] != nil && request["value"] != nil
-}
-
-func isValidSubscribeParams(request map[string]interface{}) bool {
-	if request["path"] == nil {
-		return false
-	}
-	if request["filter"] != nil {
-		return true
-//		return isValidSubscribeFilter(request)
-	}
-	return true
-}
-
-func isValidSubscribeFilter(request map[string]interface{}) bool { // paths, timebased, range, change, curvelog supported
-	return true // needs to be fixed
-//	if strings.Contains(request, "paths") == true {
-	if request["paths"] != nil {
-//		if strings.Contains(request, "parameter") == true {
-		if request["parameter"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "timebased") == true {
-	if request["timebased"] != nil {
-//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "period") == true {
-		if request["parameter"] != nil && request["period"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "range") == true {
-	if request["range"] != nil {
-//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
-//			strings.Contains(request, "boundary") == true {
-		if request["parameter"] != nil && request["logic-op"] != nil && request["boundary"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "change") == true {
-	if request["change"] != nil {
-//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "logic-op") == true &&
-//			strings.Contains(request, "diff") == true {
-		if request["parameter"] != nil && request["logic-op"] != nil && request["diff"] != nil {
-			return true
-		}
-	}
-//	if strings.Contains(request, "curvelog") == true {
-	if request["curvelog"] != nil {
-//		if strings.Contains(request, "parameter") == true && strings.Contains(request, "maxerr") == true &&
-//			strings.Contains(request, "bufsize") == true {
-		if request["parameter"] != nil && request["maxerr"] != nil && request["bufsize"] != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func isValidUnsubscribeParams(request map[string]interface{}) bool {
-	return request["subscriptionId"] != nil
-}
-
 func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
-	if requestMap["action"] == nil || validRequest(requestMap) == false {
-		utils.Error.Printf("serveRequest():invalid action params=%s", requestMap["action"])
-		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-		backendChan[tDChanIndex] <- errorResponseMap
-		return
-	}
-	if requestMap["path"] != nil && strings.Contains(requestMap["path"].(string), "*") == true {
-		utils.Error.Printf("serveRequest():path contained wildcard=%s", requestMap["path"])
-		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-		backendChan[tDChanIndex] <- errorResponseMap
-		return
-	}
 	if requestMap["path"] != nil {
 		requestMap["path"] = utils.UrlToPath(requestMap["path"].(string)) // replace slash with dot
-	}
-	if requestMap["action"] == "set" && requestMap["filter"] != nil {
-		utils.Error.Printf("serveRequest():Set request combined with filtering.")
-		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- errorResponseMap
-		return
 	}
 	if requestMap["action"] == "unsubscribe" {
 		serviceDataChan[sDChanIndex] <- requestMap
@@ -554,12 +417,6 @@ func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanInde
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
 	if requestMap["action"] == "internal-killsubscriptions" || requestMap["action"] == "internal-cancelsubscription" {
 		serviceDataChan[sDChanIndex] <- requestMap // internal message
-		return
-	}
-	if requestMap["path"] == nil {
-		utils.Error.Printf("Unmarshal filter path array failed.")
-		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
 	rootPath := requestMap["path"].(string)

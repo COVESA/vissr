@@ -25,6 +25,7 @@ var clientBackendChan []chan string
 var wsClientIndex int
 const isClientLocal = false
 
+var errorResponseMap = map[string]interface{}{}
 /*
 * responseHandling values, instructs server about possible path compression:
 1: compress path, delete cache entry (get on single path)
@@ -366,6 +367,7 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.ReadTransportSecConfig()
 	initChannels()
 	initDcCache()
+	utils.JsonSchemaInit()
 	go utils.WsServer{ClientBackendChannel: clientBackendChan}.InitClientServer(utils.MuxServer[1], wsClientChan, mgrId, &wsClientIndex)
 	utils.Info.Println("WS manager data session initiated.")
 
@@ -397,7 +399,17 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-wsClientChan[18]: clientId = 18
 		case reqMessage = <-wsClientChan[19]: clientId = 19
 		}
-		checkCompressionRequest(reqMessage)
+		if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
+			validationError := utils.JsonSchemaValidate(reqMessage)
+			if len(validationError) > 0 {
+				var requestMap map[string]interface{}
+				utils.MapRequest(reqMessage, &requestMap)
+				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
+				wsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
+				continue
+			}
+			checkCompressionRequest(reqMessage)
+		}
 		utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
 	}
 }

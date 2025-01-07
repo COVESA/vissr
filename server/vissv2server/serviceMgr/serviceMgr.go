@@ -82,13 +82,7 @@ var feederConnected bool
 //var feederConn net.Conn
 //var hostIp string
 
-var errorResponseMap = map[string]interface{}{
-	"RouterId":  "0?0",
-	"action":    "unknown",
-	"requestId": "XX",
-	"error":     `{"number":AA, "reason": "BB", "message": "CC"}`,
-	"ts":        "yy",
-}
+var errorResponseMap = map[string]interface{}{}
 
 var dbHandle *sql.DB
 var dbErr error
@@ -1245,7 +1239,6 @@ func feederReader(udsConn net.Conn, fromFeeder chan string) {
 	}
 }
 
-//func ServiceMgrInit(mgrId int, serviceMgrChan chan string, stateStorageType string, histSupport bool, dbFile string) {
 func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
