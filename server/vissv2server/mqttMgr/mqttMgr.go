@@ -21,6 +21,8 @@ import (
 
 var mqttChannel chan string
 
+var errorResponseMap = map[string]interface{}{}
+
 type NodeValue struct {
 	topicId int
 	topic   string
@@ -47,7 +49,7 @@ func vissV2Receiver(transportMgrChan chan string, vissv2Channel chan string) {
 					break
 				}*/
 		response := <-transportMgrChan
-		utils.Info.Printf("MQTT mgr: Response from server core:%s\n", string(response))
+		utils.Info.Printf("MQTT mgr: Response from server core:%s", string(response))
 		vissv2Channel <- string(response) // send message to hub
 	}
 }
@@ -197,12 +199,17 @@ func extractVin(response string) string {
 func decomposeMqttPayload(mqttPayload string) (string, string) { // {"topic":"X", "request":"{...}"}
 	var payloadMap = make(map[string]interface{})
 	utils.MapRequest(mqttPayload, &payloadMap)
+	topic, err := json.Marshal(payloadMap["topic"])
+	if err != nil {
+		utils.Error.Printf("decomposeMqttPayload: cannot marshal topic in: %s", mqttPayload)
+		return "", ""
+	}
 	payload, err := json.Marshal(payloadMap["request"])
 	if err != nil {
-		utils.Error.Printf("decomposeMqttPayload: cannot marshal request in response=%s", mqttPayload)
-		os.Exit(1)
+		utils.Error.Printf("decomposeMqttPayload: cannot marshal request in:%s", mqttPayload)
+		return string(topic), "corrupt request"
 	}
-	return payloadMap["topic"].(string), string(payload)
+	return string(topic), string(payload)
 }
 
 func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
@@ -220,6 +227,8 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 	topicId := 0
 	topicList.nodes = 0
 
+	utils.JsonSchemaInit()
+
 	go vissV2Receiver(transportMgrChan, vissv2Channel) //message reception from server core
 
 	utils.Info.Println("**** MQTT manager hub entering server loop... ****")
@@ -229,13 +238,24 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 
 		case mqttPayload := <-mqttChannel:
 			topic, payload := decomposeMqttPayload(mqttPayload)
-			utils.Info.Printf("MQTT mgr hub: Message from broker:Topic=%s, Payload=%s\n", topic, payload)
+			if len(topic) == 0 {
+				utils.Error.Printf("MQTT: Message from broker is corrupt:%s\nNot possible to respond to client", mqttPayload)
+				continue
+			}
+			utils.Info.Printf("MQTT mgr hub: Message from broker:Topic=%s, Payload=%s", topic, payload)
+			validationError := utils.JsonSchemaValidate(payload)
+			if len(validationError) > 0 {
+				var requestMap map[string]interface{}
+				utils.MapRequest(payload, &requestMap)
+				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
+				publishMessage(brokerSocket, topic, utils.FinalizeMessage(errorResponseMap))
+			}
 			pushTopic(topic, topicId)
 			AddRoutingInfoAndForward(payload, mgrId, topicId, transportMgrChan)
 			topicId++
 
 		case vissv2Message := <-vissv2Channel:
-			utils.Info.Printf("MQTT hub: Message from VISSv2 server:%s\n", vissv2Message)
+			utils.Info.Printf("MQTT hub: Message from VISSv2 server:%s", vissv2Message)
 			// link routerId to topic, remove routerId from message, create mqtt message, send message to mqtt transport
 			payload, topicHandle := utils.RemoveInternalData(string(vissv2Message))
 			publishMessage(brokerSocket, getTopic(topicHandle), payload)

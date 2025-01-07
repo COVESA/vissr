@@ -94,12 +94,17 @@ func backendHttpAppSession(message string, w *http.ResponseWriter) {
 }
 
 func splitToPathQueryKeyValue(path string) (string, string, string) {
-	delim := strings.Index(path, "?")
-	if delim != -1 {
-		if path[delim+1] == 'f' {
-			return path[:delim], "filter", path[delim+8:] // path?filter=json-exp
-		} else if path[delim+1] == 'm' {
-			return path[:delim], "metadata", path[delim+10:] // path?metadata=static (or dynamic)
+	delim1 := strings.Index(path, "?")
+	if delim1 != -1 {
+		delim2 := strings.Index(path, "=")
+		if delim2 != -1 {
+			if path[delim1+1:delim2] == "filter" {
+				return path[:delim1], "filter", path[delim1+8:] // path?filter=json-exp
+			} else if path[delim1+1:delim2] == "metadata" {
+				return path[:delim1], "metadata", path[delim1+10:] // path?metadata=static (or dynamic)
+			} else {
+				return path[:delim1], "filter", "incorrect http query key"
+			}
 		}
 	}
 	return path, "", ""
