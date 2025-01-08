@@ -19,8 +19,8 @@ var commandStr []string
 func InitCommandStr() {
 	commandStr = make([]string, 4)
 
-	commandStr[0] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
-	commandStr[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"type":"paths","parameter":["Speed"]}, {"type":"timebased","parameter":{"period":"100"}}],"requestId":"286"}`
+	commandStr[0] = `{"action":"subscribe","path":"Vehicle","filter":[{"variant":"paths","parameter":["Speed"]}, {"variant":"timebased","parameter":{"period":"100"}}],"requestId":"285"}`
+	commandStr[1] = `{"action":"subscribe","path":"Vehicle","filter":[{"variant":"paths","parameter":["Speed"]}, {"variant":"timebased","parameter":{"period":"100"}}],"requestId":"286"}`
 }
 
 // grpc connection no tls
