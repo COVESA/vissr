@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-var grpcCompr utils.Compression
 var commandStr []string
 
 func InitCommandStr() {
@@ -46,12 +45,12 @@ func gRPCThread(done chan interface{}, wg *sync.WaitGroup, id int) error {
 	}
 
 	// setup grpc stream
-	client := pb.NewVISSv2Client(c)
+	client := pb.NewVISSClient(c)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	vssRequest := commandStr[0]
-	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest, grpcCompr)
+	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest)
 	stream, err := client.SubscribeRequest(ctx, pbRequest)
 	working := true
 
