@@ -243,9 +243,9 @@ func getProtoErrorMessage(messageErrorMap map[string]interface{}) *pb.ErrorRespo
 			reason := v.(string)
 			protoErrorMessage.Reason = &reason
 		}
-		if k == "message" {
-			message := v.(string)
-			protoErrorMessage.Message = &message
+		if k == "description" {
+			description := v.(string)
+			protoErrorMessage.Description = &description
 		}
 	}
 	return protoErrorMessage
@@ -808,6 +808,6 @@ func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
 func getJsonError(errorResponse *pb.ErrorResponseMessage) string {
 	number := errorResponse.GetNumber()
 	reason := errorResponse.GetReason()
-	message := errorResponse.GetMessage()
-	return `,"error":{"number":"` + number + `","reason":"` + reason + `","message":"` + message + `"}`
+	description := errorResponse.GetDescription()
+	return `,"error":{"number":"` + number + `","reason":"` + reason + `","description":"` + description + `"}`
 }

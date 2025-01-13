@@ -76,13 +76,7 @@ var serviceDataChan []chan map[string]interface{}
 
 var ftChannel chan utils.FileTransferCache
 
-var errorResponseMap = map[string]interface{}{
-	"RouterId":  0,
-	"action":    "unknown",
-	"requestId": "XXX",
-	"error":     `{"number":AAA, "reason": "BBB", "message": "CCC"}`,
-	"ts":        1234,
-}
+var errorResponseMap = map[string]interface{}{}
 
 func extractMgrId(routerId string) int { // "RouterId" : "mgrId?clientId"
 	delim := strings.Index(routerId, "?")
