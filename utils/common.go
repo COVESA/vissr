@@ -256,7 +256,7 @@ func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]inter
 	errMap := map[string]interface{}{
 		"number":  ErrorInfoList[errorListIndex].Number,
 		"reason":  ErrorInfoList[errorListIndex].Reason,
-		"message": errorMessage,
+		"description": errorMessage,
 	}
 	errRespMap["error"] = errMap
 	errRespMap["ts"] = GetRfcTime()
@@ -267,7 +267,7 @@ func FinalizeMessage(responseMap map[string]interface{}) string {
 	response, err := json.Marshal(responseMap)
 	if err != nil {
 		Error.Print("Server core-FinalizeMessage: JSON encode failed. ", err)
-		return `{"error":{"number":400,"reason":"JSON marshal error","message":""}}` //???
+		return `{"error":{"number":400,"reason":"JSON marshal error","description":""}}` //???
 	}
 	return string(response)
 }

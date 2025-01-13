@@ -146,7 +146,7 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 	default:
 		//		http.Error(w, "400 Unsupported method", http.StatusBadRequest)
 		Warning.Printf("Only GET and POST methods are supported.")
-		backendHttpAppSession(`{"error": "400", "reason": "Bad request", "message":"Unsupported HTTP method"}`, &w)
+		backendHttpAppSession(`{"error": "400", "reason": "Bad request", "description":"Unsupported HTTP method"}`, &w)
 		return
 	}
 	clientChannel <- AddKeyValue(FinalizeMessage(requestMap), queryKey, queryValue) // forward to mgr hub,
