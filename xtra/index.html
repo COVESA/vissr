@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="en" class="js csstransforms3d">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="description" content="">
+
+
+    <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
+
+    <title>VISSR Xtra Information :: COVESA VISSv2 Reference Implementation (vissr)</title>
+
+    
+    <link href="/vissr/css/nucleus.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1736776964" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1736776964" rel="stylesheet">
+    
+    <link href="/vissr/css/theme-blue.css?1736776964" rel="stylesheet">
+    
+    
+
+    <script src="/vissr/js/jquery-3.3.1.min.js?1736776964"></script>
+
+    <style>
+      :root #header + #content > #left > #rlblock_left{
+          display:none !important;
+      }
+      
+        :not(pre) > code + span.copy-to-clipboard {
+            display: none;
+        }
+      
+    </style>
+    
+  </head>
+  <body class="" data-url="/vissr/xtra/">
+    <nav id="sidebar" class="">
+
+
+
+  <div id="header-wrapper">
+    <div id="header">
+      <a id="logo" href="https://covesa.github.io/vissr/">
+  <img src="/vissr/images/vissv2.png">
+</a>
+
+    </div>
+    
+        <div class="searchbox">
+    <label for="search-by"><i class="fas fa-search"></i></label>
+    <input data-search-input id="search-by" type="search" placeholder="Search...">
+    <span data-search-clear=""><i class="fas fa-times"></i></span>
+</div>
+
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1736776964"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1736776964"></script>
+<script type="text/javascript">
+    
+        var baseurl = "https:\/\/covesa.github.io\/vissr\/";
+    
+</script>
+<script type="text/javascript" src="/vissr/js/search.js?1736776964"></script>
+
+    
+  </div>
+  
+
+    <div class="highlightable">
+    <ul class="topics">
+
+        
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/build-system/" title="VISSR Build System" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/build-system/">
+          VISSR Build System
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/build-system/hello-world/" title="VISSR Hello World example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/build-system/hello-world/">
+          VISSR Hello World example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/client/" title="VISSR Clients" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/client/">
+          VISSR Clients
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/datastore/" title="VISSR Data Storage" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/datastore/">
+          VISSR Data Storage
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/datastore/apache-iotdb/" title="VISSR Apache IoTDB" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/datastore/apache-iotdb/">
+          VISSR Apache IoTDB
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/datastore/memcached/" title="VISSR Memcached" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/datastore/memcached/">
+          VISSR Memcached
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/datastore/redis/" title="VISSR Redis" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/datastore/redis/">
+          VISSR Redis
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/datastore/sqlite/" title="VISSR SQLite" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/datastore/sqlite/">
+          VISSR SQLite
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/docker-step-by-step/" title="VISSR Docker" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/docker-step-by-step/">
+          VISSR Docker
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/feeder/" title="VISSR Feeders" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/feeder/">
+          VISSR Feeders
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/peripheral-components/" title="VISSR peripheral components" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/peripheral-components/">
+          VISSR peripheral components
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/pocs/" title="VISSR POCs" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/pocs/">
+          VISSR POCs
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/pocs/poc2/" title="Next POC..." class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/pocs/poc2/">
+          Next POC...
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/pocs/poc1/" title="Vehicle.Speed subscription example" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/pocs/poc1/">
+          Vehicle.Speed subscription example
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/server/" title="VISSR Server" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/server/">
+          VISSR Server
+          
+      </a>
+      
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/server/access-control-servers/" title="VISSR Access Control Servers" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/server/access-control-servers/">
+          VISSR Access Control Servers
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/server/binary-tree-config/" title="VISSR binary tree configuration" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/server/binary-tree-config/">
+          VISSR binary tree configuration
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/tools/" title="VISSR Tools" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/tools/">
+          VISSR Tools
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+          
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/xtra/" title="VISSR Xtra Information" class="dd-item
+        
+        active
+        
+        ">
+      <a href="/vissr/xtra/">
+          VISSR Xtra Information
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+          
+        
+    </ul>
+
+    
+    
+      <section id="shortcuts">
+        <h3>More</h3>
+        <ul>
+          
+              <li>
+                  <a class="padding" href="https://github.com/covesa/vissr"><i class='fab fa-github'></i> Github repo</a>
+              </li>
+          
+        </ul>
+      </section>
+    
+
+    
+    <section id="footer">
+      <p>Built with <a href="https://github.com/matcornic/hugo-theme-learn"><i class="fas fa-heart"></i></a> from <a href="https://getgrav.org">Grav</a> and <a href="https://gohugo.io/">Hugo</a></p>
+
+    </section>
+  </div>
+</nav>
+
+
+
+
+        <section id="body">
+        <div id="overlay"></div>
+        <div class="padding highlightable">
+              
+              <div>
+                <div id="top-bar">
+                
+                  
+                  
+                  
+                  <div id="top-github-link">
+                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/xtra/_index.md" target="blank">
+                      <i class="fas fa-code-branch"></i>
+                      <span id="top-github-link-text">Edit this page</span>
+                    </a>
+                  </div>
+                  
+                
+                
+                <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+                    <span id="sidebar-toggle-span">
+                        <a href="#" id="sidebar-toggle" data-sidebar-toggle="">
+                          <i class="fas fa-bars"></i>
+                        </a>
+                    </span>
+                  
+                  <span id="toc-menu"><i class="fas fa-list-alt"></i></span>
+                  
+                  <span class="links">
+                 
+                 
+                    
+          
+          
+            
+            
+          
+          
+            <a href='/vissr/'>COVESA Vehicle Information Service Specification version 3 Reference Implementation Tutorial</a> > VISSR Xtra Information
+          
+        
+          
+        
+                 
+                  </span>
+                </div>
+                
+                    <div class="progress">
+    <div class="wrapper">
+<nav id="TableOfContents">
+  <ul>
+    <li>
+      <ul>
+        <li><a href="#using-docker-compose-to-launch-a-vissr-instance">Using Docker-Compose to launch a vissr instance</a></li>
+      </ul>
+    </li>
+  </ul>
+
+  <ul>
+    <li><a href="#web-client-integration">Web Client Integration</a></li>
+    <li><a href="#multi-process-vs-single-process-server-implementation">Multi-process vs single-process server implementation</a></li>
+  </ul>
+
+  <ul>
+    <li><a href="#transport-managers-and-interface">Transport managers and interface.</a></li>
+    <li><a href="#tree-manager-and-interface">Tree manager and interface</a></li>
+    <li><a href="#service-managers-and-interface">Service managers and interface</a></li>
+    <li><a href="#server-core">Server core</a>
+      <ul>
+        <li></li>
+      </ul>
+    </li>
+  </ul>
+
+  <ul>
+    <li><a href="#vss-tree">VSS tree</a></li>
+    <li><a href="#vss-data-sources">VSS data sources</a></li>
+    <li><a href="#payload-encoding">Payload encoding</a></li>
+    <li><a href="#access-control">Access control</a></li>
+  </ul>
+</nav>
+    </div>
+</div>
+
+                
+              </div>
+            </div>
+            
+        <div id="head-tags">
+        
+        </div>
+        
+        <div id="body-inner">
+          
+            <h1>
+              
+              VISSR Xtra Information
+            </h1>
+          
+
+        
+
+
+
+	<p>Extra information about assorted topics.</p>
+<h3 id="using-docker-compose-to-launch-a-vissr-instance">Using Docker-Compose to launch a vissr instance</h3>
+<h1 id="1-server">1. server</h1>
+<p>A simple process is followed where work packages are create as issues labeled as an implementation issue. The name of the issue is also the name of the branch which is used for implementation. A pull request is created when the task is finished to push the changes to the main branch.</p>
+<ol>
+<li>Create implementation issue</li>
+<li>Branch using the name of the issue</li>
+<li>Implement and test</li>
+<li>Merge main to local branch</li>
+<li>Create PR</li>
+<li>Gate keepers review and merge to main branch.
+<ul>
+<li>current gate keepers: (peter winzell,Ulf Bjorkengren)</li>
+</ul>
+</li>
+</ol>
+<h2 id="web-client-integration">Web Client Integration</h2>
+<p>A Web Client written in JS developed by <!-- raw HTML omitted -->NICS Lab<!-- raw HTML omitted --> is integrated for testing purposes. It supports AGT, AT and VISS requests. It is also able to generate and store Cryptographic Keys that can be used in the Long Term flow and provides a storage and visualizer for Tokens received.</p>
+<p>The WebSocket Handler serves the web client in the URL /webclient. Because of that, it can be accessed in any Web Browser supporting the used libraries in: http://viss-server-url:websocket-port/webclient.</p>
+<p>More information about the Web Client can be found in <a href="https://github.com/nicslabdev/viss-web-client">https://github.com/nicslabdev/viss-web-client</a>.</p>
+<p>Since the Web Client is included as a submodule, in order to use it, submodules in the project must be initialized:</p>
+<pre tabindex="0"><code>    $ git submodule init
+    $ git submodule update
+</code></pre><p>The version of the Web Client used is the latest tested. In order to use the latest version of the Web Client avaliable on github, the flag remote must be used to fetch and ensure that the latest commit of the <!-- raw HTML omitted -->Web Client repository <!-- raw HTML omitted --> is used.</p>
+<pre tabindex="0"><code>    $ git submodule update --recursive --remote
+</code></pre><p>The client can also be accessed in &ldquo;<a href="https://nicslabdev.github.io/viss-web-client/%22">https://nicslabdev.github.io/viss-web-client/&quot;</a>. In order to use the web client provided in that link, CORS policies in the VISS server should be configured to allow requests from that URL.</p>
+<h2 id="multi-process-vs-single-process-server-implementation">Multi-process vs single-process server implementation</h2>
+<p>The components mentioned above that together realizes the server is available in two different implementations:</p>
+<ul>
+<li>Components are built and deployed as separate processes/binaries, and communicate using Websocket.<!-- raw HTML omitted --></li>
+<li>Components are built and deployed as threads within one common process/binary, and communicate using Go channels.<!-- raw HTML omitted --></li>
+</ul>
+<p>These implementations are found at the branches multi-process and single-process, respectively.
+The master branch is a fork from the single-process branch.</p>
+<h1 id="server-software-architecture">Server software architecture</h1>
+<p>The server consists of the following &ldquo;actors&rdquo;:</p>
+<ul>
+<li>Core server</li>
+<li>HTTP manager</li>
+<li>Websocket manager</li>
+<li>MQTT manager</li>
+<li>gRPC manager</li>
+<li>Vehicle service manager</li>
+<li>Access Grant token server</li>
+<li>Access Token server</li>
+</ul>
+<p>The server functionality has a complexity level that warrants some thoughts on how a good software architecture could look like.
+Figure 1 is the current proposal on this.<!-- raw HTML omitted -->
+<img src="pics/common_server_swa.png?raw=true" alt="Software architecture"><!-- raw HTML omitted -->
+*Fig 1. Software architecture overview</p>
+<p>The design tries to meet the following requirements:</p>
+<ul>
+<li>Abstract the details of how the service managers access the data that is represented in the tree.</li>
+<li>Support straightforward addition of further transport protocols.</li>
+<li>Support straightforward addition of further service managers.</li>
+<li>Support both the case of a singleton server through which all access goes, and the option of distributed servers that a client can access directly, after the initial service discovery.
+The following describes the components shown in Figure 1.</li>
+</ul>
+<h2 id="transport-managers-and-interface">Transport managers and interface.</h2>
+<p>The transport manager is responsible for that the VISS v2 client-server communication is carried out according to the transport protocol the manager implements. The payload being communicated shall have the format specified in the W3C VISS v2 TRANSPORT document. A transport manager acts as a proxy between a client and the Server core, see Figure 2. The payload communicated over the Transport interface shall be identical regardless of which Transport manager the Core server communicates with. This payload shall therefore follow the format for the Websocket transport as specified in W3C VISS v2 TRANSPORT. This means that all transport managers except the Websocket transport manager must reformat the payload communicated over their respective transport protocol. The transport interface is divided into two components, a registration interface, and a data channel interface. The registration interface is used by a transport manager to register itself with the Server core. The data channel interface is used for exchanging the requests, responses, and notifications between the communication end points. The data channel must support bidirectional asynchronous communication, and should support both local and remote transport manager deployment.
+At the registration with the core server the transport manager receives a transport manager Id. It must then include this in all payloads forwarded to the core server, for the core server to use in its payload routing. The transport manager must also include a client Id in the payload, to enable its own routing to different app-clients. These Ids must not be part of the payload returned to the app-clients.
+<img src="pics/transport_closeup.png?raw=true" alt="Transport closeup"><!-- raw HTML omitted -->
+*Fig 2. Transport SwA closeup</p>
+<h2 id="tree-manager-and-interface">Tree manager and interface</h2>
+<p>The tree representing the accessible data points is found on the COVESA VSS Github. There is also found a basic tree manager from which the basis of this tree manager is cloned.
+The tree manager abstracts the details of the tree, e. g. its format, which through the VSS tool support can be e. g.  JSON, CSV, or c-native (c.f. VSS). It provides a method for searching the tree, to verify that a given path has a match in the tree, or to find all paths matching a path including wild cards. It also supports access to node internal data associated to a node reference provided by a previous search.
+<img src="pics/tree_closeup.png?raw=true" alt="Tree closeup"><!-- raw HTML omitted -->
+*Fig 3. Tree SwA closeup</p>
+<h2 id="service-managers-and-interface">Service managers and interface</h2>
+<p>Although the service manager internal design is anticipated to substantially differ between OEMs, the internal design in this project follows the architecture of the <!-- raw HTML omitted -->COVESA CCS project<!-- raw HTML omitted --> with a &ldquo;state storage&rdquo; component as the interface that the service manager interacts with. The service manager interface described here should however be common for all implementations.<!-- raw HTML omitted -->A service manager must first register with the Server core, in which it provides the path from tree root to the node that is the root node of the branches &lsquo;owned&rsquo; by this service manager. This means that the existing tree must already be populated with the branches of this service manager. A possible later extension is to allow the service manager to provide new branches to be added to the tree. Another extension could be for the service manager to also provide information whether it supports direct client access (distributed server solution), or not. But this is not supported in the current version. The service manager acts as the server in the data channel communication with the server core, so it shall provide the server core with port number and URL path at the registration.
+The service interface payload shall follow the same format as the transport protocol. However, client requests related to authorize and service discovery actions terminate at the Server core, and should not be issued at this interface, i. e. only requests related to get/set/subscribe/unsubscribe should be communicated here. App-client requests may lead to requests on multiple data points, which shall be resolved by the server core, and over this interface be replaced by an array of fully qualified paths. The subsequent response, or subscription notification, shall contain data from all nodes addressed in the array.
+The service interface is divided into two components, a registration interface, and a data channel interface. The registration interface is used by a service manager to register itself with the Server core. The data channel interface is used for exchanging the requests, responses, and notifications between the communication end points. The data channel must support bidirectional asynchronous communication, and should support both local and remote service manager deployment.
+In this design it is the state-storage responsibility to map the VSS path expressions to whatever vehicle internal addressing scheme that is required to execute the requested data access. It is the responsibility of the service manager to interpret the filter instructions in a subscription request, and make sure these are followed in subsequent notifications to the client.
+<img src="pics/service_closeup.png?raw=true" alt="Service closeup"><!-- raw HTML omitted -->
+*Fig 4. Service SwA closeup</p>
+<h2 id="server-core">Server core</h2>
+<p>The Server core is the like the spider in the net, tying it all together. Its main tasks are:</p>
+<ol>
+<li>Handle registrations by transport managers and service managers.</li>
+<li>Payload analysis.</li>
+<li>Message routing.</li>
+<li>Access restriction management.</li>
+<li>Service discovery response.</li>
+</ol>
+<h4 id="1-payload-analysis">1. Payload analysis</h4>
+<p>As not all messages shall lead to a forwarded request to a related service manager, the Server core must analyze the requested action, and act according to it.</p>
+<h4 id="2-message-routing">2. Message routing</h4>
+<p>The Server core must keep track of from which transport manager a request message was received, in order to return the response to the same transport manager. The core server therefore provides the transport manager with an Id at the registration, which it then will embed in all requests forwarded to the server core. As the transport manager itself needs to route payloads back to respective app-client, it also embeds a client Id in the payload. These two Ids shall follow the payload to the service manager, which then must embed it in its responses and notifications sent back to the core server. It is the responsibility of the transport manager to remove the Ids before returning payloads to an app-client.</p>
+<h4 id="3-access-restriction-management">3. Access restriction management</h4>
+<p>The Server core shall always check a tree node for which a client is requesting access to find out whether there is access restrictions tied to it. If so, it shall act as described in the VISSv2 CORE document.
+The authorization solution used in this project may not meet the security robustness required in a real life deployment. It shall however follow the access control model as described in the VISSvs specification.</p>
+<h4 id="4-service-discovery-response">4. Service discovery response</h4>
+<p>The response of a service discovery client request shall contain a JSON formatted tree containing all nodes under the tree node pointed to by the path. It is the responsibility of the Server core to use the tree interface to read node data for all nodes of this sub-tree, and format it into a JSON tree object to be returned to the client.
+<img src="pics/server_core_closeup.png?raw=true" alt="Server core closeup"><!-- raw HTML omitted -->
+*Fig 5. Server core SwA closeup</p>
+<h1 id="server-configurations">Server configurations</h1>
+<h2 id="vss-tree">VSS tree</h2>
+<p>The vehicle signals that the Covesa VISS v2 server manages are defined in the &ldquo;vss_vissv2.binary&rdquo; file in the vissv2server directory. New binary files containing the latest verision on the VSS repo can be generated by cloning the <!-- raw HTML omitted -->Vehicle Signal Specification<!-- raw HTML omitted --> repo, and then issuing a &ldquo;make binary&rdquo; command, see <!-- raw HTML omitted -->Tools usage<!-- raw HTML omitted -->.<!-- raw HTML omitted -->
+To use other formats. e. g. JSON, the vssparserutilities.c found in the c_native directory at the <!-- raw HTML omitted -->VSS Tools<!-- raw HTML omitted --> repo would have to implemented for that format (instead of the binary format that it currently implements). The major parts to be reimplemented are the file read/write methods, and the &ldquo;atomic&rdquo; data access methods. Other methods, like the search method use these atomic methods for actual data access. This file would then have to replace the current vssparserutilities.c in the server_core directory.</p>
+<h2 id="vss-data-sources">VSS data sources</h2>
+<p>The service manager implementation tries to open the file &ldquo;statestorage.db&rdquo; in the service_mgr directory. If this file exists, the service manager will then try to read the signals being addressed by the paths in client requests from this file. The file is an SQL database containing a table with a column for VSS paths, and a column for the data associated with the path. If there is no match, or if the database file was not found at server startup, then the service manager will instead generate a dummy value to be returned in the response. Dummy values are always an integer in the range from 0 to 999, from a counter that is incremented every 37 msec.<!-- raw HTML omitted -->
+New statestorage.db files can be generated by cloning the <!-- raw HTML omitted -->CCS-COVESA-Client<!-- raw HTML omitted --> repo, and then run the statestorage manager, see the statestorage directory. It is then important that the &ldquo;vsspathlist.json&rdquo; file being read by the statestorage manager is copied from the server directoy of this repo, where it becomes generated by the Covesa VISS v2 server at startup (from the data in the &ldquo;vss_Covesa VISS v2.binary&rdquo; file, and that the new statestorage database is populated with actual data, either in real time when running the W3C VISS v2 server, or preloaded with static data. The statestorage architecture allows one or more &ldquo;feeders&rdquo; to write data into the database, and also provides a translation table that can be preloaded for translating from a &ldquo;non-VSS&rdquo; address space to the VSS addres space (=VSS paths).</p>
+<h2 id="payload-encoding">Payload encoding</h2>
+<p>A reference payload encoding is implemented that compresses the COVESA VISS v2 transport payloads with a ratio of around 450% to 700%.<!-- raw HTML omitted -->
+The encoding is currently only possible to activate over the WebSocket transport protocol, but it would also be possible to invoke over the HTTP protocol.
+To invoke it a client must set the sub-protocol to &ldquo;W3C VISS v2c&rdquo;, in JS something like<!-- raw HTML omitted --></p>
+<pre tabindex="0"><code> socket = new WebSocket(&#34;ws://url-to-server:8080&#34;, &#34;W3C VISS v2c&#34;);
+</code></pre><p>For unencoded WebSocket sessions, the sub-protocol shall be set to &ldquo;W3C VISS v2&rdquo;, or left out completely.<!-- raw HTML omitted -->
+The encoding uses both a lookup table to replace known data (paths, and other fixed key-values), removal of rule-based JSON reserved characters, and binary compression of actual data.<!-- raw HTML omitted -->
+The mechanism of using the sub-protocol parameter to invoke encoding scheme can easily be extended to use other compression schemes.
+For more information about the reference encoding, see README in the utils directory.</p>
+<h2 id="access-control">Access control</h2>
+<p>The access control model in the Covesa VISS v2 specification is supported, with the exception of the authentication step.
+The implementation would not pass a security check, for eample the shared key for token signature verification is hardcoded with a redable text as value.
+The access control model architecture is shown below.
+<img src="pics/W3C_VISS_v2_access_control_model.png?raw=true" alt="Access control architecture">
+More information about how the Access Control is performed can be found in the agt_server and at_server README. The WebClient README also includes information about how the Access Control is performed.
+The README in the client/client-1.0/Javascript directory describes the requests a client must issue first to the Access Grant Token server,
+and then to the Access Token server in order to obtain an Access token.<!-- raw HTML omitted -->
+HTML client implementations for respective access can also be found in the directory.</p>
+
+
+
+
+
+<footer class=" footline" >
+	
+</footer>
+
+        
+        </div>
+        
+
+      </div>
+
+    <div id="navigation">
+        
+        
+
+        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                        
+                        
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                        
+                    
+                    
+
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+                        
+            
+            
+                
+                    
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+
+        
+
+
+	 
+	 
+		
+			<a class="nav nav-prev" href="/vissr/tools/" title="VISSR Tools"> <i class="fa fa-chevron-left"></i></a>
+		
+		
+			<a class="nav nav-next" href="/vissr/build-system/" title="VISSR Build System" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+		
+	
+    </div>
+
+    </section>
+
+    <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
+      <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
+    </div>
+    <script src="/vissr/js/clipboard.min.js?1736776964"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1736776964"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1736776964"></script>
+    <script src="/vissr/js/jquery.sticky.js?1736776964"></script>
+    <script src="/vissr/js/featherlight.min.js?1736776964"></script>
+    <script src="/vissr/js/highlight.pack.js?1736776964"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1736776964"></script>
+    <script src="/vissr/js/learn.js?1736776964"></script>
+    <script src="/vissr/js/hugo-learn.js?1736776964"></script>
+    
+        
+            <script src="/vissr/mermaid/mermaid.js?1736776964"></script>
+        
+        <script>
+            mermaid.initialize({ startOnLoad: true });
+        </script>
+    
+    
+
+  </body>
+</html>
