@@ -305,6 +305,9 @@ func analyzeSignalDimensions(paths []string, signalDimensionList *SignalDimensio
 		pathDimList[i].Id = -1
 		pathDimList[i].Populated = false
 	}
+	if signalDimensionList == nil {
+		return pathDimList
+	}
 	for i := 0; i < len(paths); i++ {
 		if is2dim(paths[i], 1, signalDimensionList.dim2List) == true {
 			for j := i + 1; j < len(paths); j++ {
