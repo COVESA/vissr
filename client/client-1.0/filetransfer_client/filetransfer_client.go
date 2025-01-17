@@ -223,8 +223,7 @@ func downloadFile(dlFile string, numOfChunks int, ctrlChannel chan string, dataC
 	fileSize := getFileSize(file)
 	readBuffer := make([]byte, fileSize/numOfChunks+1)
 	uid := "1d878212"  //TODO: random generation
-	ctrlChannel <- `{"action": "set","path": "Vehicle.DownloadFile","value":{"name": "` + dlFile + `", "hash":"` + hash + `","uid":"` + uid + `"},` +
-			 ` "ts": "` + utils.GetRfcTime() + `"}`
+	ctrlChannel <- `{"action": "set","path": "Vehicle.DownloadFile","value":{"name": "` + dlFile + `", "hash":"` + hash + `","uid":"` + uid + `"}}`
 	ctrlResp := <-ctrlChannel
 	if strings.Contains(ctrlResp, "error") {
 		utils.Error.Printf("Server responded with error message=%s", ctrlResp)
@@ -243,6 +242,10 @@ func downloadFile(dlFile string, numOfChunks int, ctrlChannel chan string, dataC
 		mNo, status := decodeDlResponse(dataResp)
 		if status == byte(0x00) && mNo == messageNo {
 			messageNo += 1
+		} else if status == byte(0xFF) {
+			utils.Error.Printf("Session terminated due to server status response=0xFF")
+			sessionDone = true  // terminate session
+			continue
 		} else {
 			messageNo = mNo
 			// rewind file
@@ -315,7 +318,14 @@ func equalByteArray(array1 []byte, array2 []byte) bool {
 
 func getFileDescriptorData(value interface{}) (string, string, string) { // {"name": "xxx","hash": "yyy","uid": "zzz"}
 	var name, hash, uid string
-	for k, v := range value.(map[string]interface{}) {
+	var valueMap map[string]interface{}
+	switch value.(type) {
+		case string:
+			utils.MapRequest(value.(string), &valueMap)
+		case map[string]interface{}:
+			valueMap = value.(map[string]interface{})
+	}
+	for k, v := range valueMap {
 		switch vv := v.(type) {
 		case string:
 //			utils.Info.Println(k, "is string", vv)

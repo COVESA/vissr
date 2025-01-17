@@ -567,9 +567,9 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 }
 
 func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) map[string]interface{} {
-utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", requestMap["action"], nodeType)
+//utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", requestMap["action"], nodeType)
 	var ftInitData utils.FileTransferCache
-	var responseMap map[string]interface{}
+	var responseMap = map[string]interface{}{}
 	if requestMap["action"] == "set" && nodeType == utils.ACTUATOR { // download
 		var uidString string
 		ftInitData.UploadTransfer = false
@@ -584,7 +584,6 @@ utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", re
 			responseMap["action"] = "set"
 			responseMap["ts"] = utils.GetRfcTime()
 			return responseMap
-//			return `{"RouterId": "` + requestMap["RouterId"].(string) + `"action": "set", "ts": "` + utils.GetRfcTime() + `"}`
 		} else {
 			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
 			return errorResponseMap
@@ -592,7 +591,6 @@ utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", re
 		
 	} else if requestMap["action"] == "get" && nodeType == utils.SENSOR { //upload
 		if requestMap["path"] != nil {
-utils.Info.Printf("initiateFileTransfer: upload!!!")
 			path := requestMap["path"].(string)
 			ftInitData.UploadTransfer = true
 			ftInitData.Path, ftInitData.Name = getInternalFileName(path)
