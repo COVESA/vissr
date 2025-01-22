@@ -1464,12 +1464,11 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 					if ok == true {
 						status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
 						if status != -1 {
-							responseMap["subscriptionId"] = subscriptId
 							dataChan <- responseMap
 							toFeeder <- utils.FinalizeMessage(requestMap)
 							break
 						}
-						requestMap["subscriptionId"] = subscriptId
+						delete(requestMap, "subscriptionId")
 					}
 				}
 				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
