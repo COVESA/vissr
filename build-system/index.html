@@ -12,22 +12,22 @@
     <title>VISSR Build System :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1737120902" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1737120902" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1737556141" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1737556141" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1737120902" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1737556141" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1737120902"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1737556141"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1737120902"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1737120902"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1737556141"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1737556141"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1737120902"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1737556141"></script>
 
     
   </div>
@@ -683,6 +683,7 @@
     <li><a href="#building-and-running">Building and running</a>
       <ul>
         <li><a href="#logging">Logging</a></li>
+        <li><a href="#testing">Testing</a></li>
         <li><a href="#transport-protocols">Transport protocols</a></li>
         <li><a href="#go-modules">Go modules</a></li>
       </ul>
@@ -752,19 +753,39 @@ If it says &ldquo;package main&rdquo; it is a separate executable and shall then
 <li>logging output destination. It can either be written to file, or directed to standard output.</li>
 </ul>
 <p>The levels currently used are mainly info, warning, error. Info is appropriate during testing and debugging, while error is appropriate when performance is important.</p>
-<h3 id="transport-protocols">Transport protocols</h3>
-<p>Besides the transport protocols</p>
+<h3 id="testing">Testing</h3>
+<p>If modifications of the server code base is done it is recommended that the following test routine is performed before pushing
+any commits to this repo.
+To test the &ldquo;VISSR tech stack&rdquo;, the server together with data store and feeder, the runtest.sh is available in the root directory.
+This bash script starts the server and the feederv3 in the background, and then the testClient is started in the terminal window.
+The testClient reads the testRequests.json file for the requests it will issue to the different transport protocols,
+and then it prints the requests and the responses in the terminal window.
+After each set of test requests for the same transport protocol it will wait until the keyboard return key is received,
+allowing the operator to gett time to inspect the request/response logs before continuing.
+When the MQTT protocol is run, the test.mosquitto.org broker is used which may lead to latencies between request and response.
+In that case the testClient prompt for reading the return key may be found mixed into the log prints,
+but hitting the return key will still make it continue.
+If some logdata looks incorrect the operator can hit ctrl-C to terminate the testClient
+and instead inspect the log files for the server and the feeder, found in the log directory of their respective start directories.
+It is up to the operator to evaluate whether the logs look correct or not,
+so it might be a good idea to run the script before doing any modifications lo learn how correct logs looks like.</p>
+<p>Issue the following command in the root directory to run the tests:</p>
+<pre tabindex="0"><code>$ ./runtest.sh startme
+</code></pre><p>When the testing is completed the script should be run to terminate the server and feeder processes:</p>
+<pre tabindex="0"><code>$ ./runtest.sh stopme
+</code></pre><h3 id="transport-protocols">Transport protocols</h3>
+<p>The following transport protocols are supported</p>
 <ul>
 <li>HTTP</li>
-<li>Websocke</li>
-<li>MQTT
-that the specification lists, this server also supports</li>
-<li>gRPC
-They are all except MQTT activated by the server per default.
-To enable MQTT, or disable any other, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
-separate threads by the main server process, and these can be commented in or out before building the server.
-For the server to be operationable, the service manager, and at least one transport protocol must not be commented out.</li>
+<li>Websocket</li>
+<li>MQTT</li>
+<li>gRPC</li>
 </ul>
+<p>They are all except MQTT enabled by the server per default.</p>
+<p>To enable MQTT add the CLI command &ldquo;-m&rdquo; when starting the VISS server.</p>
+<p>To disable any other protocol, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
+separate threads by the main server process, and these can be commented out before building the server.
+For the server to be operationable, the service manager, and at least one transport protocol must not be commented out.</p>
 <h3 id="go-modules">Go modules</h3>
 <p>Go modules are used in multiple places in this project, below follows some commands that may be helpful in managing  this.</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ go mod tidy
@@ -1152,19 +1173,19 @@ the remotiveLabs broker in the cloud.<a href="https://github.com/covesa/vissr/tr
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1737120902"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1737120902"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1737120902"></script>
-    <script src="/vissr/js/jquery.sticky.js?1737120902"></script>
-    <script src="/vissr/js/featherlight.min.js?1737120902"></script>
-    <script src="/vissr/js/highlight.pack.js?1737120902"></script>
+    <script src="/vissr/js/clipboard.min.js?1737556141"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1737556141"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1737556141"></script>
+    <script src="/vissr/js/jquery.sticky.js?1737556141"></script>
+    <script src="/vissr/js/featherlight.min.js?1737556141"></script>
+    <script src="/vissr/js/highlight.pack.js?1737556141"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1737120902"></script>
-    <script src="/vissr/js/learn.js?1737120902"></script>
-    <script src="/vissr/js/hugo-learn.js?1737120902"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1737556141"></script>
+    <script src="/vissr/js/learn.js?1737556141"></script>
+    <script src="/vissr/js/hugo-learn.js?1737556141"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1737120902"></script>
+            <script src="/vissr/mermaid/mermaid.js?1737556141"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
