@@ -11,7 +11,7 @@ package utils
 import (
 	"encoding/json"
 	pb "github.com/covesa/vissr/grpc_pb"
-	"strconv"
+//	"strconv"
 )
 
 func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage) string {
@@ -167,7 +167,7 @@ func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[strin
 		filter := messageMap["filter"]
 		switch vv := filter.(type) {
 		case []interface{}:
-			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
+//			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
 			if len(vv) != 2 {
 				Error.Printf("Max two filter expressions are allowed.")
 				break
@@ -179,7 +179,7 @@ func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[strin
 			createPbFilter(0, vv[0].(map[string]interface{}), protoMessage.Filter)
 			createPbFilter(1, vv[1].(map[string]interface{}), protoMessage.Filter)
 		case map[string]interface{}:
-			Info.Println(vv, "is a map:")
+//			Info.Println(vv, "is a map:")
 			protoMessage.Filter = &pb.FilterExpressions{}
 			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 1)
 			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
@@ -235,7 +235,7 @@ func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[str
 func getProtoErrorMessage(messageErrorMap map[string]interface{}) *pb.ErrorResponseMessage {
 	protoErrorMessage := &pb.ErrorResponseMessage{}
 	for k, v := range messageErrorMap {
-		//Info.Println("key=",k, "v=", v)
+//		Info.Println("key=",k, "v=", v)
 		if k == "number" {
 			protoErrorMessage.Number = v.(string)
 		}
@@ -354,13 +354,13 @@ func getPbPathsFilterValue(filterValueExpression interface{}) *pb.FilterExpressi
 	var protoPathsValue pb.FilterExpressions_FilterExpression_FilterValue_PathsValue
 	switch vv := filterValueExpression.(type) {
 	case []interface{}:
-		Info.Println(filterValueExpression, "is a string array:, len=", strconv.Itoa(len(vv)))
+//		Info.Println(filterValueExpression, "is a string array:, len=", strconv.Itoa(len(vv)))
 		protoPathsValue.RelativePath = make([]string, len(vv))
 		for i := 0; i < len(vv); i++ {
 			protoPathsValue.RelativePath[i] = vv[i].(string)
 		}
 	case string:
-		Info.Println(filterValueExpression, "is a string:")
+//		Info.Println(filterValueExpression, "is a string:")
 		protoPathsValue.RelativePath = make([]string, 1)
 		protoPathsValue.RelativePath[0] = vv
 	default:
@@ -431,7 +431,7 @@ func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageM
 		filter := messageMap["filter"]
 		switch vv := filter.(type) {
 		case []interface{}:
-			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
+//			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
 			if len(vv) != 2 {
 				Error.Printf("Max two filter expressions are allowed.")
 				break
@@ -443,7 +443,7 @@ func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageM
 			createPbFilter(0, vv[0].(map[string]interface{}), protoMessage.Filter)
 			createPbFilter(1, vv[1].(map[string]interface{}), protoMessage.Filter)
 		case map[string]interface{}:
-			Info.Println(filter, "is a map:")
+//			Info.Println(filter, "is a map:")
 			protoMessage.Filter = &pb.FilterExpressions{}
 			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 1)
 			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
@@ -767,14 +767,12 @@ func createJSON(value string, key string) string {
 
 func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
 	data := ""
-Info.Printf("createJsonData:len(dataPack)=%d", len(dataPack))
 	if len(dataPack) > 1 {
 		data += "["
 	}
 	for i := 0; i < len(dataPack); i++ {
 		var path string
 		path = dataPack[i].GetPath()
-Info.Printf("createJsonData:path=%s", path)
 		dp := getJsonDp(dataPack[i])
 		data += `{"path":"` + path + `","dp":` + dp + `},`
 	}

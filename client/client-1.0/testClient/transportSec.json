@@ -1,0 +1,11 @@
+{
+    "transportSec": "no",
+    "httpSecPort": "443",
+    "wsSecPort": "6443",
+    "mqttSecPort": "8883",
+    "grpcSecPort": "5443",
+    "caSecPath": "ca/",
+    "serverSecPath": "",
+    "serverCertOpt": "ClientCertVerification",
+    "clientSecPath": "client/"
+}

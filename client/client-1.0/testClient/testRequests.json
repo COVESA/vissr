@@ -1,0 +1,151 @@
+{
+    "http": [
+        {
+            "action": "get",
+            "path": "Vehicle.Speed"
+        },
+        {
+            "action": "get",
+            "path": "Incorrect.Path"
+        },
+        {
+            "action": "get",
+            "path": "Vehicle.ADAS",
+            "filter": {
+                "variant": "paths",
+                "parameter": [
+                    "ABS.*",
+                    "CruiseControl.IsError"
+                ]
+            }
+        },
+        {
+            "action": "set",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "value": "true"
+        }
+    ],
+    "ws": [
+        {
+            "action": "get",
+            "path": "Vehicle.Speed",
+            "requestId": "232"
+        },
+        {
+            "action": "get",
+            "path": "Incorrect.Path",
+            "requestId": "1957"
+        },
+        {
+            "action": "get",
+            "path": "Vehicle.ADAS",
+            "filter": {
+                "variant": "paths",
+                "parameter": [
+                    "ABS.*",
+                    "CruiseControl.IsError"
+                ]
+            },
+            "requestId": "237"
+        },
+        {
+            "action": "set",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "value": "true",
+            "requestId": "245"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "filter": {
+                "variant": "timebased",
+                "parameter": {
+                    "period": "1000"
+                }
+            },
+            "requestId": "246"
+        }
+    ],
+    "mqtt": [
+        {
+            "action": "get",
+            "path": "Vehicle.Speed",
+            "requestId": "232"
+        },
+        {
+            "action": "get",
+            "path": "Incorrect.Path",
+            "requestId": "1957"
+        },
+        {
+            "action": "get",
+            "path": "Vehicle.ADAS",
+            "filter": {
+                "variant": "paths",
+                "parameter": [
+                    "ABS.*",
+                    "CruiseControl.IsError"
+                ]
+            },
+            "requestId": "237"
+        },
+        {
+            "action": "set",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "value": "true",
+            "requestId": "245"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "filter": {
+                "variant": "timebased",
+                "parameter": {
+                    "period": "1000"
+                }
+            },
+            "requestId": "246"
+        }
+    ],
+    "grpc": [
+        {
+            "action": "get",
+            "path": "Vehicle.Speed",
+            "requestId": "232"
+        },
+        {
+            "action": "get",
+            "path": "Incorrect.Path",
+            "requestId": "1957"
+        },
+        {
+            "action": "get",
+            "path": "Vehicle.ADAS",
+            "filter": {
+                "variant": "paths",
+                "parameter": [
+                    "ABS.*",
+                    "CruiseControl.IsError"
+                ]
+            },
+            "requestId": "237"
+        },
+        {
+            "action": "set",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "value": "true",
+            "requestId": "245"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "filter": {
+                "variant": "timebased",
+                "parameter": {
+                    "period": "1000"
+                }
+            },
+            "requestId": "246"
+        }
+    ]
+}

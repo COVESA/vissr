@@ -50,7 +50,7 @@ var serverComponents []string = []string{
 	"httpMgr",
 	"wsMgr",
 	"wsMgrFT",
-	//	"mqttMgr",  //to avoid calls to the mosquitto broker if not used anyway
+	"mqttMgr",
 	"grpcMgr",
 	"atServer",
 }
@@ -704,6 +704,7 @@ func main() {
 		Help:     "statestorage database filename",
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
+	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -759,8 +760,10 @@ func main() {
 		case "wsMgrFT":
 			go wsMgrFT.WsMgrFTInit(ftChannel)
 		case "mqttMgr":
-			go mqttMgr.MqttMgrInit(2, transportMgrChannel[2])
-			go transportDataSession(transportMgrChannel[2], transportDataChan[2], backendChan[2])
+			if *mqttEnable {
+				go mqttMgr.MqttMgrInit(2, transportMgrChannel[2])
+				go transportDataSession(transportMgrChannel[2], transportDataChan[2], backendChan[2])
+			}
 		case "grpcMgr":
 			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3])
 			go transportDataSession(transportMgrChannel[3], transportDataChan[3], backendChan[3])

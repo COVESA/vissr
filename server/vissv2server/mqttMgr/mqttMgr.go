@@ -189,7 +189,7 @@ func extractVin(response string) string {
 	vinStartIndex := strings.Index(response, "value")
 	if vinStartIndex == -1 {
 		utils.Error.Printf("VIN cannot be extracted in %s", response)
-		os.Exit(1)
+		return "ULF001"  //???
 	}
 	vinStartIndex += 8 // value”:”
 	vinEndIndex := utils.NextQuoteMark([]byte(response), vinStartIndex)

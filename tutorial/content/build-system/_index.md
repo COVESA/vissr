@@ -59,16 +59,45 @@ Logging can be command line configured at startup.
 
 The levels currently used are mainly info, warning, error. Info is appropriate during testing and debugging, while error is appropriate when performance is important.
 
+### Testing
+If modifications of the server code base is done it is recommended that the following test routine is performed before pushing
+any commits to this repo.
+To test the "VISSR tech stack", the server together with data store and feeder, the runtest.sh is available in the root directory.
+This bash script starts the server and the feederv3 in the background, and then the testClient is started in the terminal window.
+The testClient reads the testRequests.json file for the requests it will issue to the different transport protocols,
+and then it prints the requests and the responses in the terminal window.
+After each set of test requests for the same transport protocol it will wait until the keyboard return key is received,
+allowing the operator to gett time to inspect the request/response logs before continuing.
+When the MQTT protocol is run, the test.mosquitto.org broker is used which may lead to latencies between request and response.
+In that case the testClient prompt for reading the return key may be found mixed into the log prints,
+but hitting the return key will still make it continue.
+If some logdata looks incorrect the operator can hit ctrl-C to terminate the testClient
+and instead inspect the log files for the server and the feeder, found in the log directory of their respective start directories.
+It is up to the operator to evaluate whether the logs look correct or not,
+so it might be a good idea to run the script before doing any modifications lo learn how correct logs looks like.
+
+Issue the following command in the root directory to run the tests:
+```
+$ ./runtest.sh startme
+```
+When the testing is completed the script should be run to terminate the server and feeder processes:
+```
+$ ./runtest.sh stopme
+```
+
 ### Transport protocols
-Besides the transport protocols
+The following transport protocols are supported
 * HTTP
-* Websocke
+* Websocket
 * MQTT
-that the specification lists, this server also supports
 * gRPC
-They are all except MQTT activated by the server per default.
-To enable MQTT, or disable any other, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
-separate threads by the main server process, and these can be commented in or out before building the server.
+
+They are all except MQTT enabled by the server per default.
+
+To enable MQTT add the CLI command "-m" when starting the VISS server.
+
+To disable any other protocol, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
+separate threads by the main server process, and these can be commented out before building the server.
 For the server to be operationable, the service manager, and at least one transport protocol must not be commented out.
 
 ### Go modules
