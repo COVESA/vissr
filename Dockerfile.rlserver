@@ -27,7 +27,6 @@ COPY client/ ./client
 COPY feeder/ ./feeder
 COPY server/ ./server
 COPY grpc_pb/ ./grpc_pb
-COPY protobuf/ ./protobuf
 COPY utils ./utils
 COPY go.mod go.sum ./
 
@@ -59,7 +58,7 @@ EXPOSE 6379
 ENTRYPOINT ["/usr/bin/redis-server", "/etc/redis.conf" ]
 
 
-FROM golang:latest as vissv2server
+FROM golang:latest AS vissv2server
 USER root
 RUN mkdir transport_sec
 WORKDIR /app
@@ -70,14 +69,17 @@ COPY --from=builder /build/server/vissv2server/atServer/purposelist.json atServe
 COPY --from=builder /build/server/vissv2server/atServer/scopelist.json atServer/scopelist.json
 COPY --from=builder /build/server/vissv2server/uds-registration.docker.json uds-registration.json
 COPY --from=builder /build/server/vissv2server/iotdb-config.json iotdb-config.json
-COPY --from=builder /build/server/vissv2server/vss_vissv2.binary .
-COPY --from=builder /build/server/vissv2server/serviceMgr/signaldimension.json .
+COPY --from=builder /build/server/vissv2server/signaldimension.json .
 COPY --from=builder /build/server/agt_server/agt_public_key.rsa .
+COPY --from=builder /build/server/vissv2server/viss.him .
+COPY --from=builder /build/server/vissv2server/forest forest
+COPY --from=builder /build/server/vissv2server/vissv3.0-schema.json .
+COPY --from=builder /build/server/vissv2server/upload.txt .
 
 ENTRYPOINT ["/app/vissv2server","-s","redis"]
 
 
-FROM golang:latest  as feeder
+FROM golang:latest AS feeder
 USER root
 WORKDIR /app
 COPY --from=builder /build/bin/feeder-rl feeder
@@ -87,7 +89,7 @@ COPY --from=builder /build/feeder/feeder-rl/VehicleVssMapData.json .
 ENTRYPOINT ["/app/feeder"]
 
 
-FROM golang:latest as agt_server
+FROM golang:latest AS agt_server
 USER root
 RUN mkdir transport_sec
 WORKDIR /app

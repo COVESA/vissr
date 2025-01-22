@@ -37,6 +37,14 @@ var clientIndex int
 var fileTransferCache []utils.FileTransferCache
 const FILETRANSFERCACHESIZE = 10
 
+type ChunkDataCache struct {
+	MessageNo byte
+	LastMessage byte
+	ChunkSize []byte
+	Chunk []byte
+}
+var chunkDataCache = ChunkDataCache{}
+
 func WsMgrFTInit(ftChannel chan utils.FileTransferCache) {
 	var clientRequest utils.FileTransferCache
 	var dataMessage, dataResponse []byte
@@ -48,61 +56,37 @@ func WsMgrFTInit(ftChannel chan utils.FileTransferCache) {
 	}
 	go initDataSessions(clientChan)
 
+	var clientId int
 	for {
 		select {
 		case clientRequest = <-ftChannel:
 			clientRequest.Status = initFtSession(clientRequest)
 			ftChannel <-clientRequest
+			continue
 		case dataMessage = <-clientChan[0]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[0] <- dataResponse
-			}
+			clientId = 0
 		case dataMessage = <-clientChan[1]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[1] <- dataResponse
-			}
+			clientId = 1
 		case dataMessage = <-clientChan[2]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[2] <- dataResponse
-			}
+			clientId = 2
 		case dataMessage = <-clientChan[3]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[3] <- dataResponse
-			}
+			clientId = 3
 		case dataMessage = <-clientChan[4]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[4] <- dataResponse
-			}
+			clientId = 4
 		case dataMessage = <-clientChan[5]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[5] <- dataResponse
-			}
+			clientId = 5
 		case dataMessage = <-clientChan[6]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[6] <- dataResponse
-			}
+			clientId = 6
 		case dataMessage = <-clientChan[7]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[7] <- dataResponse
-			}
+			clientId = 7
 		case dataMessage = <-clientChan[8]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[8] <- dataResponse
-			}
+			clientId = 8
 		case dataMessage = <-clientChan[9]:
-			dataResponse = getDataResponse(dataMessage)
-			if len(dataResponse) > 0 {
-				clientChan[9] <- dataResponse
-			}
+			clientId = 9
+		}
+		dataResponse = getDataResponse(dataMessage)
+		if len(dataResponse) > 0 {
+			clientChan[clientId] <- dataResponse
 		}
 	}
 }
@@ -117,47 +101,50 @@ func getDataResponse(req []byte) []byte {
 
 func getDataResponseDl(req []byte) []byte {  // request: uid(4)|messageNo(1)|chunkSize(4)| lastMessage(1)|chunk(N)
 	resp := make([]byte, 4+1+1)  // response: uid(4)|messageNo(1)|status(1)
-	uid := [utils.UIDLEN]byte(req[:4])
+	uid := []byte(req[:4])
 	var messageNo uint8
 	buf := bytes.NewReader(req[4:5])
 	err := binary.Read(buf, binary.BigEndian, &messageNo)
 	if err != nil {
 		utils.Error.Println("binary.Read failed for messageNo:", err)
+		return createDlResponse(uid, byte(0x00), byte(0xFF)) // terminate session error response
 	}
 	var chunkSize uint32
 	buf = bytes.NewReader(req[5:9])
 	err = binary.Read(buf, binary.BigEndian, &chunkSize)
 	if err != nil {
 		utils.Error.Println("binary.Read failed for chunkSize:", err)
+		return createDlResponse(uid, byte(0x00), byte(0xFF)) // terminate session error response
 	}
 	var lastMessage uint8
 	buf = bytes.NewReader(req[9:10])
 	err = binary.Read(buf, binary.BigEndian, &lastMessage)
 	if err != nil {
-		utils.Error.Println("binary.Read failed for chunkSize:", err)
+		utils.Error.Println("binary.Read failed for lastMessage:", err)
+		return createDlResponse(uid, byte(0x00), byte(0xFF)) // terminate session error response
 	}
 	chunk := req[10:]
 	cacheIndex := findFileTransferCacheIndex(uid)
 	if cacheIndex != -1 {
 		if uint32(len(chunk)) != chunkSize {
-			return createDlResponse(req, req[4], byte(0x01))
+			return createDlResponse(uid, req[4], byte(0x01))
 		}
 		n, err := fileTransferCache[cacheIndex].FileDescriptor.Write(chunk)
 		if err != nil {
-			return createDlResponse(req, req[4], byte(0x01))
+			return createDlResponse(uid, req[4], byte(0x01))
 		}
 		fileTransferCache[cacheIndex].FileOffset += n
 		if lastMessage != 0 {
 			fileTransferCache[cacheIndex].FileDescriptor.Close()
 			if calculateHash(fileTransferCache[cacheIndex].Path + fileTransferCache[cacheIndex].Name) != fileTransferCache[cacheIndex].Hash {
-				return createDlResponse(req, byte(0x00), byte(0x01))
+				return createDlResponse(uid, byte(0x00), byte(0x01))
 			}
 			fileTransferCache[cacheIndex].Uid = clearUid() // delete cache entry
-			return createDlResponse(req, req[4], byte(0x00))
+			return createDlResponse(uid, req[4], byte(0x00))
 		}
-		return createDlResponse(req, req[4], byte(0x00))
-	} else { //error response
-		return createDlResponse(req, byte(0x00), byte(0x01))
+		return createDlResponse(uid, req[4], byte(0x00))
+	} else {
+		return createDlResponse(uid, byte(0x00), byte(0xFF)) // terminate session error response
 	}
 	return resp
 }
@@ -169,7 +156,7 @@ func getDataResponseUl(req []byte) []byte {  // request: uid(4)|messageNo(1)|sta
 	lastMessage := byte(0x00)
 	chunkSize := make([]byte,4)
 	var chunk []byte
-	cacheIndex := findFileTransferCacheIndex([utils.UIDLEN]byte(uid))
+	cacheIndex := findFileTransferCacheIndex([]byte(uid))
 	if cacheIndex != -1 {
 		if status == byte(0x00) {
 			var n int
@@ -191,31 +178,52 @@ func getDataResponseUl(req []byte) []byte {  // request: uid(4)|messageNo(1)|sta
 			err = binary.Write(buf, binary.BigEndian, uint32(n))
 			if err != nil {
 				utils.Error.Printf("binary.Write failed:%s", err)
-				return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, chunk)
+				return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, nil)
 			}
 			for i := 0; i < 4; i++ {
 				chunkSize[i] = buf.Bytes()[i]
 			}
+		} else if status == byte(0xFF) {
+			return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, nil) // error
 		} else {
-			// resend. Not what is done below
-			return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, chunk)
+			lastMessage, chunkSize, chunk = readChunkData(messageNo)
+			if len(chunk) > 0 {
+				return createUlResponse(uid, messageNo, lastMessage, chunkSize, chunk) // resend previous message
+			} else {
+				return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, nil)  //error
+			}
 		}
-	} else { //error response
-		return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, chunk)
+	} else {
+		return createUlResponse(uid, messageNo, lastMessage, []byte{0,0,0,0}, nil)  //error
 	}
+	writeChunkData(messageNo, lastMessage, chunkSize, chunk)
 	return createUlResponse(uid, messageNo, lastMessage, chunkSize, chunk)
+}
+
+func readChunkData(messageNo byte) (byte, []byte, []byte) {
+	if messageNo != chunkDataCache.MessageNo {
+		return byte(0), nil, nil
+	}
+	return chunkDataCache.LastMessage, chunkDataCache.ChunkSize, chunkDataCache.Chunk
+}
+
+func writeChunkData(messageNo byte, lastMessage byte, chunkSize []byte, chunk []byte) {
+	chunkDataCache.MessageNo = messageNo
+	chunkDataCache.LastMessage = lastMessage
+	chunkDataCache.ChunkSize = chunkSize
+	chunkDataCache.Chunk = chunk
 }
 
 func clearUid() [utils.UIDLEN]byte {
 	return [utils.UIDLEN]byte{0}
 }
 
-func createDlResponse(req []byte, messNo byte, status byte) []byte { // response: uid(4)|messageNo(1)|status(1)
+func createDlResponse(uid []byte, messNo byte, status byte) []byte { // response: uid(4)|messageNo(1)|status(1)
 		resp := make([]byte,6)
-		resp[0] = req[0]
-		resp[1] = req[1]
-		resp[2] = req[2]
-		resp[3] = req[3]
+		resp[0] = uid[0]
+		resp[1] = uid[1]
+		resp[2] = uid[2]
+		resp[3] = uid[3]
 		resp[4] = messNo
 		resp[5] = status
 		return resp
@@ -273,9 +281,9 @@ func getFileSize(fp *os.File) int {
 	return int(fi.Size())
 }
 
-func findFileTransferCacheIndex(uid [utils.UIDLEN]byte) int {
+func findFileTransferCacheIndex(uid []byte) int {
 	for i := 0; i < FILETRANSFERCACHESIZE; i++ {
-		if fileTransferCache[i].Uid == uid {
+		if fileTransferCache[i].Uid == [utils.UIDLEN]byte(uid) {
 			return i
 		}
 	}
