@@ -11,6 +11,7 @@ startme() {
 	echo "Starting feederv3"
 	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && go build && mkdir -p logs && ./feederv3 -i vssjson &> ./logs/feederv3-log.txt && popd"
 
+	sleep 3s
 	echo "Starting testClient"
 	screen -S testClient bash -c "pushd client/client-1.0/testClient && go build && ./testClient && popd"
 
@@ -24,7 +25,7 @@ stopme() {
 	echo "Stopping vissv2server"
 	screen -X -S vissv2server quit
 
-	sleep 1
+	sleep 1s
 	screen -wipe
 }
 

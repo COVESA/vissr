@@ -35,7 +35,7 @@ func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case reqMessage := <-HttpClientChan[0]:
-			utils.Info.Printf("HTTP mgr hub: Request from client:%s\n", reqMessage)
+			utils.Info.Printf("HTTP mgr hub: Request from client:%s", reqMessage)
 			validationError := utils.JsonSchemaValidate(reqMessage)
 			if len(validationError) > 0 {
 				var requestMap map[string]interface{}
@@ -46,7 +46,7 @@ func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 			}
 			utils.AddRoutingForwardRequest(reqMessage, mgrId, 0, transportMgrChan)
 		case respMessage := <-transportMgrChan:
-			utils.Info.Printf("HTTP mgr hub: Response from server core:%s\n", respMessage)
+			utils.Info.Printf("HTTP mgr hub: Response from server core:%s", respMessage)
 			RemoveRoutingForwardResponse(respMessage, transportMgrChan)
 		}
 	}

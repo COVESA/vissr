@@ -40,8 +40,8 @@ import (
 var testedProtocols []string = []string{
 	"http",
 	"ws",
-	"mqtt",
 	"grpc",
+	"mqtt",
 }
 
 var clientCert tls.Certificate

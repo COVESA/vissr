@@ -142,7 +142,9 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 	case "POST": // set
 		requestMap["action"] = "set"
 		body, _ := io.ReadAll(req.Body)
-		requestMap["value"] = string(body)
+		var bodyMap map[string]interface{}
+		MapRequest(string(body), &bodyMap)
+		requestMap["value"] = bodyMap["value"]
 	default:
 		//		http.Error(w, "400 Unsupported method", http.StatusBadRequest)
 		Warning.Printf("Only GET and POST methods are supported.")
