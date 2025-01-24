@@ -21,14 +21,14 @@
         },
         {
             "action": "set",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.TripMeterReading",
             "value": "true"
         }
     ],
     "ws": [
         {
             "action": "get",
-            "path": "Vehicle.Speed",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
             "requestId": "232"
         },
         {
@@ -50,13 +50,13 @@
         },
         {
             "action": "set",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.TripMeterReading",
             "value": "true",
             "requestId": "245"
         },
         {
             "action": "subscribe",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.Speed",
             "filter": {
                 "variant": "timebased",
                 "parameter": {
@@ -64,12 +64,24 @@
                 }
             },
             "requestId": "246"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Speed",
+            "filter": {
+                "variant": "change",
+                "parameter": {
+                    "logic-op": "lt",
+                    "diff": "-1"
+                }
+            },
+            "requestId": "247"
         }
     ],
     "mqtt": [
         {
             "action": "get",
-            "path": "Vehicle.Speed",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
             "requestId": "232"
         },
         {
@@ -91,13 +103,13 @@
         },
         {
             "action": "set",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.TripMeterReading",
             "value": "true",
             "requestId": "245"
         },
         {
             "action": "subscribe",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.Speed",
             "filter": {
                 "variant": "timebased",
                 "parameter": {
@@ -110,7 +122,7 @@
     "grpc": [
         {
             "action": "get",
-            "path": "Vehicle.Speed",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
             "requestId": "232"
         },
         {
@@ -132,13 +144,13 @@
         },
         {
             "action": "set",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.TripMeterReading",
             "value": "true",
             "requestId": "245"
         },
         {
             "action": "subscribe",
-            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "path": "Vehicle.Speed",
             "filter": {
                 "variant": "timebased",
                 "parameter": {

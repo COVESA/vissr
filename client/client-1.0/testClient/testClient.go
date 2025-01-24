@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-//	"strconv"
+	"strconv"
 	"strings"
 
 	"fmt"
@@ -53,6 +53,7 @@ const (
 )
 
 var doneChannel []chan bool
+var maxEvents int
 
 var httpCommandList []string
 var wsCommandList []string
@@ -187,10 +188,10 @@ func performWsCommand(command string, conn *websocket.Conn) {
 			}
 			fmt.Printf("Notification: %s\n", string(event))
 			events++
-			if events == 2 {
+			if events == maxEvents {
 				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf("Two events received. Terminating subscription session\n")
+				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
 				performWsCommand(unsubReq, conn)
 				return
 			}
@@ -304,10 +305,10 @@ var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 		}
 		fmt.Printf("Event=%s\n", string(msg.Payload()))
 		events++
-		if events == 3 {
+		if events == maxEvents+1 {
 				subscriptionId := utils.ExtractSubscriptionId(string(msg.Payload()))
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf("Two events received. Unsubscribing to subscription session\n")
+				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Unsubscribing to subscription session\n")
 				publishVissV2Request(brokerSocket, unsubReq, clientTopic, serverTopic)
 				events = 0
 		}
@@ -411,10 +412,10 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 				events++
 				vssResponse := utils.SubscribeStreamPbToJson(pbResponse)
 				fmt.Printf("Received response:%s\n", vssResponse)
-				if events == 3 {
+				if events == maxEvents+1 {
 					subscriptionId := utils.ExtractSubscriptionId(vssResponse)
 					unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-					fmt.Printf("Two events received. Terminating subscription session\n")
+					fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
 					performGrpcCommand(unsubReq, client)
 					break
 				}
@@ -466,6 +467,7 @@ func main() {
 	// Create flags
 //	prot := parser.Selector("p", "protocol", []string{"http", "ws"}, &argparse.Options{Required: false,
 //		Help: "Protocol must be either http or websocket", Default: "ws"})
+	maxEvnts := parser.Int("m", "maxEvents", &argparse.Options{Required: false, Help: "Max subscription events before unsubscribe", Default: 2})
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
 		Required: false,
@@ -479,6 +481,7 @@ func main() {
 		//exits due to required info not provided by user
 		os.Exit(1)
 	}
+	maxEvents = *maxEvnts
 
 	utils.InitLog("testClient-log.txt", "./logs", *logFile, *logLevel)  //used in utils functions...
 
