@@ -176,9 +176,6 @@ func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData) 
 	for {
 		select {
 		case outData := <-outputChan:
-if outData.Name == "Vehicle.TripMeterReading" {
-	utils.Info.Printf("Data written to statestorage: Name=%s, Value=%s", outData.Name, outData.Value)
-}
 			if len(outData.Name) == 0 {
 				continue
 			}
@@ -189,6 +186,7 @@ if outData.Name == "Vehicle.TripMeterReading" {
 				if onNotificationList(outData.Name) != -1 {
 					message := `{"action": "subscription", "path":"` + outData.Name + `"}`
 					udsChan <- message
+					utils.Info.Printf("Server notified that data written to %s", outData.Name)
 				}
 			}
 		}
@@ -238,9 +236,10 @@ func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string) {
 		n, err := conn.Read(buf)
 		if err != nil {
 			utils.Error.Printf("udsReader:Read failed, err = %s", err)
+			time.Sleep(1 * time.Second)
 			continue
 		}
-//		utils.Info.Printf("udsReader:Server message: %s", string(buf[:n]))
+		utils.Info.Printf("udsReader:Message from server: %s", string(buf[:n]))
 		if n > 8192 {
 			utils.Error.Printf("udsReader:Max message size of 8192 chars exceeded. Message dropped")
 			continue
@@ -298,7 +297,7 @@ func udsWriter(conn net.Conn, udsChan chan string) {
 	for {
 		select {
 		case message := <-udsChan:
-		utils.Info.Printf("udsWriter:Server message: %s", message)
+		utils.Info.Printf("udsWriter:Message to server: %s", message)
 			_, err := conn.Write([]byte(message))
 			if err != nil {
 				utils.Error.Printf("udsWriter:Write failed, err = %s", err)

@@ -13,7 +13,7 @@ startme() {
 
 	sleep 3s
 	echo "Starting testClient"
-	screen -S testClient bash -c "pushd client/client-1.0/testClient && go build && ./testClient && popd"
+	screen -S testClient bash -c "pushd client/client-1.0/testClient && go build && ./testClient -m 4 && popd"
 
 	screen -list
 }

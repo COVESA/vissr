@@ -400,6 +400,9 @@ func isFloatType(value string) bool {
 	if err != nil {
 		return false
 	}
+	if fVal == 0 {
+		return true
+	}
 	if fVal < 0 {
 		fVal = fVal * -1.0
 	}

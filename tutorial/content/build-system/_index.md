@@ -75,6 +75,8 @@ If some logdata looks incorrect the operator can hit ctrl-C to terminate the tes
 and instead inspect the log files for the server and the feeder, found in the log directory of their respective start directories.
 It is up to the operator to evaluate whether the logs look correct or not,
 so it might be a good idea to run the script before doing any modifications lo learn how correct logs looks like.
+All subscribe sessions are automatically unsubscribed after 4 events have been received.
+This number is set in runTest.sh by the CLI parameter "-m 4". Other numbers of event can be set by editing this number.
 
 Issue the following command in the root directory to run the tests:
 ```
@@ -84,6 +86,9 @@ When the testing is completed the script should be run to terminate the server a
 ```
 $ ./runtest.sh stopme
 ```
+The file testRequests.json can be edited to add or remove test cases.
+It is up to the operator to ensure that subscribe trigger conditions will be met by the simulated data that the feeder injects.
+This data can be modified in the tripdata.json file in the feederv3 directory.
 
 ### Transport protocols
 The following transport protocols are supported

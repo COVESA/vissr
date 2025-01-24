@@ -303,7 +303,7 @@ func evaluateChangeFilter(opValue string, latestValue string, currentValue strin
 func compareValues(logicOp string, latestValue string, currentValue string, diff string) bool {
 	latestValueType := utils.AnalyzeValueType(latestValue)
 	if latestValueType != utils.AnalyzeValueType(currentValue) {
-		utils.Error.Printf("compareValues: Incompatible types, latVal=%s, curVal=%s", latestValue, currentValue)
+		utils.Error.Printf("compareValues: Incompatible types, latVal=%s (type=%d), curVal=%s (type=%d)", latestValue, latestValueType, currentValue,  utils.AnalyzeValueType(currentValue))
 		return false
 	}
 	switch latestValueType {
@@ -524,7 +524,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		}
 		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
 	case "redis":
-		utils.Info.Printf(path)
+//		utils.Info.Printf(path)
 		dp, err := redisClient.Get(path).Result()
 		if err != nil {
 			if err.Error() != "redis: nil" {
