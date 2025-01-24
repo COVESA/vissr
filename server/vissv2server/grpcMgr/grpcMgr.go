@@ -149,8 +149,8 @@ func RemoveRoutingForwardResponse(response string) {
 func updateRoutingList(resp string, clientId int, isMultipleEvent bool) {
 	utils.Info.Printf("updateRoutingList:message=%s", resp)
 	if strings.Contains(resp, "unsubscribe") {
-		subscribeClientId, subscribeChan := getSubscribeRoutingData(resp)
-		subscribeChan <- KILL_MESSAGE + " clientId:" + strconv.Itoa(subscribeClientId)
+		_, subscribeChan := getSubscribeRoutingData(resp)
+		subscribeChan <- resp
 		resetGrpcRoutingData(clientId)
 		//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
 	} else if !isMultipleEvent { // get and set
@@ -199,7 +199,9 @@ func initGrpcServer() {
 		portNo = utils.SecureConfiguration.GrpcSecPort
 		utils.Info.Printf("initGrpcServer:port number=%s", portNo)
 	} else {
-		server = grpc.NewServer(grpc.StatsHandler(&Handler{}))
+//		server = grpc.NewServer(grpc.StatsHandler(&Handler{}))
+		var opts []grpc.ServerOption
+		server = grpc.NewServer(opts...)
 		portNo = "8887"
 		utils.Info.Printf("portNo =%s", portNo)
 	}
