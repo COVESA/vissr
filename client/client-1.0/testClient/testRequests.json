@@ -76,6 +76,18 @@
                 }
             },
             "requestId": "247"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Speed",
+            "filter": {
+                "variant": "range",
+                "parameter": {
+                    "logic-op": "gte",
+                    "boundary": "2"
+                }
+            },
+            "requestId": "247"
         }
     ],
     "mqtt": [

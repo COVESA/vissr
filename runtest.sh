@@ -9,7 +9,7 @@ startme() {
 	screen -S vissv2server -dm bash -c "pushd server/vissv2server && go build && mkdir -p logs && ./vissv2server -m &> ./logs/vissv2server-log.txt && popd"
 
 	echo "Starting feederv3"
-	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && go build && mkdir -p logs && ./feederv3 -i vssjson &> ./logs/feederv3-log.txt && popd"
+	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && go build && mkdir -p logs && ./feederv3 -i vssjson -t speed-sawtooth.json &> ./logs/feederv3-log.txt && popd"
 
 	sleep 3s
 	echo "Starting testClient"

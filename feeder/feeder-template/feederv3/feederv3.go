@@ -524,6 +524,10 @@ func main() {
 		Required: false,
 		Help:     "VSS-Vehicle scaling data filename",
 		Default:  "VssVehicleScaling.json"})
+	tripDataFile := parser.String("t", "tripdatafile", &argparse.Options{
+		Required: false,
+		Help:     "VSS-Vehicle scaling data filename",
+		Default:  "tripdata.json"})
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
 		Required: false,
@@ -601,7 +605,7 @@ func main() {
 	utils.Info.Printf("Initializing the feeder for mapping file %s.", *mapFile)
 	feederMap := readFeederMap(*mapFile)
 	if simulatedSource != "internal" {
-		tripData = readSimulatedData("tripdata.json")
+		tripData = readSimulatedData(*tripDataFile)
 		if len(tripData) == 0 {
 			utils.Error.Printf("Tripdata file not found.")
 			os.Exit(1)
