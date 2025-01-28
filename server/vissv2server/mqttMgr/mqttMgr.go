@@ -83,7 +83,8 @@ func mqttSubscribe(brokerSocket string, topic string) MQTT.Client {
 
 	c := MQTT.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		utils.Error.Println(token.Error())
+		return nil
 	}
 	if token := c.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
 		utils.Error.Println(token.Error())

@@ -421,10 +421,10 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	var searchPath []string
+	var filterList []utils.FilterObject // variant + parameter
 
 	// Manages Filter Request
 	if requestMap["filter"] != nil {
-		var filterList []utils.FilterObject // type + parameter
 		utils.UnpackFilter(requestMap["filter"], &filterList)
 		// Iterates all the filters
 		for i := 0; i < len(filterList); i++ {
@@ -503,14 +503,14 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		totalMatches += matches
 		maxValidation = utils.GetMaxValidation(int(validation), maxValidation)
 	}
-	nodeType := utils.VSSgetType(searchData[0].NodeHandle)
 	if strings.Contains (utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {  // path to struct def
-		response := initiateFileTransfer(requestMap, nodeType, searchPath[0])
+		response := initiateFileTransfer(requestMap, utils.VSSgetType(searchData[0].NodeHandle), searchPath[0])
 		backendChan[tDChanIndex] <- response
 		return
 	}
-	if requestMap["action"] == "set" && nodeType != utils.ACTUATOR {
-		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Forbidden to write to read-only resource.") //invalid_data
+	errorIndex, errorDescription := validateData(requestMap, searchData, filterList)
+	if errorIndex != -1 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, errorIndex, errorDescription)
 		backendChan[tDChanIndex] <- errorResponseMap
 		return
 	}
@@ -564,6 +564,71 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		requestMap["gatingId"] = gatingId
 	}
 	serviceDataChan[sDChanIndex] <- requestMap
+}
+
+func validateData(requestMap map[string]interface{}, searchData []utils.SearchData_t, filterList []utils.FilterObject) (int, string) { // -1, "" means valid data
+	if requestMap["action"] == "set" && utils.VSSgetType(searchData[0].NodeHandle) != utils.ACTUATOR {
+		return 1, "Forbidden to write to read-only resource"  //invalid_data
+	}
+	if requestMap["filter"] != nil {
+		for i := 0; i < len(filterList); i++ {
+			var paramMap map[string]interface{}
+			if filterList[i].Type == "range" { //parameter:[{"boundary-op":"a", "boundary": "x", "combination-op":"b"},{"boundary-op":"c", "boundary": "y"}]
+				utils.MapRequest(filterList[i].Parameter, &paramMap)
+				bVal1, bVal2 := getRangeBoundaries(paramMap)
+				if !utils.IsNumber(bVal1) || (len(bVal2) != 0 && !utils.IsNumber(bVal2)) {  // number ok, one or two boundaries
+					return 1, "Invalid range boundary datatype"
+				}
+			} else if filterList[i].Type == "change" { //parameter:{"logic-op":"a", "diff": "x"}
+				utils.MapRequest(filterList[i].Parameter, &paramMap)
+				if !utils.IsNumber(paramMap["diff"].(string)) && !utils.IsBoolean(paramMap["diff"].(string)) { // number or boolean ok
+					return 1, "Invalid change diff datatype"
+				}
+			} else if filterList[i].Type == "curvelog" { //parameter:{"maxerr":"a", "bufsize": "x"}
+				utils.MapRequest(filterList[i].Parameter, &paramMap)
+				if !utils.IsNumber(paramMap["maxerr"].(string)) {  // number ok
+					return 1, "Invalid curve log maxerr datatype"
+				}
+			}
+		}
+	}
+	return -1, ""
+}
+
+func getRangeBoundaries(paramMap interface{}) (string, string) {
+	var bVal []string = []string{"", ""}
+	switch pMap := paramMap.(type) {
+		case interface{}:
+			bVal[0] = getRangeBoundary(pMap.(map[string]interface{}))
+		case []interface{}:
+			for i := 0; i < len(pMap); i++ {
+				if i > 1 {
+					utils.Error.Printf("Range array size too big. Len=%d", len(pMap))
+					break
+				}
+				bVal[i] = getRangeBoundary(pMap[i].(map[string]interface{}))
+			}
+		default:
+			utils.Info.Println(pMap, "is of an unknown type")
+	}
+utils.Info.Printf("bVal1=%s, bVal2=%s", bVal[0], bVal[1])
+	return bVal[0], bVal[1]
+}
+
+func getRangeBoundary(pMap map[string]interface{}) string {
+	bVal := ""
+	for k, v := range pMap {
+		switch vv := v.(type) {
+		case string:
+//			utils.Info.Println(k, "is string", vv)
+			if k == "boundary" {
+				bVal = vv
+			}
+		default:
+			utils.Info.Println(k, "is of an unknown type")
+		}
+	}
+	return bVal
 }
 
 func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) map[string]interface{} {

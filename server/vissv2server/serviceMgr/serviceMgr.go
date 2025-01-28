@@ -276,9 +276,10 @@ func evaluateRangeFilter(opValue string, currentValue string) bool {
 		utils.Error.Printf("evaluateRangeFilter: Unmarshal error=%s", err)
 		return false
 	}
+	datatype := "number"
 	evaluation := true
 	for i := 0; i < len(rangeFilter); i++ {
-		eval := compareValues(rangeFilter[i].LogicOp, rangeFilter[i].Boundary, currentValue, "0") // currVal - 0 logic-op boundary
+		eval := compareValues(rangeFilter[i].LogicOp, rangeFilter[i].Boundary, currentValue, "0", datatype) // currVal - 0 logic-op boundary
 		evaluation = evaluation && eval
 	}
 	return evaluation
@@ -296,20 +297,17 @@ func evaluateChangeFilter(opValue string, latestValue string, currentValue strin
 		utils.Error.Printf("evaluateChangeFilter: Unmarshal error=%s", err)
 		return false, ""
 	}
-	val1 := compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff)
+	datatype := "number"
+	if utils.IsBoolean(changeFilter.Diff) {
+		datatype = "bool"
+	}
+	val1 := compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff, datatype)
 	return val1, currentDataPoint
 }
 
-func compareValues(logicOp string, latestValue string, currentValue string, diff string) bool {
-	latestValueType := utils.AnalyzeValueType(latestValue)
-	if latestValueType != utils.AnalyzeValueType(currentValue) {
-		utils.Error.Printf("compareValues: Incompatible types, latVal=%s (type=%d), curVal=%s (type=%d)", latestValue, latestValueType, currentValue,  utils.AnalyzeValueType(currentValue))
-		return false
-	}
-	switch latestValueType {
-	case 0:
-		fallthrough // string
-	case 2: // bool
+func compareValues(logicOp string, latestValue string, currentValue string, diff string, datatype string) bool {
+	switch datatype {
+	case "bool":
 		if diff != "0" {
 			utils.Error.Printf("compareValues: invalid parameter for boolean type")
 			return false
@@ -325,36 +323,7 @@ func compareValues(logicOp string, latestValue string, currentValue string, diff
 			return latestValue == "true" && currentValue != latestValue // true->false
 		}
 		return false
-	case 1: // int
-		curVal, err := strconv.Atoi(currentValue)
-		if err != nil {
-			return false
-		}
-		latVal, err := strconv.Atoi(latestValue)
-		if err != nil {
-			return false
-		}
-		diffVal, err := strconv.Atoi(diff)
-		if err != nil {
-			return false
-		}
-//		utils.Info.Printf("compareValues: value type=integer, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
-		switch logicOp {
-		case "eq":
-			return curVal-diffVal == latVal
-		case "ne":
-			return curVal-diffVal != latVal
-		case "gt":
-			return curVal-diffVal > latVal
-		case "gte":
-			return curVal-diffVal >= latVal
-		case "lt":
-			return curVal-diffVal < latVal
-		case "lte":
-			return curVal-diffVal <= latVal
-		}
-		return false
-	case 3: // float
+	case "number":
 		f64Val, err := strconv.ParseFloat(currentValue, 32)
 		if err != nil {
 			return false

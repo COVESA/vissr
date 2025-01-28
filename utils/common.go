@@ -352,14 +352,14 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 	for k, v := range filterExpression {
 		switch vv := v.(type) {
 		case string:
-			Info.Println(k, "is string", vv)
+//			Info.Println(k, "is string", vv)
 			if k == "variant" {
 				(*fList)[index].Type = vv
 			} else if k == "parameter" {
 				(*fList)[index].Parameter = vv
 			}
 		case []interface{}:
-			Info.Println(k, "is an array:, len=", strconv.Itoa(len(vv)))
+//			Info.Println(k, "is an array:, len=", strconv.Itoa(len(vv)))
 			arrayVal, err := json.Marshal(vv)
 			if err != nil {
 				Error.Print("UnpackFilter(): JSON array encode failed. ", err)
@@ -367,7 +367,7 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 				(*fList)[index].Parameter = string(arrayVal)
 			}
 		case map[string]interface{}:
-			Info.Println(k, "is a map:")
+//			Info.Println(k, "is a map:")
 			opValue, err := json.Marshal(vv)
 			if err != nil {
 				Error.Print("UnpackFilter(): JSON map encode failed. ", err)
@@ -380,36 +380,19 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 	}
 }
 
-func AnalyzeValueType(value string) int {
-	_, err := strconv.Atoi(value)
-	if err == nil {
-		return 1 //int type
-	}
-	if value == "true" || value == "false" {
-		return 2 // bool type
-	}
-	if isFloatType(value) == true {
-		return 3 // float type
-	}
-	return 0
-}
-
-
-func isFloatType(value string) bool {
-	fVal, err := strconv.ParseFloat(value, 32)
+func IsNumber(value string) bool {
+	_, err := strconv.ParseFloat(value, 32)
 	if err != nil {
 		return false
 	}
-	if fVal == 0 {
+	return true
+}
+
+func IsBoolean(value string) bool {
+	if value == "true" || value == "false" {
 		return true
 	}
-	if fVal < 0 {
-		fVal = fVal * -1.0
-	}
-	if fVal < 1.175494351e-38 || fVal > 3.402823466e+38 { // f64 not supported
-		return false
-	}
-	return true
+	return false
 }
 
 func NextQuoteMark(message []byte, offset int) int {
