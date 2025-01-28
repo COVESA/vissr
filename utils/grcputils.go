@@ -380,10 +380,10 @@ func getPbRangeFilterValue(index int, valueMap interface{}) *pb.FilterExpression
 	switch vv := valueMap.(type) {
 	case []interface{}:
 		rangeObject := vv[index].(map[string]interface{})
-		protoRangeValue.LogicOperator = rangeObject["boundary-op"].(string)
+		protoRangeValue.LogicOperator = rangeObject["logic-op"].(string)
 		protoRangeValue.Boundary = rangeObject["boundary"].(string)
 	case map[string]interface{}:
-		protoRangeValue.LogicOperator = vv["boundary-op"].(string)
+		protoRangeValue.LogicOperator = vv["logic-op"].(string)
 		protoRangeValue.Boundary = vv["boundary"].(string)
 	default:
 		return nil

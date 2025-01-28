@@ -573,7 +573,7 @@ func validateData(requestMap map[string]interface{}, searchData []utils.SearchDa
 	if requestMap["filter"] != nil {
 		for i := 0; i < len(filterList); i++ {
 			var paramMap map[string]interface{}
-			if filterList[i].Type == "range" { //parameter:[{"boundary-op":"a", "boundary": "x", "combination-op":"b"},{"boundary-op":"c", "boundary": "y"}]
+			if filterList[i].Type == "range" { //parameter:[{"logic-op":"a", "boundary": "x", "combination-op":"b"},{"logic-op":"c", "boundary": "y"}]
 				utils.MapRequest(filterList[i].Parameter, &paramMap)
 				bVal1, bVal2 := getRangeBoundaries(paramMap)
 				if !utils.IsNumber(bVal1) || (len(bVal2) != 0 && !utils.IsNumber(bVal2)) {  // number ok, one or two boundaries
