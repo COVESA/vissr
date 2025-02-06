@@ -375,10 +375,10 @@ func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot
 	noScopeList, numOfListElem := getNoScopeList(tokenContext)
 	//utils.Info.Printf("noScopeList[0]=%s", noScopeList[0])
 	matches, searchData = searchTree(VSSTreeRoot, path+".*", true, false, numOfListElem, noScopeList, nil)
-	if matches < countPathSegments(path) {
+	subTreeRoot := getSubTreeNodeHandle(path, searchData, matches)
+	if subTreeRoot == nil {
 		return ""
 	}
-	subTreeRoot := searchData[0].NodeHandle
 	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", utils.VSSgetName(subTreeRoot))
 	if depth == 0 {
 		depth = 100
@@ -388,6 +388,15 @@ func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot
 		return "{" + jsonBuffer[:len(jsonBuffer)-1] + "}" // remove comma
 	}
 	return ""
+}
+
+func getSubTreeNodeHandle(path string, searchData []utils.SearchData_t, matches int) *utils.Node_t {
+	for i := 0; i < matches; i++ {
+		if searchData[i].NodePath == path {
+			return searchData[i].NodeHandle
+		}
+	}
+	return nil
 }
 
 func getTokenContext(reqMap map[string]interface{}) string {
