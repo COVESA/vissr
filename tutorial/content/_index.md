@@ -25,6 +25,7 @@ It is with a few exceptions backwards compatible with VISSv2.0. The exceptions a
 * The filter keyname "type" is changed to "variant".
 * The filter variants "static-metadata" and "dynamic-metadata" are replaced by the variant "metadata".
 * The "subscriptionId" parameter in unsubscribe response messages is deleted.
+* The filter:metadata:parameter value is changed to represent the number of descendant generations that are returned.
 * The error object keyword "message" is changed to "description".
 * The error:decription values are not normative any more.
 
