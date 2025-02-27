@@ -489,7 +489,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		err = rows.Scan(&value, &timestamp)
 		if err != nil {
 			utils.Warning.Printf("Data not found: %s for path=%s", err, path)
-			return `{"value":"Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 		}
 		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
 	case "redis":
@@ -501,7 +501,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 			} else {
 				utils.Warning.Printf("Data not found.")
-				return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
+				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 			}
 		} else {
 			return dp
@@ -528,7 +528,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 			sessionDataSet.Close()
 		} else {
 			utils.Error.Printf("IoTDB: Query failed with error=%s", err)
-			return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
+			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 		}
 		return `{"value":"` + value + `", "ts":"` + ts + `"}`
 	case "memcache":
@@ -539,7 +539,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 			} else {
 				utils.Warning.Printf("Data not found.")
-				return `{"value":"Data-not-found", "ts":"` + utils.GetRfcTime() + `"}`
+				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 			}
 		} else {
 			return string(mcItem.Value)

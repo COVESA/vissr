@@ -20,7 +20,7 @@ $ cd vissr/server/vissv2server/
 $ go build
 ```
 This could be followed by directly starting a client to issue requests to the server,
-but the server would then try to read data from an empty data store, so all responses would say 'Data-not-found'.
+but the server would then try to read data from an empty data store, so all responses would say 'visserr:Data-not-available'.
 To be able to get some real data back we will therefore start a feeder that will write simulated data into the data store.
 
 To do this, open a new terminal window, go to the feederv3 directory, and build the feeder.
@@ -58,9 +58,9 @@ Try with the command
 ```
 which should return a response like the below.
 ```
-Server: {"action":"get","requestId":"232","ts":"2024-11-12T11:26:44.546855082Z", "data":{"path":"Vehicle.Cabin.Door.Row1.DriverSide.IsOpen", "dp":{"value":"Data-not-found", "ts":"2024-11-12T11:26:44.548180993Z"}}}
+Server: {"action":"get","requestId":"232","ts":"2024-11-12T11:26:44.546855082Z", "data":{"path":"Vehicle.Cabin.Door.Row1.DriverSide.IsOpen", "dp":{"value":"visserr:Data-not-available", "ts":"2024-11-12T11:26:44.548180993Z"}}}
 ```
-The value is set to 'Data-not-found' which is due to that the federv3 is not instructed to create simulated values for this signal.
+The value is set to 'visserr:Data-not-available' which is due to that the federv3 is not instructed to create simulated values for this signal.
 At startup the feederv3 reads the file VssVehicle.cvt which has been created by the [Domain Conversion Tool](/vissr/tools/).
 This file contains the instructions for how signals are mapped and scaled when they traverse between the 'vehicle domain' and the 'VSS domain',
 but the feederv3 also uses this information to select which signals to create simulated values for.
