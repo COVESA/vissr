@@ -607,7 +607,7 @@ func clCapture1dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int
 		dp := getVehicleData(path)
 		utils.Info.Printf("**** dp =%s ", dp)
 		utils.MapRequest(dp, &dpMap)
-		if dpMap["value"].(string) == "Data-not-found" {
+		if dpMap["value"].(string) == "visserr:Data-not-available" {
 			continue
 		}
 		_, ts := readRing(&aRingBuffer, 0) // read latest written
@@ -879,7 +879,7 @@ func clCapture2dim(clChan chan CLPack,triggChannelIndex int, subscriptionId int,
 		dp2 := getVehicleData(paths.Path2)
 		utils.MapRequest(dp1, &dpMap1)
 		utils.MapRequest(dp2, &dpMap2)
-		if dpMap1["value"].(string) == "Data-not-found" || dpMap2["value"].(string) == "Data-not-found" {
+		if dpMap1["value"].(string) == "visserr:Data-not-available" || dpMap2["value"].(string) == "visserr:Data-not-available" {
 			continue
 		}
 		_, ts1 := readRing(&aRingBuffer1, 0)
@@ -1015,7 +1015,7 @@ func clCapture3dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int
 		utils.MapRequest(dp1, &dpMap1)
 		utils.MapRequest(dp2, &dpMap2)
 		utils.MapRequest(dp3, &dpMap3)
-		if dpMap1["value"].(string) == "Data-not-found" || dpMap2["value"].(string) == "Data-not-found" || dpMap3["value"].(string) == "Data-not-found" {
+		if dpMap1["value"].(string) == "visserr:Data-not-available" || dpMap2["value"].(string) == "visserr:Data-not-available" || dpMap3["value"].(string) == "visserr:Data-not-available" {
 			continue
 		}
 		_, ts1 := readRing(&aRingBuffer1, 0)

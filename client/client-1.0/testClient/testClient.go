@@ -342,7 +342,7 @@ func mqttTesterRun(mqttCommandList []string, doneChannel chan bool) {
 	brokerSocket = getBrokerSocket(false)
 	clientTopic = "VISSv3.0/testClient"
 	mqttSubscribe(brokerSocket, clientTopic)
-	serverTopic = "Data-not-found/Vehicle"  //Data-not-found is the value used by the serverr MQTT mgr if the tree does not have a default value set
+	serverTopic = "visserr:Data-not-available/Vehicle"  //visserr:Data-not-available is the value used by the serverr MQTT mgr if the tree does not have a default value set
 	for i := 0; i < len(mqttCommandList); i++ {
 		publishVissV2Request(brokerSocket, mqttCommandList[i], clientTopic, serverTopic)
 		time.Sleep(2 * time.Second)
