@@ -12,22 +12,22 @@
     <title>VISSR Hello World example :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1740568039" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1740568039" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1740661945" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1740661945" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1740568039" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1740661945" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1740568039"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1740661945"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1740568039"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1740568039"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1740661945"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1740661945"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1740568039"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1740661945"></script>
 
     
   </div>
@@ -726,7 +726,7 @@ The next step is to clone the <a href="https://github.com/COVESA/vissr">VISSR</a
 <pre tabindex="0"><code>$ cd vissr/server/vissv2server/
 $ go build
 </code></pre><p>This could be followed by directly starting a client to issue requests to the server,
-but the server would then try to read data from an empty data store, so all responses would say &lsquo;Data-not-found&rsquo;.
+but the server would then try to read data from an empty data store, so all responses would say &lsquo;visserr:Data-not-available&rsquo;.
 To be able to get some real data back we will therefore start a feeder that will write simulated data into the data store.</p>
 <p>To do this, open a new terminal window, go to the feederv3 directory, and build the feeder.</p>
 <pre tabindex="0"><code>$ cd vissr/feeder/feeder-template/feederv3/
@@ -753,8 +753,8 @@ followed by clicking on the button &lsquo;Send&rsquo;.
 Try with the command</p>
 <pre tabindex="0"><code>{&#34;action&#34;:&#34;get&#34;,&#34;path&#34;:&#34;Vehicle.Cabin.Door.Row1.DriverSide.IsOpen&#34;,&#34;requestId&#34;:&#34;232&#34;}
 </code></pre><p>which should return a response like the below.</p>
-<pre tabindex="0"><code>Server: {&#34;action&#34;:&#34;get&#34;,&#34;requestId&#34;:&#34;232&#34;,&#34;ts&#34;:&#34;2024-11-12T11:26:44.546855082Z&#34;, &#34;data&#34;:{&#34;path&#34;:&#34;Vehicle.Cabin.Door.Row1.DriverSide.IsOpen&#34;, &#34;dp&#34;:{&#34;value&#34;:&#34;Data-not-found&#34;, &#34;ts&#34;:&#34;2024-11-12T11:26:44.548180993Z&#34;}}}
-</code></pre><p>The value is set to &lsquo;Data-not-found&rsquo; which is due to that the federv3 is not instructed to create simulated values for this signal.
+<pre tabindex="0"><code>Server: {&#34;action&#34;:&#34;get&#34;,&#34;requestId&#34;:&#34;232&#34;,&#34;ts&#34;:&#34;2024-11-12T11:26:44.546855082Z&#34;, &#34;data&#34;:{&#34;path&#34;:&#34;Vehicle.Cabin.Door.Row1.DriverSide.IsOpen&#34;, &#34;dp&#34;:{&#34;value&#34;:&#34;visserr:Data-not-available&#34;, &#34;ts&#34;:&#34;2024-11-12T11:26:44.548180993Z&#34;}}}
+</code></pre><p>The value is set to &lsquo;visserr:Data-not-available&rsquo; which is due to that the federv3 is not instructed to create simulated values for this signal.
 At startup the feederv3 reads the file VssVehicle.cvt which has been created by the <a href="/vissr/tools/">Domain Conversion Tool</a>.
 This file contains the instructions for how signals are mapped and scaled when they traverse between the &lsquo;vehicle domain&rsquo; and the &lsquo;VSS domain&rsquo;,
 but the feederv3 also uses this information to select which signals to create simulated values for.
@@ -1152,19 +1152,19 @@ describes a basic hello-world style sanity test for running VISSR in a Docker en
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1740568039"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1740568039"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1740568039"></script>
-    <script src="/vissr/js/jquery.sticky.js?1740568039"></script>
-    <script src="/vissr/js/featherlight.min.js?1740568039"></script>
-    <script src="/vissr/js/highlight.pack.js?1740568039"></script>
+    <script src="/vissr/js/clipboard.min.js?1740661945"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1740661945"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1740661945"></script>
+    <script src="/vissr/js/jquery.sticky.js?1740661945"></script>
+    <script src="/vissr/js/featherlight.min.js?1740661945"></script>
+    <script src="/vissr/js/highlight.pack.js?1740661945"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1740568039"></script>
-    <script src="/vissr/js/learn.js?1740568039"></script>
-    <script src="/vissr/js/hugo-learn.js?1740568039"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1740661945"></script>
+    <script src="/vissr/js/learn.js?1740661945"></script>
+    <script src="/vissr/js/hugo-learn.js?1740661945"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1740568039"></script>
+            <script src="/vissr/mermaid/mermaid.js?1740661945"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
