@@ -240,12 +240,10 @@ func getProtoErrorMessage(messageErrorMap map[string]interface{}) *pb.ErrorRespo
 			protoErrorMessage.Number = v.(string)
 		}
 		if k == "reason" {
-			reason := v.(string)
-			protoErrorMessage.Reason = &reason
+			protoErrorMessage.Reason = v.(string)
 		}
 		if k == "description" {
-			description := v.(string)
-			protoErrorMessage.Description = &description
+			protoErrorMessage.Description = v.(string)
 		}
 	}
 	return protoErrorMessage
