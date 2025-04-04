@@ -12,22 +12,22 @@
     <title>VISSR Docker :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1743524122" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1743524122" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1743752026" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1743752026" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1743524122" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1743752026" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1743524122"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1743752026"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1743524122"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1743524122"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1743752026"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1743752026"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1743524122"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1743752026"></script>
 
     
   </div>
@@ -713,14 +713,17 @@ project root. A docker directory is reserved for adding different docker setups 
 <p><strong>1. feeder-rl</strong></p>
 <p>The feeder-rl has two basic commands which lets you switch dataprovider. We have &ndash;dataprovider remotive or
 &ndash;dataprovider sim. This guide will focus on using &ndash;dataprovider remotive.</p>
-<p>Visit <a href="https://console.demo.remotivelabs.com/p/demo/recordings">remotive labs cloud demo</a></p>
+<p>Visit <a href="https://cloud.remotivelabs.com">remotive cloud</a></p>
 <ul>
-<li>Select the <em><strong>Turning Torso Drivecycle</strong></em>, and the vss configuration.</li>
-<li>Select <em><strong>Play</strong></em>, and choose <em><strong>select broker</strong></em>, choose <em><strong>My personal broker</strong></em> and then <em><strong>Upload</strong></em>.</li>
-<li>Select <em><strong>Go to broker</strong></em></li>
+<li>Create account or sign in, google accounts only for now but they are working on more. This will create an organisation and a default project for you</li>
+<li>Choose Recordings in the left navigation bar</li>
+<li>When creating an account, recordings should be available but might take a minute or two. You can also use the import button in the top right section under recordings.</li>
+<li>Select the <em><strong>City drive to Turing Torso</strong></em>, and the <em>vss_configuration</em>.</li>
+<li>Press play <em><strong>Play</strong></em>, this will start a RemotiveBroker and start playing the recording.</li>
+<li>Press Stop after it has opened and started playing.</li>
 <li>In the left down corner select <em><strong>Broker details</strong></em> and copy the url and the api-key, we need them for the feeder
 configuration</li>
-<li>keep the page open in the browser  (we will not press start yet)</li>
+<li>keep the page open in the browser</li>
 <li>Edit the <em><strong>config.json</strong></em> in the <em><strong>feeder-rl</strong></em> directory, replace url and api key.</li>
 </ul>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
@@ -1159,19 +1162,19 @@ feeder             | {&#34;file&#34;:&#34;feeder-rl.go:65&#34;,&#34;level&#34;:&
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1743524122"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1743524122"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1743524122"></script>
-    <script src="/vissr/js/jquery.sticky.js?1743524122"></script>
-    <script src="/vissr/js/featherlight.min.js?1743524122"></script>
-    <script src="/vissr/js/highlight.pack.js?1743524122"></script>
+    <script src="/vissr/js/clipboard.min.js?1743752026"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1743752026"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1743752026"></script>
+    <script src="/vissr/js/jquery.sticky.js?1743752026"></script>
+    <script src="/vissr/js/featherlight.min.js?1743752026"></script>
+    <script src="/vissr/js/highlight.pack.js?1743752026"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1743524122"></script>
-    <script src="/vissr/js/learn.js?1743524122"></script>
-    <script src="/vissr/js/hugo-learn.js?1743524122"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1743752026"></script>
+    <script src="/vissr/js/learn.js?1743752026"></script>
+    <script src="/vissr/js/hugo-learn.js?1743752026"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1743524122"></script>
+            <script src="/vissr/mermaid/mermaid.js?1743752026"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
