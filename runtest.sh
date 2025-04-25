@@ -5,13 +5,25 @@ usage() {
 }
 
 startme() {
+	echo "Building server..."
+	cd server/vissv2server
+	go build && mkdir -p logs
+	cd ../../
 	echo "Starting server"
-	screen -S vissv2server -dm bash -c "pushd server/vissv2server && go build && mkdir -p logs && ./vissv2server -m &> ./logs/vissv2server-log.txt && popd"
+	screen -S vissv2server -dm bash -c "pushd server/vissv2server && ./vissv2server -m &> ./logs/vissv2server-log.txt && popd"
 
+	echo "Building feederv3..."
+	cd feeder/feeder-template/feederv3
+	go build && mkdir -p logs
+	cd ../../../
 	echo "Starting feederv3"
-	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && go build && mkdir -p logs && ./feederv3 -i vssjson -t speed-sawtooth.json &> ./logs/feederv3-log.txt && popd"
+	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && ./feederv3 -i vssjson -t speed-sawtooth.json &> ./logs/feederv3-log.txt && popd"
 
-	sleep 3s
+	sleep 2s
+	echo "Building testClient..."
+	cd client/client-1.0/testClient
+	go build
+	cd ../../../
 	echo "Starting testClient"
 	screen -S testClient bash -c "pushd client/client-1.0/testClient && go build && ./testClient -m 4 && popd"
 
