@@ -47,3 +47,11 @@ A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 * gRCP is supported also by the v2.0 server implementation.
 * SwCs such as feeder and datastore are available to realize a complete tech stack from client to the vehicle "native" domain.
 * Tool for realizing a data mapping between the "VSS domain" and the vehicle "native" domain (e.g. between VSS and CAN data).
+
+## Contributors
+VISSR is an open standard and we invite anybody to contribute. Currently VISSR contains - among others - significant  contributions from
+
+ - [Volvo Cars](https://www.volvocars.com/)
+ - [Geotab Inc](https://www.geotab.com/about/)
+ - [Ford Motor Company](https://www.ford.com/)
+ - [Mitsubishi Electric](https://www.mitsubishielectric.com/en/)
