@@ -9,7 +9,7 @@ The MQTT cloud client that is about to issue a VISSv2 request start with subscri
 After the subscription, the cloud client publishes a JSON payload containing the unique topic, and the VISSv2 request, to the topic VINXXX/Vehicle. For this to work, the cloud client must know the vehicle identity, which it is supposed to have retrieved out-of-band from this communication.<br>
 The broker then pushes this publication to the VISSv2 MQTT client, as it previously subscribed to this topic. This client then forwards the request part of the payload to the VISSv2 server, that then serves the request, and returns the response to the client. The client then publishes the response as the payload, to the topic it received in the payload from the broker, and finally the broker pushes this message to the cloud client that is a subscriber of this topic. The payload contains the VISSv2 response to the VISSv2 request that it pushed earlier.
 
-![VISSv2 over MQTT sequence diagram](../../pics/mqtt_vissv2_protocol.jpg?raw=true)<br>
+![VISSv2 over MQTT sequence diagram](/pics/mqtt_vissv2_protocol.jpg?raw=true)<br>
 
 The cloud client can repeat this sequence for further VISSv2 requests, using the same unique request topic. 
 
