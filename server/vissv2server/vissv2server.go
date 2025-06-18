@@ -89,9 +89,9 @@ func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDa
 		select {
 
 		case response := <-serviceMgrChannel:
-//			utils.Info.Printf("Server core: Response from service mgr:%s", string(response))
+//			utils.Info.Printf("Server core: Response from service mgr:%s", response)
 			mgrIndex := extractMgrId(response["RouterId"].(string))
-			utils.Info.Printf("mgrIndex=%d", mgrIndex)
+//			utils.Info.Printf("mgrIndex=%d", mgrIndex)
 			backendChannel[mgrIndex] <- response
 		case request := <-serviceDataChannel:
 //			utils.Info.Printf("Server core: Request to service:%s", request)
@@ -105,18 +105,22 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 		select {
 
 		case msg := <-transportMgrChannel:
-			utils.Info.Printf("request: %s", msg)
+//			utils.Info.Printf("request: %s", msg)
 			var msgMap map[string]interface{}
 			utils.MapRequest(msg, &msgMap)
 			transportDataChannel <- msgMap // send request to server hub
 		case message := <-backendChannel:
-			transportMgrChannel <- utils.FinalizeMessage(message)
+			select {
+				case transportMgrChannel <- utils.FinalizeMessage(message):
+				default: 
+					utils.Error.Printf("server hub: Event dropped")
+			}
 		}
 	}
 }
 
 func searchTree(rootNode *utils.Node_t, path string, anyDepth bool, leafNodesOnly bool, listSize int, noScopeList []string, validation *int) (int, []utils.SearchData_t) {
-	utils.Info.Printf("searchTree(): path=%s, anyDepth=%t, leafNodesOnly=%t", path, anyDepth, leafNodesOnly)
+//	utils.Info.Printf("searchTree(): path=%s, anyDepth=%t, leafNodesOnly=%t", path, anyDepth, leafNodesOnly)
 	if len(path) > 0 {
 		var searchData []utils.SearchData_t
 		var matches int
@@ -373,13 +377,13 @@ func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot
 	var searchData []utils.SearchData_t
 	var matches int
 	noScopeList, numOfListElem := getNoScopeList(tokenContext)
-	//utils.Info.Printf("noScopeList[0]=%s", noScopeList[0])
+//	utils.Info.Printf("noScopeList[0]=%s", noScopeList[0])
 	matches, searchData = searchTree(VSSTreeRoot, path+".*", true, false, numOfListElem, noScopeList, nil)
 	subTreeRoot := getSubTreeNodeHandle(path, searchData, matches)
 	if subTreeRoot == nil {
 		return ""
 	}
-	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", utils.VSSgetName(subTreeRoot))
+//	utils.Info.Printf("synthesizeJsonTree:subTreeRoot-name=%s", utils.VSSgetName(subTreeRoot))
 	if depth == 0 {
 		depth = 100
 	}
@@ -437,7 +441,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		utils.UnpackFilter(requestMap["filter"], &filterList)
 		// Iterates all the filters
 		for i := 0; i < len(filterList); i++ {
-			utils.Info.Printf("filterList[%d].Type=%s, filterList[%d].Parameter=%s", i, filterList[i].Type, i, filterList[i].Parameter)
+//			utils.Info.Printf("filterList[%d].Type=%s, filterList[%d].Parameter=%s", i, filterList[i].Type, i, filterList[i].Parameter)
 			// PATH FILTER
 			if filterList[i].Type == "paths" {
 				if strings.Contains(filterList[i].Parameter, "[") { // Various paths to search
@@ -498,7 +502,6 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		anyDepth := true
 		validation := -1
 		matches, searchData = searchTree(VSSTreeRoot, searchPath[i], anyDepth, true, 0, nil, &validation)
-		//utils.Info.Printf("Path=%s, Matches=%d. Max validation from search=%d", searchPath[i], matches, int(validation))
 		utils.Info.Printf("Matches=%d. Max validation from search=%d", matches, int(validation))
 		for i := 0; i < matches; i++ {
 			pathLen := getPathLen(string(searchData[i].NodePath[:]))
@@ -620,7 +623,7 @@ func getRangeBoundaries(paramMap interface{}) (string, string) {
 		default:
 			utils.Info.Println(pMap, "is of an unknown type")
 	}
-utils.Info.Printf("bVal1=%s, bVal2=%s", bVal[0], bVal[1])
+//utils.Info.Printf("bVal1=%s, bVal2=%s", bVal[0], bVal[1])
 	return bVal[0], bVal[1]
 }
 

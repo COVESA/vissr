@@ -134,7 +134,7 @@ func initDataServer(serviceMgrChan chan map[string]interface{}, clientChannel ch
 				serviceMgrChan <- response
 			}
 		case notification := <-backendChannel: // notification
-			utils.Info.Printf("Service mgr notification: %s", notification)
+//			utils.Info.Printf("Service mgr notification: %s", notification)
 			serviceMgrChan <- notification
 		}
 	}
@@ -500,7 +500,7 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 				utils.Error.Printf("Job failed. Error()=%s", err.Error())
 				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 			} else {
-				utils.Warning.Printf("Data not found.")
+//				utils.Warning.Printf("Data not found.")
 				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 			}
 		} else {
@@ -1346,8 +1346,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	for {
 		select {
 		case requestMap := <-dataChan: // request from server core
-//			utils.Info.Printf("Service manager: Request from Server core:%s\n", request)
-			// TODO: interact with underlying subsystem to get the value
+//			utils.Info.Printf("Service manager: Request from Server core:%s\n", requestMap["action"].(string))
 			var responseMap = make(map[string]interface{})
 			responseMap["RouterId"] = requestMap["RouterId"]
 			responseMap["action"] = requestMap["action"]
@@ -1476,7 +1475,11 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
 			subscriptionMap["RouterId"] = subscriptionState.RouterId
 			subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
-			backendChan <- subscriptionMap
+			select {
+			case backendChan <- subscriptionMap:
+			default: 
+				utils.Error.Printf("serviceMgr: Event dropped")
+			}
 		case clPack := <-CLChannel: // curve logging notification
 			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
 			if index == -1 {
@@ -1583,6 +1586,7 @@ func scanAndRemoveListItem(subscriptionList []SubscriptionState, routerId string
 			doRemove = true
 		}
 		if doRemove {
+//utils.Error.Printf("scanAndRemoveListItem:removing index=%d:subscriptionId=%d", i, subscriptionList[i].SubscriptionId)
 			_, subscriptionList = deactivateSubscription(subscriptionList, strconv.Itoa(subscriptionList[i].SubscriptionId))
 			removed = true
 			break
