@@ -18,7 +18,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+//	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -158,16 +158,14 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 
 // Receives the message from client, sends it to the manager hub, and waits for the response
 func frontendWSAppSession(conn *websocket.Conn, clientChannel chan string, clientBackendChannel chan string, clientId int, encoding Encoding) {
-	defer conn.Close()
 	for {
 		_, msg, err := conn.ReadMessage() // Reads message from websocket
 		if err != nil {                   // Error reading message, kills socket
 			Error.Printf("App client read error: %s", err)
 			clientChannel <- `{"action":"internal-killsubscriptions"}`
-			time.Sleep(100 * time.Millisecond) // to allow for outstanding notifications before backend is killed
 			clientBackendChannel <- backendTermination
 			ReturnWsClientIndex(clientId)
-			break
+			return
 		}
 		// Generates payload from encoding
 		var payload string
@@ -209,7 +207,7 @@ func backendWSAppSession(conn *websocket.Conn, clientBackendChannel chan string,
 		err := conn.WriteMessage(messageType, response)
 		if err != nil {
 			Error.Print("App client write error:", err)
-			//			break  // likely to be followed by a read error which trigger the termination above.
+//			break  // likely to be followed by a read error which trigger the termination above.
 		}
 	}
 }
