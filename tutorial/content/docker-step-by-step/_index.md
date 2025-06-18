@@ -14,13 +14,16 @@ project root. A docker directory is reserved for adding different docker setups 
 The feeder-rl has two basic commands which lets you switch dataprovider. We have --dataprovider remotive or 
 --dataprovider sim. This guide will focus on using --dataprovider remotive.
 
-Visit [remotive labs cloud demo](https://console.demo.remotivelabs.com/p/demo/recordings)
-- Select the ***Turning Torso Drivecycle***, and the vss configuration.
-- Select ***Play***, and choose ***select broker***, choose ***My personal broker*** and then ***Upload***.
-- Select ***Go to broker***
+Visit [remotive cloud](https://cloud.remotivelabs.com)
+- Create account or sign in, google accounts only for now but they are working on more. This will create an organisation and a default project for you
+- Choose Recordings in the left navigation bar
+- When creating an account, recordings should be available but might take a minute or two. You can also use the import button in the top right section under recordings.
+- Select the ***City drive to Turing Torso***, and the *vss_configuration*.
+- Press play ***Play***, this will start a RemotiveBroker and start playing the recording.
+- Press Stop after it has opened and started playing.
 - In the left down corner select ***Broker details*** and copy the url and the api-key, we need them for the feeder 
 configuration
-- keep the page open in the browser  (we will not press start yet)
+- keep the page open in the browser
 - Edit the ***config.json*** in the ***feeder-rl*** directory, replace url and api key.
 ```json
 {
