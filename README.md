@@ -48,6 +48,16 @@ A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 * SwCs such as feeder and datastore are available to realize a complete tech stack from client to the vehicle "native" domain.
 * Tool for realizing a data mapping between the "VSS domain" and the vehicle "native" domain (e.g. between VSS and CAN data).
 
+## Quick start
+Two shell scripts are available for a quick start of trying out the VISSR tech stack.
+System dependencies such as having a Go build system installed must first be fulfilled.
+* runtest.sh: This script builds and runs the server and the feederv3 simulating some signals,
+then it runs the testclient and displays its request messages and the associated response messages.
+* runstack.sh: This script builds and runs the server and the feederv3 simulating some signals,
+enabling any client implementation to connect to the server.
+
+See the tutorial for more information.
+
 ## Contributors
 VISSR is an open standard and we invite anybody to contribute. Currently VISSR contains - among others - significant  contributions from
 

@@ -406,8 +406,9 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
 			validationError := utils.JsonSchemaValidate(reqMessage)
 			if len(validationError) > 0 {
-				var requestMap map[string]interface{}
-				utils.MapRequest(reqMessage, &requestMap)
+				requestMap := make(map[string]interface{})
+				requestMap["action"] = utils.ExtractFromRequest(reqMessage, "action")
+				requestMap["requestId"] = utils.ExtractFromRequest(reqMessage, "requestId")
 				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
 				wsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
 				continue

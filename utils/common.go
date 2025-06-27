@@ -234,6 +234,21 @@ func ExtractFromToken(token string, claim string) string { // TODO remove white 
 	return ""
 }
 
+func ExtractFromRequest(request string, parameterKey string) string {
+	keyIndex := strings.Index(request, "\"" + parameterKey + "\":")
+	if keyIndex != -1 {
+		valueIndex1 := strings.Index(request[keyIndex+len(parameterKey)+3:], "\"")
+		if valueIndex1 != -1 {
+			valueIndex2 := strings.Index(request[keyIndex+len(parameterKey)+3+valueIndex1+1:], "\"")
+			if valueIndex2 != -1 {
+Info.Printf("ExtractFromRequest(%s):%s", parameterKey, request[keyIndex+len(parameterKey)+3+valueIndex1+1:keyIndex+len(parameterKey)+3+valueIndex1+1+valueIndex2])
+				return request[keyIndex+len(parameterKey)+3+valueIndex1+1:keyIndex+len(parameterKey)+3+valueIndex1+1+valueIndex2]
+			}
+		}
+	}
+	return ""
+}
+
 func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]interface{}, errorListIndex int, altErrorMessage string) {
 	if reqMap["RouterId"] != nil {
 		errRespMap["RouterId"] = reqMap["RouterId"]
