@@ -80,3 +80,7 @@ The other configured by "vssjson" tries to read the file "tripdata.json", which 
 
 The signal names must be VSS paths as they are not processed by the conversion engine.
 Extending the model to instead expect "vehicle domain signals" (like CAN signal data) should be a simple coding exercise for anyone preferring that.
+
+For signals written to the server, if the value is of either integer or float datatypes,
+then the feederv3 will simulate that it takes some time for the underlying vehicle system to change the state to this new value.
+This signal value must first have been set once before the simulation logic will be activated.

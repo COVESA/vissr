@@ -90,6 +90,10 @@ The file testRequests.json can be edited to add or remove test cases.
 It is up to the operator to ensure that subscribe trigger conditions will be met by the simulated data that the feeder injects.
 This data can be modified in the tripdata.json file in the feederv3 directory.
 
+To get the VISSR stack running to enable testing using e. g. a client under development,
+or any of the clients found in the [client directories](https://github.com/COVESA/vissr/tree/master/client),
+there is the runstack.sh script that builds and starts the server and the feederv3, with the feeder generating simulated input.
+
 ### Transport protocols
 The following transport protocols are supported
 * HTTP

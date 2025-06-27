@@ -331,19 +331,42 @@ type simulateDataCtx struct {
 	Iteration int
 }
 
+type ActuatorSim struct {
+	ValueIndex int
+	Value   []string
+}
+
+type PreviousSimDp struct {
+	Path  string
+	Value string
+}
+
 func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, outputChan chan DomainData) {
+	var actuatorSim ActuatorSim = ActuatorSim{-1, nil}
 	var simCtx simulateDataCtx
 	simCtx.RandomSim = true
 	simCtx.Fmap = fMap
 	dpIndex := 0
+	var previousSimDp PreviousSimDp
 	for {
 		select {
 		case outData := <-outputChan:
 			utils.Info.Printf("Data for calling the vehicle interface: Name=%s, Value=%s", outData.Name, outData.Value)
-			simCtx.RandomSim = false
-			simCtx.Path = outData.Name
-			simCtx.SetVal = outData.Value
-			simCtx.Iteration = 0
+			if simulatedSource == "internal" {
+				simCtx.RandomSim = false
+				simCtx.Path = outData.Name
+				simCtx.SetVal = outData.Value
+				simCtx.Iteration = 0
+			} else { // simulate actuation over a time period
+				if actuatorSim.ValueIndex == -1 {
+					actuatorSim.Value = calculateSimValues(previousSimDp.Value, outData.Value)
+					if actuatorSim.Value != nil {
+						actuatorSim.ValueIndex = 0
+						previousSimDp.Path = outData.Name
+						previousSimDp.Value = outData.Value
+					}
+				}
+			}
 
 		default:
 			if simulatedSource == "internal" {
@@ -356,9 +379,96 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 					inputChan <- dataPoint[i]
 				}
 				dpIndex = incDpIndex(dpIndex)
+				if actuatorSim.ValueIndex >= 0 && len(actuatorSim.Value) > 0 {
+					inputChan <- makeDataPoint(previousSimDp.Path, actuatorSim.Value[actuatorSim.ValueIndex])
+					actuatorSim.ValueIndex++
+					if actuatorSim.ValueIndex == len(actuatorSim.Value) {
+						actuatorSim.ValueIndex = -1
+					}
+				}
 			}
 		}
 	}
+}
+
+func calculateSimValues(previousValueStr string, newValueStr string) []string {
+	var simValues []string
+	var noOfValues int
+	newValue, err := strconv.Atoi(newValueStr)
+	if err != nil {
+		newValue, err := strconv.ParseFloat(newValueStr, 64)
+		if err != nil {
+			return nil
+		}
+		previousValue, err := strconv.ParseFloat(previousValueStr, 64)
+		var diff, step float64
+		if err != nil {
+			simValues = make([]string, 1)
+			noOfValues = 1
+			step = 0
+		} else {
+			diff = (newValue - previousValue)
+				if diff < 0 {
+				diff = -diff
+			}
+			if diff < 10 {
+				noOfValues = 5
+			} else if diff < 50 {
+				noOfValues = 10
+			} else {
+				noOfValues = 20
+			}
+			simValues = make([]string, noOfValues)
+			step = (newValue - previousValue) / float64(noOfValues)
+		}
+		for i := 0; i < noOfValues; i++ {
+			if i == noOfValues-1 {
+				previousValue = newValue
+				step = 0
+			}
+			simValues[i] = strconv.FormatFloat(previousValue + step*(float64(i+1)), 'f', -1, 32)
+		}
+	} else {
+		previousValue, err := strconv.Atoi(previousValueStr)
+		var diff, step int
+		if err != nil {
+			simValues = make([]string, 1)
+			noOfValues = 1
+			step = 0
+		} else {
+			diff = (newValue - previousValue)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < 10 {
+				noOfValues = 5
+			} else if diff < 50 {
+				noOfValues = 10
+			} else {
+				noOfValues = 20
+			}
+			simValues = make([]string, noOfValues)
+			step = (newValue - previousValue) / noOfValues
+		}
+		for i := 0; i < noOfValues; i++ {
+			if i == noOfValues-1 {
+				previousValue = newValue
+				step = 0
+			}
+			simValues[i] = strconv.Itoa(previousValue + step*(i+1))
+		}
+	}
+/*for i := 0; i < len(simValues); i++ {
+	utils.Info.Printf("Simvalue[%d]=%s\n", i , simValues[i])
+}*/
+	return simValues
+}
+
+func makeDataPoint(path string, value string) DomainData {
+	var dataPoint DomainData
+	dataPoint.Name = path
+	dataPoint.Value = value
+	return dataPoint
 }
 
 func simulateInput(simCtx *simulateDataCtx) DomainData {
@@ -446,7 +556,7 @@ func convertDomainData(north2SouthConv bool, inData DomainData, feederMap []Feed
 	matchIndex := sort.Search(len(feederMap), func(i int) bool { return feederMap[i].Name >= inData.Name })
 	if matchIndex == len(feederMap) || feederMap[matchIndex].Name != inData.Name {
 		utils.Error.Printf("convertDomainData:Failed to map= %s", inData.Name)
-		return outData
+		return inData  //assume 1-to-1...
 	}
 	outData.Name = feederMap[feederMap[matchIndex].MapIndex].Name
 	outData.Value = convertValue(inData.Value, feederMap[matchIndex].ConvertIndex,
@@ -526,7 +636,7 @@ func main() {
 		Default:  "VssVehicleScaling.json"})
 	tripDataFile := parser.String("t", "tripdatafile", &argparse.Options{
 		Required: false,
-		Help:     "VSS-Vehicle scaling data filename",
+		Help:     "Filename for simulated trip data",
 		Default:  "tripdata.json"})
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
