@@ -331,9 +331,10 @@ type simulateDataCtx struct {
 	Iteration int
 }
 
-type ActuatorSim struct {
-	ValueIndex int
-	Value   []string
+type ActuatorSimCtx struct {
+	RemainingSteps int
+	CurrVal string
+	EndVal string
 }
 
 type PreviousSimDp struct {
@@ -342,7 +343,8 @@ type PreviousSimDp struct {
 }
 
 func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, outputChan chan DomainData) {
-	var actuatorSim ActuatorSim = ActuatorSim{-1, nil}
+	var aSimCtxContainer ActuatorSimCtx = ActuatorSimCtx{0, "", ""}
+	aSimCtx := &aSimCtxContainer
 	var simCtx simulateDataCtx
 	simCtx.RandomSim = true
 	simCtx.Fmap = fMap
@@ -358,13 +360,14 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 				simCtx.SetVal = outData.Value
 				simCtx.Iteration = 0
 			} else { // simulate actuation over a time period
-				if actuatorSim.ValueIndex == -1 {
-					actuatorSim.Value = calculateSimValues(previousSimDp.Value, outData.Value)
-					if actuatorSim.Value != nil {
-						actuatorSim.ValueIndex = 0
-						previousSimDp.Path = outData.Name
-						previousSimDp.Value = outData.Value
-					}
+				if aSimCtx.RemainingSteps == 0 {
+					aSimCtx.RemainingSteps = 10
+					aSimCtx.CurrVal = previousSimDp.Value
+					aSimCtx.EndVal = outData.Value
+					previousSimDp.Path = outData.Name
+					previousSimDp.Value = outData.Value
+				} else {
+					aSimCtx.EndVal = outData.Value
 				}
 			}
 
@@ -379,89 +382,45 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 					inputChan <- dataPoint[i]
 				}
 				dpIndex = incDpIndex(dpIndex)
-				if actuatorSim.ValueIndex >= 0 && len(actuatorSim.Value) > 0 {
-					inputChan <- makeDataPoint(previousSimDp.Path, actuatorSim.Value[actuatorSim.ValueIndex])
-					actuatorSim.ValueIndex++
-					if actuatorSim.ValueIndex == len(actuatorSim.Value) {
-						actuatorSim.ValueIndex = -1
-					}
+				if aSimCtx.RemainingSteps > 0 {
+					inputChan <- makeDataPoint(previousSimDp.Path, calculateSimValue(aSimCtx))
 				}
+				
 			}
 		}
 	}
 }
 
-func calculateSimValues(previousValueStr string, newValueStr string) []string {
-	var simValues []string
-	var noOfValues int
-	newValue, err := strconv.Atoi(newValueStr)
+func calculateSimValue(aSimCtx *ActuatorSimCtx) string {
+	noOfSteps := aSimCtx.RemainingSteps
+	aSimCtx.RemainingSteps--
+	endValue, err := strconv.Atoi(aSimCtx.EndVal)
 	if err != nil {
-		newValue, err := strconv.ParseFloat(newValueStr, 64)
+		endValue, err := strconv.ParseFloat(aSimCtx.EndVal, 64)
 		if err != nil {
-			return nil
+			aSimCtx.RemainingSteps = 0
+			return aSimCtx.EndVal
 		}
-		previousValue, err := strconv.ParseFloat(previousValueStr, 64)
-		var diff, step float64
+		currValue, err := strconv.ParseFloat(aSimCtx.CurrVal, 64)
 		if err != nil {
-			simValues = make([]string, 1)
-			noOfValues = 1
-			step = 0
+			aSimCtx.RemainingSteps = 0
+			return aSimCtx.EndVal
 		} else {
-			diff = (newValue - previousValue)
-				if diff < 0 {
-				diff = -diff
-			}
-			if diff < 10 {
-				noOfValues = 5
-			} else if diff < 50 {
-				noOfValues = 10
-			} else {
-				noOfValues = 20
-			}
-			simValues = make([]string, noOfValues)
-			step = (newValue - previousValue) / float64(noOfValues)
-		}
-		for i := 0; i < noOfValues; i++ {
-			if i == noOfValues-1 {
-				previousValue = newValue
-				step = 0
-			}
-			simValues[i] = strconv.FormatFloat(previousValue + step*(float64(i+1)), 'f', -1, 32)
+			step := (endValue - currValue) / float64(noOfSteps)
+			aSimCtx.CurrVal = strconv.FormatFloat(currValue + step, 'f', -1, 32)
+			return aSimCtx.CurrVal
 		}
 	} else {
-		previousValue, err := strconv.Atoi(previousValueStr)
-		var diff, step int
+		currValue, err := strconv.Atoi(aSimCtx.CurrVal)
 		if err != nil {
-			simValues = make([]string, 1)
-			noOfValues = 1
-			step = 0
+			aSimCtx.RemainingSteps = 0
+			return aSimCtx.EndVal
 		} else {
-			diff = (newValue - previousValue)
-			if diff < 0 {
-				diff = -diff
-			}
-			if diff < 10 {
-				noOfValues = 5
-			} else if diff < 50 {
-				noOfValues = 10
-			} else {
-				noOfValues = 20
-			}
-			simValues = make([]string, noOfValues)
-			step = (newValue - previousValue) / noOfValues
-		}
-		for i := 0; i < noOfValues; i++ {
-			if i == noOfValues-1 {
-				previousValue = newValue
-				step = 0
-			}
-			simValues[i] = strconv.Itoa(previousValue + step*(i+1))
+			step := (endValue - currValue) / noOfSteps
+			aSimCtx.CurrVal = strconv.Itoa(currValue + step)
+			return aSimCtx.CurrVal
 		}
 	}
-/*for i := 0; i < len(simValues); i++ {
-	utils.Info.Printf("Simvalue[%d]=%s\n", i , simValues[i])
-}*/
-	return simValues
 }
 
 func makeDataPoint(path string, value string) DomainData {
