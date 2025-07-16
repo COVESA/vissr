@@ -211,50 +211,6 @@ func verifyToken(token string, action string, paths string, validation int) (int
 	return atsValidation, handle, gatingId
 }
 
-// nativeCnodeDef.h: nodeTypes_t;
-func nodeTypesToString(nodeType int) string {
-	switch nodeType {
-	case 1:
-		return "sensor"
-	case 2:
-		return "actuator"
-	case 3:
-		return "attribute"
-	case 4:
-		return "branch"
-	default:
-		return ""
-	}
-}
-
-// nativeCnodeDef.h: nodeDatatypes_t
-func nodeDataTypesToString(nodeType int) string {
-	switch nodeType {
-	case 1:
-		return "int8"
-	case 2:
-		return "uint8"
-	case 3:
-		return "int16"
-	case 4:
-		return "uint16"
-	case 5:
-		return "int32"
-	case 6:
-		return "uint32"
-	case 7:
-		return "double"
-	case 8:
-		return "float"
-	case 9:
-		return "boolean"
-	case 10:
-		return "string"
-	default:
-		return ""
-	}
-}
-
 func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, maxDepth int) string {
 	if depth >= maxDepth {
 		return jsonBuffer
@@ -263,8 +219,8 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	var newJsonBuffer string
 	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
-	nodeType := int(utils.VSSgetType(nodeHandle))
-	newJsonBuffer += `"type":"` + nodeTypesToString(nodeType) + `",`
+	nodeType := utils.VSSgetType(nodeHandle)
+	newJsonBuffer += `"type":"` + utils.NodetypeToString(nodeType) + `",`
 	nodeDefault := utils.VSSgetDefault(nodeHandle)
 	if len(nodeDefault) > 0 {
 		if nodeDefault[0] == '{' || nodeDefault[0] == '[' {
@@ -276,19 +232,10 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	nodeDescr := utils.VSSgetDescr(nodeHandle)
 	newJsonBuffer += `"description":"` + nodeDescr + `",`
 	nodeNumofChildren := utils.VSSgetNumOfChildren(nodeHandle)
-	switch nodeType {
-	case 4: // branch
-	case 1: // sensor
-		fallthrough
-	case 2: // actuator
-		fallthrough
-	case 3: // attribute
-		// TODO Look for other metadata, unit, enum, ...
-		nodeDatatype := utils.VSSgetDatatype(nodeHandle)
+	// TODO Look for other metadata: unit, enum, ...
+	nodeDatatype := utils.VSSgetDatatype(nodeHandle)
+	if nodeDatatype != "" {
 		newJsonBuffer += `"datatype":"` + nodeDatatype + `",`
-	default:
-		return ""
-
 	}
 	if depth < maxDepth {
 		if nodeNumofChildren > 0 {

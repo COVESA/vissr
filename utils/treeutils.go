@@ -88,6 +88,8 @@ const (   // allowed elements of nodeTypes_t
     BRANCH = 4
     STRUCT = 5
     PROPERTY = 6
+    PROCEDURE = 7
+    IOSTRUCT = 8
 )
 
 type Node_t struct {
@@ -124,8 +126,14 @@ func StringToNodetype(nodeType string) uint8 {
     if (nodeType == "struct") {
         return STRUCT
     }
-    if (nodeType == "propery") {
+    if (nodeType == "property") {
         return PROPERTY
+    }
+    if (nodeType == "procedure") {
+        return PROCEDURE
+    }
+    if (nodeType == "iostruct") {
+        return IOSTRUCT
     }
     fmt.Printf("Unknown type! |%s|\n", nodeType);
     return 0
@@ -161,7 +169,13 @@ func NodetypeToString(nodeType NodeTypes_t) string {
         return "struct"
     }
     if (nodeType == PROPERTY) {
-        return "propery"
+        return "property"
+    }
+    if (nodeType == PROCEDURE) {
+        return "procedure"
+    }
+    if (nodeType == IOSTRUCT) {
+        return "iostruct"
     }
     fmt.Printf("Unknown type! |%d|\n", nodeType);
     return ""
@@ -932,11 +946,7 @@ func VSSgetType(nodeHandle *Node_t) NodeTypes_t {
 }
 
 func VSSgetDatatype(nodeHandle *Node_t) string {
-	nodeType := VSSgetType(nodeHandle)
-	if (nodeType != BRANCH && nodeType != STRUCT) {
-		return nodeHandle.Datatype
-	}
-	return ""
+	return nodeHandle.Datatype
 }
 
 func VSSgetUUID(nodeHandle *Node_t) string {
