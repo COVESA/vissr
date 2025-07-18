@@ -1,8 +1,3 @@
-github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20211207094201-7208d48f32b6/go.mod h1:g2N97BLJNriANqodWem0usF9fKwwUFHP+VxG1dfSsZQ=
-github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20240827143318-9495c70b56c2 h1:owPiApdxQtb5EMw3QsgQngp1PShxdgioZu4aofShDt0=
-github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20240827143318-9495c70b56c2/go.mod h1:g2N97BLJNriANqodWem0usF9fKwwUFHP+VxG1dfSsZQ=
-github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20240827143318-9495c70b56c2 h1:yp/4yWI1cdz8f37f90zOn3Og0KrOgyuUUIBXtiEFA2w=
-github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20240827143318-9495c70b56c2/go.mod h1:rWjamgjPuXRJ5kKJrwibrR1Pe771seoUO/9OauCu/Y4=
 github.com/akamensky/argparse v1.4.0 h1:YGzvsTqCvbEZhL8zZu2AiA5nq805NZh75JNj4ajn1xc=
 github.com/akamensky/argparse v1.4.0/go.mod h1:S5kwC7IuDcEr5VeXtGPRVZ5o/FdhcMlQz4IZQuw64xA=
 github.com/apache/iotdb-client-go v1.1.7 h1:MH87LJNquMxHmFKWuS06CFwxgEjxK5oug6H5lKCa74w=
@@ -65,6 +60,7 @@ github.com/qri-io/jsonpointer v0.1.1 h1:prVZBZLL6TW5vsSB9fFHFAMBLI4b0ri5vribQlTJ
 github.com/qri-io/jsonpointer v0.1.1/go.mod h1:DnJPaYgiKu56EuDp8TU5wFLdZIcAnb/uH9v37ZaMV64=
 github.com/qri-io/jsonschema v0.2.1 h1:NNFoKms+kut6ABPf6xiKNM5214jzxAhDBrPHCJ97Wg0=
 github.com/qri-io/jsonschema v0.2.1/go.mod h1:g7DPkiOsK1xv6T/Ao5scXRkd+yTFygcANPBaaqW+VrI=
+github.com/sergi/go-diff v1.0.0 h1:Kpca3qRNrduNnOQeazBd0ysaKrUJiIuISHxogkT9RPQ=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
@@ -130,6 +126,7 @@ google.golang.org/protobuf v1.21.0/go.mod h1:47Nbq4nVaFHyn7ilMalzfO3qCViNmqZ2kzi
 google.golang.org/protobuf v1.23.0/go.mod h1:EGpADcykh3NcUnDUJcl1+ZksZNG86OlYog2l/sGQquU=
 google.golang.org/protobuf v1.33.0 h1:uNO2rsAINq/JlFpSdYEKIZ0uKD/R9cpdv0T+yoGwGmI=
 google.golang.org/protobuf v1.33.0/go.mod h1:c6P6GXX6sHbq/GpV6MGZEdwhWPcYBgnhAHhKbcUYpos=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/fsnotify.v1 v1.4.7/go.mod h1:Tz8NjZHkW78fSQdbUxIjBTcgA1z1m8ZHf0WmKUhAMys=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 h1:uRGJdciOHaEIrze2W8Q3AKkepLTh2hOroT7a+7czfdQ=
