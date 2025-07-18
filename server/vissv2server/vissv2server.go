@@ -22,6 +22,7 @@ import (
 
 	"encoding/hex"
 	"encoding/json"
+	"gopkg.in/yaml.v3"
 	"crypto/sha1"
 	"io"
 //	"net/http"
@@ -220,7 +221,7 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
 	nodeType := utils.VSSgetType(nodeHandle)
-	newJsonBuffer += `"type":"` + utils.NodetypeToString(nodeType) + `",`
+	newJsonBuffer += `"type":"` + nodeType + `",`
 	nodeDefault := utils.VSSgetDefault(nodeHandle)
 	if len(nodeDefault) > 0 {
 		if nodeDefault[0] == '{' || nodeDefault[0] == '[' {
@@ -318,7 +319,6 @@ func extractNoScopeElementsLevel2(noScopeMap []interface{}) ([]string, int) {
 	return noScopeList, i
 }
 
-// Gets node and childs data as string from VSS tree
 func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot *utils.Node_t) string {
 	var jsonBuffer string
 	var searchData []utils.SearchData_t
@@ -374,11 +374,14 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		return
 	}
 	rootPath := requestMap["path"].(string)
-	VSSTreeRoot := utils.SetRootNodePointer(rootPath)
-	if VSSTreeRoot == nil {
-		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-		backendChan[tDChanIndex] <- errorResponseMap
-		return
+	var VSSTreeRoot *utils.Node_t
+	if !(rootPath == "HIM" && requestMap["action"] == "get" && requestMap["filter"] != nil) {
+		VSSTreeRoot = utils.SetRootNodePointer(rootPath)
+		if VSSTreeRoot == nil {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
 	}
 	var searchPath []string
 	var filterList []utils.FilterObject // variant + parameter
@@ -419,7 +422,11 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				treedepth, err := strconv.Atoi(filterList[i].Parameter)
 				if err == nil {
 				metadata := ""
-				metadata = synthesizeJsonTree(requestMap["path"].(string), treedepth, tokenContext, VSSTreeRoot)
+				if rootPath ==  "HIM" {
+					metadata = himJsonify()
+				} else {
+					metadata = synthesizeJsonTree(rootPath, treedepth, tokenContext, VSSTreeRoot)
+				}
 				if len(metadata) > 0 {
 					delete(requestMap, "path")
 					delete(requestMap, "filter")
@@ -554,6 +561,39 @@ func validateData(requestMap map[string]interface{}, searchData []utils.SearchDa
 	return -1, ""
 }
 
+func himJsonify() string {
+	var himMap map[string]interface{}
+
+	data, err := os.ReadFile("viss.him")
+	if err != nil {
+		utils.Error.Printf("error reading viss.him")
+		return ""
+	}
+	err = yaml.Unmarshal([]byte(data), &himMap)
+	if err != nil {
+		utils.Error.Printf("him file unmarshal error: %v", err)
+		return ""
+	}
+	himMap = removeLocalProperty(himMap)
+	data, err = json.Marshal(himMap)
+	if err != nil {
+		fmt.Printf("HIM JSON marshall error=%s\n", err)
+		return ""
+	}
+	return string(data)
+}
+
+func removeLocalProperty(himMap map[string]interface{}) map[string]interface{} {
+	for _, v1 := range himMap {
+		for k2, _ := range v1.(map[string]interface{}) {
+			if k2 == "local" {
+				delete(v1.(map[string]interface{}), k2)
+			}
+		}
+	}
+	return himMap
+}
+
 func getRangeBoundaries(paramMap interface{}) (string, string) {
 	var bVal []string = []string{"", ""}
 	switch pMap := paramMap.(type) {
@@ -590,7 +630,7 @@ func getRangeBoundary(pMap map[string]interface{}) string {
 	return bVal
 }
 
-func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) map[string]interface{} {
+func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, path string) map[string]interface{} {
 //utils.Info.Printf("initiateFileTransfer: requestMap[action]=%s, nodeType=%d", requestMap["action"], nodeType)
 	var ftInitData utils.FileTransferCache
 	var responseMap = map[string]interface{}{}
