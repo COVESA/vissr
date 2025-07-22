@@ -32,6 +32,7 @@ Get request with AT token (XXX must be replaced with actual token):
 Metadata request:
 {"action":"get","path":"Vehicle.ADAS.ABS","filter":{"variant":"metadata","parameter":"0"},"requestId":"244"}
 {"action":"get","path":"Server","filter":{"variant":"metadata","parameter":"0"},"requestId":"245"}
+{"action":"get","path":"HIM","filter":{"variant":"metadata","parameter":"0"},"requestId":"245"}
 
 Set request:
 {"action":"set", "path":"Vehicle/Cabin/Door/Row1/PassengerSide/IsOpen", "value":"true", "requestId":"245"}

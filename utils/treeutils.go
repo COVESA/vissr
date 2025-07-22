@@ -79,22 +79,20 @@ type SearchContext_t struct {
 // matrix preserving inherited value with read-write having priority over write-only and consent over no consent
 //var validationMatrix [5][5]int = [5][5]int{{0,1,2,11,12}, {1,1,2,11,12}, {2,2,2,12,12}, {11,11,12,11,12}, {12,12,12,12,12}}
 
-type NodeTypes_t uint8
-
-const (   // allowed elements of nodeTypes_t
-    SENSOR = 1
-    ACTUATOR = 2
-    ATTRIBUTE = 3
-    BRANCH = 4
-    STRUCT = 5
-    PROPERTY = 6
-    PROCEDURE = 7
-    IOSTRUCT = 8
+const (   // non-exhaustive list of node types
+    SENSOR = "sensor"
+    ACTUATOR = "actuator"
+    ATTRIBUTE = "attribute"
+    BRANCH = "branch"
+    STRUCT = "struct"
+    PROPERTY = "property"
+    PROCEDURE = "procedure"
+    IOSTRUCT = "iostruct"
 )
 
 type Node_t struct {
     Name string
-    NodeType NodeTypes_t
+    NodeType string
     Uuid string
     Description string
     Datatype string
@@ -110,35 +108,6 @@ type Node_t struct {
     Child []*Node_t
 }
 
-func StringToNodetype(nodeType string) uint8 {
-    if (nodeType == "branch") {
-        return BRANCH
-    }
-    if (nodeType == "sensor") {
-        return SENSOR
-    }
-    if (nodeType == "actuator") {
-        return ACTUATOR
-    }
-    if (nodeType == "attribute") {
-        return ATTRIBUTE
-    }
-    if (nodeType == "struct") {
-        return STRUCT
-    }
-    if (nodeType == "property") {
-        return PROPERTY
-    }
-    if (nodeType == "procedure") {
-        return PROCEDURE
-    }
-    if (nodeType == "iostruct") {
-        return IOSTRUCT
-    }
-    fmt.Printf("Unknown type! |%s|\n", nodeType);
-    return 0
-}
-
 func ValidateToInt(validate string) uint8 {
     validation := (uint8)(0)
     if strings.Contains(validate, "write-only") {
@@ -151,36 +120,6 @@ func ValidateToInt(validate string) uint8 {
     }
     return validation
 }
-
-func NodetypeToString(nodeType NodeTypes_t) string {
-    if (nodeType == BRANCH) {
-        return "branch"
-    }
-    if (nodeType == SENSOR) {
-        return "sensor"
-    }
-    if (nodeType == ACTUATOR) {
-        return "actuator"
-    }
-    if (nodeType == ATTRIBUTE) {
-        return "attribute"
-    }
-    if (nodeType == STRUCT) {
-        return "struct"
-    }
-    if (nodeType == PROPERTY) {
-        return "property"
-    }
-    if (nodeType == PROCEDURE) {
-        return "procedure"
-    }
-    if (nodeType == IOSTRUCT) {
-        return "iostruct"
-    }
-    fmt.Printf("Unknown type! |%d|\n", nodeType);
-    return ""
-}
-
 
 func ValidateToString(validate uint8) string {
     var validation string
@@ -454,7 +393,7 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 		context.SpeculationIndex++
 	}
 	context.MaxValidation = getMaxValidation(VSSgetValidation(thisNode), context.MaxValidation)
-	if (VSSgetType(thisNode) != BRANCH  && VSSgetType(thisNode) != STRUCT || context.LeafNodesOnly == false) {
+	if (VSSgetType(thisNode) != BRANCH || context.LeafNodesOnly == false) {
 		if ( isGetLeafNodeList == false && isGetDefaultList == false) {
 			context.SearchData[context.NumOfMatches].NodePath = rootNodeNameUpdate(context.MatchPath, context)
 			context.SearchData[context.NumOfMatches].NodeHandle = thisNode
@@ -612,8 +551,7 @@ func populateNode(thisNode *Node_t) {
 	thisNode.Name = string(readBytes((uint32)(NameLen)))
 
 	NodeTypeLen := deSerializeUInt(readBytes(1)).(uint8)
-	NodeType := string(readBytes((uint32)(NodeTypeLen)))
-	thisNode.NodeType = (NodeTypes_t)(StringToNodetype(NodeType))
+	thisNode.NodeType = string(readBytes((uint32)(NodeTypeLen)))
 
 	UuidLen := deSerializeUInt(readBytes(1)).(uint8)
 	thisNode.Uuid = string(readBytes((uint32)(UuidLen)))
@@ -622,7 +560,7 @@ func populateNode(thisNode *Node_t) {
 	thisNode.Description = string(readBytes((uint32)(DescrLen)))
 
 	DatatypeLen := deSerializeUInt(readBytes(1)).(uint8)
-	if (thisNode.NodeType != BRANCH && thisNode.NodeType != STRUCT) {
+	if thisNode.NodeType != BRANCH {
 	    thisNode.Datatype = string(readBytes((uint32)(DatatypeLen)))
 	}
 
@@ -662,9 +600,8 @@ func writeNode(thisNode *Node_t) {
     treeFp.Write(serializeUInt((uint8)(len(thisNode.Name))))
     treeFp.Write([]byte(thisNode.Name))
 
-    NodeType := NodetypeToString(thisNode.NodeType)
-    treeFp.Write(serializeUInt((uint8)(len(NodeType))))
-    treeFp.Write([]byte(NodeType))
+    treeFp.Write(serializeUInt((uint8)(len(thisNode.NodeType))))
+    treeFp.Write([]byte(thisNode.NodeType))
 
     treeFp.Write(serializeUInt((uint8)(len(thisNode.Uuid))))
     treeFp.Write([]byte(thisNode.Uuid))
@@ -941,8 +878,8 @@ func VSSgetChild(nodeHandle *Node_t, childNo int) *Node_t {
 	return nil
 }
 
-func VSSgetType(nodeHandle *Node_t) NodeTypes_t {
-	return (NodeTypes_t)(nodeHandle.NodeType)
+func VSSgetType(nodeHandle *Node_t) string {
+	return nodeHandle.NodeType
 }
 
 func VSSgetDatatype(nodeHandle *Node_t) string {
