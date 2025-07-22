@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>COVESA Vehicle Information Service Specification version 3 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</title>
     <link>https://covesa.github.io/vissr/</link>
-    <description>Recent content in COVESA Vehicle Information Service Specification version 3 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</description>
+    <description>Recent content in COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language><atom:link href="https://covesa.github.io/vissr/index.xml" rel="self" type="application/rss+xml" />
   </channel>

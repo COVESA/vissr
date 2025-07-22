@@ -9,25 +9,25 @@
 
     <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
 
-    <title>COVESA Vehicle Information Service Specification version 3 Reference Implementation Tutorial :: COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1752657088" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1752657088" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1753183714" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1753183714" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1752657088" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1753183714" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1752657088"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1753183714"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1752657088"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1752657088"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1753183714"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1753183714"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1752657088"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1753183714"></script>
 
     
   </div>
@@ -646,35 +646,25 @@
 </span>
 
  
-<h2 id="covesa-vehicle-information-service-specification-ver-3-reference-implementation-tutorial">COVESA Vehicle Information Service Specification ver 3 Reference Implementation Tutorial</h2>
-<p>The COVESA VISSv3 specification is under development at the <a href="https://github.com/COVESA/vehicle-information-service-specification">COVESA VISS Github</a>.
-A VISSv3.0 reference implementation in the form of a server that exposes an interface according to the specification is developed on the master branch,
-while a VISSv2.0 reference implementation is available on the v2.0 branch.</p>
-<p>This documentation covers the VISSv3.0 specification.
-The new features are listed below.
-It is with a few exceptions backwards compatible with VISSv2.0. The exceptions are listed below.</p>
-<h3 id="vissv30-new-features">VISSv3.0 new features</h3>
+<h2 id="covesa-vehicle-information-service-specification-ver-31-reference-implementation-tutorial">COVESA Vehicle Information Service Specification ver 3.1 Reference Implementation Tutorial</h2>
+<p>The COVESA VISSv3.1 specification development is not yet started at the <a href="https://github.com/COVESA/vehicle-information-service-specification">COVESA VISS Github</a>.
+As the set of new features are quite limited, see below, it was deemed possible to develop  VISSv3.1 reference implementation before the specification is released.</p>
+<p>A VISSv3.0 reference implementation in the form of a server that exposes an interface according to the specification is available on the master branch,
+while the VISSv3.1 reference implementation is available on the v3.1 branch.
+When the VISSv3.1 specification is released the v3.1 branch will be merged to the master branch.</p>
+<p>This documentation covers the VISSv3.1 specification, which is backwards compatible with the VISSv3.0 specification.
+The new features are listed below.</p>
+<h3 id="vissv31-new-features">VISSv3.1 new features</h3>
 <ul>
-<li>Multiple tree support. The server can be configured to manage multiple trees that a client can access.</li>
-<li>Server capabilities. A Server tree can be accessed by clients.</li>
-<li>File transfer. Upload/download of files is available on Websocket.</li>
-<li>Data compression. Request local path compression and Request relative timestamp compression is available on Websocket.</li>
-<li>Protobuf encoding is available on Websocket.</li>
-<li>gRPC support. This wa already available on an experimental level in VISSR @v2.0.</li>
-<li>JSON scheme used to validate client requests.</li>
-<li>Error responses due to JSON scheme errors contain a description generated by the JSON scheme validator.</li>
+<li>Supports the <a href="https://github.com/COVESA/hierarchical_information_model">COVESA HIM</a> Data profile.</li>
+<li>Supports client &ldquo;forest discovery&rdquo; request.</li>
+<li>Makes it mandatory to supplement data trees with a type definition tree defining all structs used in any of the data trees.
+The server shall verify the struct metadata when a struct is referenced.</li>
 </ul>
-<h3 id="non-backwards-compatible-changes-from-vissv20">Non-backwards compatible changes from VISSv2.0</h3>
-<ul>
-<li>The filter keyname &ldquo;type&rdquo; is changed to &ldquo;variant&rdquo;.</li>
-<li>The filter variants &ldquo;static-metadata&rdquo; and &ldquo;dynamic-metadata&rdquo; are replaced by the variant &ldquo;metadata&rdquo;.</li>
-<li>The &ldquo;subscriptionId&rdquo; parameter in unsubscribe response messages is deleted.</li>
-<li>The filter:metadata:parameter value is changed to represent the number of descendant generations that are returned.</li>
-<li>The error object keyword &ldquo;message&rdquo; is changed to &ldquo;description&rdquo;.</li>
-<li>The error:decription values are not normative any more.</li>
-</ul>
+<p>The VISSv3.1 reference implementation supports all of the new features.</p>
+<h3 id="vissr-tech-stack">VISSR tech stack</h3>
 <p>Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.</p>
-<p><img src="/vissr/images/WAII-tech-stack.jpg?width=40pc" alt="VISSv2 communication tech stack"></p>
+<p><img src="/vissr/images/WAII-tech-stack.jpg?width=40pc" alt="VISSR tech stack"></p>
 <p>These software components (SwCs) can be categorized as follows:</p>
 <ul>
 <li>server</li>
@@ -1049,19 +1039,19 @@ building and running Golang based SwCs, a Docker containerization, and about som
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1752657088"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1752657088"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1752657088"></script>
-    <script src="/vissr/js/jquery.sticky.js?1752657088"></script>
-    <script src="/vissr/js/featherlight.min.js?1752657088"></script>
-    <script src="/vissr/js/highlight.pack.js?1752657088"></script>
+    <script src="/vissr/js/clipboard.min.js?1753183714"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1753183714"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1753183714"></script>
+    <script src="/vissr/js/jquery.sticky.js?1753183714"></script>
+    <script src="/vissr/js/featherlight.min.js?1753183714"></script>
+    <script src="/vissr/js/highlight.pack.js?1753183714"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1752657088"></script>
-    <script src="/vissr/js/learn.js?1752657088"></script>
-    <script src="/vissr/js/hugo-learn.js?1752657088"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1753183714"></script>
+    <script src="/vissr/js/learn.js?1753183714"></script>
+    <script src="/vissr/js/hugo-learn.js?1753183714"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1752657088"></script>
+            <script src="/vissr/mermaid/mermaid.js?1753183714"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
