@@ -386,7 +386,6 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	var searchPath []string
 	var filterList []utils.FilterObject // variant + parameter
 
-	// Manages Filter Request
 	if requestMap["filter"] != nil {
 		utils.UnpackFilter(requestMap["filter"], &filterList)
 		// Iterates all the filters
@@ -466,10 +465,18 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			backendChan[tDChanIndex] <- errorResponseMap
 			return
 		}
+		if requestMap["action"] == "set" && strings.Contains(utils.VSSgetDatatype(searchData[0].NodeHandle), "Types.") {
+			res := verifyStruct(requestMap["value"].(map[string]interface{}), utils.VSSgetDatatype(searchData[0].NodeHandle))
+			if res != "ok" {
+				utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
+				backendChan[tDChanIndex] <- errorResponseMap
+				return
+			}
+		}
 		totalMatches += matches
 		maxValidation = utils.GetMaxValidation(int(validation), maxValidation)
 	}
-	if strings.Contains (utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {  // path to struct def
+	if strings.Contains(utils.VSSgetDatatype(searchData[0].NodeHandle), ".FileDescriptor") {  // path to struct def
 		response := initiateFileTransfer(requestMap, utils.VSSgetType(searchData[0].NodeHandle), searchPath[0])
 		backendChan[tDChanIndex] <- response
 		return
@@ -530,6 +537,37 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		requestMap["gatingId"] = gatingId
 	}
 	serviceDataChan[sDChanIndex] <- requestMap
+}
+
+func verifyStruct(value map[string]interface{}, typePath string) string {
+	typeDefRoot := utils.SetRootNodePointer("Types")
+	if typeDefRoot == nil {
+		return "Struct cannot be verified"
+	}
+	matches, typeSearch := searchTree(typeDefRoot, typePath + ".*", true, true, 0, nil, nil)
+	if matches == 0 || !verifyStructMembers(value, typeSearch, matches) {
+		return "Incorrect struct data"
+	}
+	return "ok"
+}
+
+func verifyStructMembers(value map[string]interface{}, typeSearch []utils.SearchData_t, matches int) bool {  // {"memName1": "data1", ..., "memNameN": "dataN"}
+	for memName, _ := range value {
+		if !verifyStructMember(memName, typeSearch, matches) {
+			return false
+		}
+	}
+	return true
+}
+
+func verifyStructMember(memberName string, typeSearch []utils.SearchData_t, matches int) bool {
+	for i := 0; i < matches; i++ {
+		dotIndex := strings.LastIndex(typeSearch[i].NodePath, ".")
+		if dotIndex != -1 && strings.ToLower(memberName) == strings.ToLower(typeSearch[i].NodePath[dotIndex+1:]) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateData(requestMap map[string]interface{}, searchData []utils.SearchData_t, filterList []utils.FilterObject) (int, string) { // -1, "" means valid data

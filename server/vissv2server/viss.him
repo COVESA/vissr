@@ -7,8 +7,8 @@ HIM.Vehicle:
   type: direct
   domain: Vehicle.Car.Data
   version: 5.0.0
-  local: forest/cvis.binary
-#  local: forest/vss_filetransfer.binary
+#  local: forest/cvis.binary
+  local: forest/vss-core2.binary
 #  public: https://himrepo.oem.com?instance=Vehicle.Car.Data.X.Y.Z
   description: A VSS tree.
 
@@ -33,5 +33,5 @@ HIM.Server:
   domain: Server.Capabilities.Data
   version: 0.1
   local: forest/server.binary
-#  public: https://himrepo.oem.com?instance=Server.Capabilities.ResourceData.X.Y.Z
+#  public: https://himrepo.oem.com?instance=Server.Capabilities.Data.X.Y.Z
   description: The server capabilities tree.
