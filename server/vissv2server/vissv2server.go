@@ -465,8 +465,8 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			backendChan[tDChanIndex] <- errorResponseMap
 			return
 		}
-		if requestMap["action"] == "set" && strings.Contains(utils.VSSgetDatatype(searchData[0].NodeHandle), "Types.") {
-			res := verifyStruct(requestMap["value"].(map[string]interface{}), utils.VSSgetDatatype(searchData[0].NodeHandle))
+		if requestMap["action"] == "set" && strings.Contains(utils.VSSgetDatatype(searchData[0].NodeHandle)[:5], "Types") {
+			res := verifyStruct(requestMap["value"].(map[string]interface{}), utils.VSSgetDatatype(searchData[0].NodeHandle), 0)
 			if res != "ok" {
 				utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
 				backendChan[tDChanIndex] <- errorResponseMap
@@ -539,31 +539,46 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	serviceDataChan[sDChanIndex] <- requestMap
 }
 
-func verifyStruct(value map[string]interface{}, typePath string) string {
-	typeDefRoot := utils.SetRootNodePointer("Types")
+func verifyStruct(value map[string]interface{}, typePath string, depth int) string {
+	typeDefRoot := utils.SetRootNodePointer(typePath[:utils.GetFirstDotIndex(typePath)])
 	if typeDefRoot == nil {
 		return "Struct cannot be verified"
 	}
 	matches, typeSearch := searchTree(typeDefRoot, typePath + ".*", true, true, 0, nil, nil)
-	if matches == 0 || !verifyStructMembers(value, typeSearch, matches) {
+	if matches == 0 || !verifyStructMembers(value, typeSearch, matches, depth) || depth > 5 {
 		return "Incorrect struct data"
 	}
 	return "ok"
 }
 
-func verifyStructMembers(value map[string]interface{}, typeSearch []utils.SearchData_t, matches int) bool {  // {"memName1": "data1", ..., "memNameN": "dataN"}
-	for memName, _ := range value {
+func verifyStructMembers(value map[string]interface{}, typeSearch []utils.SearchData_t, matches int, depth int) bool {  // {"memName1": "data1", ..., "memNameN": "dataN"}
+	for memName, memValue := range value {
 		if !verifyStructMember(memName, typeSearch, matches) {
 			return false
+		}
+		switch memValue.(type) {
+			case map[string]interface{}: //inline struct
+				if verifyStruct(memValue.(map[string]interface{}), 
+						utils.VSSgetDatatype(typeSearch[getIndex(typeSearch, matches, memName)].NodeHandle), depth+1) != "ok" {
+					return false
+				}
 		}
 	}
 	return true
 }
 
+func getIndex(typeSearch []utils.SearchData_t, matches int , memName string) int {
+	for i := 0; i < matches; i++ {
+		if utils.GetLastDotSegment(typeSearch[i].NodePath) == memName {
+			return i
+		}
+	}
+	return 0
+}
+
 func verifyStructMember(memberName string, typeSearch []utils.SearchData_t, matches int) bool {
 	for i := 0; i < matches; i++ {
-		dotIndex := strings.LastIndex(typeSearch[i].NodePath, ".")
-		if dotIndex != -1 && strings.ToLower(memberName) == strings.ToLower(typeSearch[i].NodePath[dotIndex+1:]) {
+		if strings.ToLower(memberName) == strings.ToLower(utils.GetLastDotSegment(typeSearch[i].NodePath)) {
 			return true
 		}
 	}

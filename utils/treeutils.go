@@ -212,7 +212,7 @@ func searchForSameTree(himForest []HimTree) *Node_t {
 }
 
 func SetRootNodePointer(rootPath string) *Node_t {
-	dotIndex := getDotIndex(rootPath)
+	dotIndex := GetFirstDotIndex(rootPath)
 	rootNodeName := rootPath[:dotIndex]
 	for i:=0; i < len(himForest); i++ {
 		if himForest[i].RootName == rootNodeName {
@@ -443,16 +443,24 @@ func rootNodeNameUpdate(origPath string, context *SearchContext_t) string {
 	if !context.SwitchName {
 		return origPath
 	}
-	dotIndex := getDotIndex(origPath)
+	dotIndex := GetFirstDotIndex(origPath)
 	return context.RootNodeName + origPath[dotIndex:]
 }
 
-func getDotIndex(path string) int {
+func GetFirstDotIndex(path string) int {  // points to the dot
 	dotIndex := strings.Index(path, ".")
 	if dotIndex == -1 {
 		dotIndex = len(path) // only root name in path
 	}
 	return dotIndex
+}
+
+func GetLastDotSegment(path string) string {
+	dotIndex := strings.LastIndex(path, ".")
+	if dotIndex == len(path) - 1 {
+		return ""  // should not happen...
+	}
+	return path[dotIndex+1:]
 }
 
 func isEndOfScope(context *SearchContext_t) bool {
@@ -722,7 +730,7 @@ func initContext(context *SearchContext_t, searchPath string, rootNode *Node_t, 
 		  context.SearchPath = append(context.SearchPath, ".*")
 		  } */
 	context.RootNode = rootNode
-	context.RootNodeName = searchPath[:getDotIndex(searchPath)]
+	context.RootNodeName = searchPath[:GetFirstDotIndex(searchPath)]
 	if context.RootNodeName != rootNode.Name {
 		context.SwitchName = true
 	} else {
@@ -754,7 +762,7 @@ func initContext(context *SearchContext_t, searchPath string, rootNode *Node_t, 
 func initContext_LNL(context *SearchContext_t, searchPath string, rootNode *Node_t, anyDepth bool, leafNodesOnly bool, listSize int, noScopeList []string) {
 	context.SearchPath = searchPath
 	context.RootNode = rootNode
-	context.RootNodeName = searchPath[:getDotIndex(searchPath)]
+	context.RootNodeName = searchPath[:GetFirstDotIndex(searchPath)]
 	if context.RootNodeName != rootNode.Name {
 		context.SwitchName = true
 	} else {
