@@ -1362,7 +1362,14 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 					dataChan <- errorResponseMap
 					break
 				}
-				ts := setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
+				var ts string
+				switch requestMap["value"].(type) {
+					case string:
+						ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
+					case map[string]interface{}:
+						data, _ := json.Marshal(requestMap["value"])
+						ts = setVehicleData(requestMap["path"].(string), string(data))
+				}
 				if len(ts) == 0 {
 					utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
 					dataChan <- errorResponseMap
