@@ -16,20 +16,22 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/apache/iotdb-client-go/client"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
-	"io"
-	"net"
-	"net/http"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
-	"slices"
-	"time"
 )
 
 type RegRequest struct {
@@ -554,14 +556,19 @@ func setVehicleData(path string, value string) string {
 	ts := utils.GetRfcTime()
 	switch stateDbType {
 	case "sqlite":
-		stmt, err := dbHandle.Prepare("UPDATE VSS_MAP SET d_value=?, d_ts=? WHERE `path`=?")
+		stmt, err := dbHandle.Prepare(`
+			INSERT INTO VSS_MAP (signal_id, d_value, d_ts, path)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(path) DO UPDATE SET d_value=excluded.d_value, d_ts=excluded.d_ts;
+		`)
 		if err != nil {
 			utils.Error.Printf("Could not prepare for statestorage updating, err = %s", err)
 			return ""
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(value, ts, path[1:len(path)-1]) // remove quotes surrounding path
+		var id = getNextSignalId(dbHandle)
+		_, err = stmt.Exec(id , value, ts, path) // remove quotes surrounding path
 		if err != nil {
 			utils.Error.Printf("Could not update statestorage, err = %s", err)
 			return ""
@@ -1217,7 +1224,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 
 	switch stateDbType {
 	case "sqlite":
-		if utils.FileExists(dbFile) {
+		if utils.FileExists(dbFile) || isInMemorySQLite(dbFile) {
 			dbHandle, dbErr = sql.Open("sqlite3", dbFile)
 			if dbErr != nil {
 				utils.Error.Printf("Could not open state storage file = %s, err = %s", dbFile, dbErr)
@@ -1227,6 +1234,9 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			}
 		} else {
 			utils.Error.Printf("Could not find state storage file = %s", dbFile)
+		}
+		if !initSQLiteDB(dbHandle) {
+			utils.Error.Printf("SQLite state storage could not be initialised.")
 		}
 	case "redis":
 		addr := utils.GetUdsPath("*", "redis")
@@ -1601,4 +1611,52 @@ func scanAndRemoveListItem(subscriptionList []SubscriptionState, routerId string
 		doRemove = false
 	}
 	return removed, subscriptionList
+}
+
+func isInMemorySQLite(path string) bool {
+	// This function is implemented based on https://www.sqlite.org/inmemorydb.html
+	if path == ":memory:" {
+		return true
+	}
+
+	if !strings.HasPrefix(path, "file:") {
+		return false
+	}
+
+	if strings.HasPrefix(path, "file::memory:") {
+		return true
+	}
+
+	url, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+	query := url.Query()
+	return query.Get("mode") == "memory"
+}
+
+func initSQLiteDB(db *sql.DB) bool {
+	createTableSQL := `
+    CREATE TABLE IF NOT EXISTS VSS_MAP (
+		signal_id INTEGER PRIMARY KEY,
+        path TEXT UNIQUE,
+        c_value TEXT,
+        c_ts TEXT,
+        d_value TEXT,
+        d_ts TEXT
+    );`
+	_, err := db.Exec(createTableSQL)
+	if err != nil {
+		utils.Error.Printf("initSQLiteDB: failed to initialize database.: %s", err)
+		return false
+	}
+	return true
+}
+
+func getNextSignalId(db *sql.DB) int {
+	var id int = 0
+	db.QueryRow(`
+		SELECT IFNULL(MAX(signal_id), 0) + 1 FROM your_table
+	`).Scan(&id)
+	return id
 }
