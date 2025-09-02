@@ -25,6 +25,18 @@ $ makedir path-to-socket-file-directory
 
 $ touch socket-file-name
 
+The socket file needs to have execute permission, which can be set by the command below.
+The value 755 might be more than needed. More information can be found by searching on "linux chmod".
+
+$ chmod 755 socket-file-name
+
+The following commands have been successfully used on a Mac
+```
+sudo mkdir -p /var/tmp/vissv2
+redis-server --unixsocket /var/tmp/vissv2/redisDB.sock –
+unixsocketperm 777 --daemonize yes
+```
+
 ### Alternative Redis server initiation
 If there is a need to start the Redis server a different way than what is described above then the [redisInit.go](https://github.com/COVESA/ccs-components/tree/master/statestorage/redisImpl) file on this link will configure and launch it.
 The server code starting the daemon would first need to be commented out to avoid multiple instantiations.
