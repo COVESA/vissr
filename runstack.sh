@@ -13,6 +13,7 @@ startme() {
 	echo "Building feederv3..."
 	cd feeder/feeder-template/feederv3
 	go build && mkdir -p logs
+	sleep 1s
 	cd ../../../
 	echo "Starting feederv3"
 	screen -S feederv3 -dm bash -c "pushd feeder/feeder-template/feederv3 && ./feederv3 -i vssjson -t speed-sawtooth.json &> ./logs/feederv3-log.txt && popd"

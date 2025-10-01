@@ -1357,11 +1357,6 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			}
 			switch requestMap["action"] {
 			case "set":
-				if strings.Contains(requestMap["path"].(string), "[") == true {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- errorResponseMap
-					break
-				}
 				var ts string
 				switch requestMap["value"].(type) {
 					case string:
@@ -1428,7 +1423,9 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 				subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, CLChannel, subscriptionId, subscriptionState.Path, subscriptionList)
 				variant := getFeederNotifyType(subscriptionState.FilterList)
 				if variant == "curvelog" || variant == "range" || variant == "change" {
-					toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
+					if feederConnected {
+						toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
+					}
 				}
 				subscriptionId++ // not to be incremented elsewhere
 				dataChan <- responseMap
@@ -1440,7 +1437,9 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 						status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
 						if status != -1 {
 							dataChan <- responseMap
-							toFeeder <- utils.FinalizeMessage(requestMap)
+							if feederConnected {
+								toFeeder <- utils.FinalizeMessage(requestMap)
+							}
 							break
 						}
 						delete(requestMap, "subscriptionId")
