@@ -335,21 +335,15 @@ type ActuatorSimCtx struct {
 	RemainingSteps int
 	CurrVal string
 	EndVal string
-}
-
-type PreviousSimDp struct {
-	Path  string
-	Value string
+	Path string
 }
 
 func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, outputChan chan DomainData) {
-	var aSimCtxContainer ActuatorSimCtx = ActuatorSimCtx{0, "", ""}
-	aSimCtx := &aSimCtxContainer
+	aSimCtx := make([]ActuatorSimCtx, 5) // max 5 signals can be simulated in parallel
 	var simCtx simulateDataCtx
 	simCtx.RandomSim = true
 	simCtx.Fmap = fMap
 	dpIndex := 0
-	var previousSimDp PreviousSimDp
 	for {
 		select {
 		case outData := <-outputChan:
@@ -360,15 +354,15 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 				simCtx.SetVal = outData.Value
 				simCtx.Iteration = 0
 			} else { // simulate actuation over a time period
-				if aSimCtx.RemainingSteps == 0 {
-					aSimCtx.RemainingSteps = 10
-					aSimCtx.CurrVal = previousSimDp.Value
-					aSimCtx.EndVal = outData.Value
-					previousSimDp.Path = outData.Name
-					previousSimDp.Value = outData.Value
-				} else {
-					aSimCtx.EndVal = outData.Value
+				simIndex := getSimulatorContainer(aSimCtx, outData.Name)
+				if simIndex == -1 {
+					utils.Info.Printf("initVehicleInterfaceMgr: max parallel simulations reached")
+					continue
 				}
+				aSimCtx[simIndex].RemainingSteps = 10
+				aSimCtx[simIndex].CurrVal = "0"  // well....
+				aSimCtx[simIndex].EndVal = outData.Value
+				aSimCtx[simIndex].Path = outData.Name
 			}
 
 		default:
@@ -382,13 +376,34 @@ func initVehicleInterfaceMgr(fMap []FeederMap, inputChan chan DomainData, output
 					inputChan <- dataPoint[i]
 				}
 				dpIndex = incDpIndex(dpIndex)
-				if aSimCtx.RemainingSteps > 0 {
-					inputChan <- makeDataPoint(previousSimDp.Path, calculateSimValue(aSimCtx))
+				for i := 0; i < len(aSimCtx); i++ {
+					if aSimCtx[i].RemainingSteps > 0 {
+						select {
+							case inputChan <- makeDataPoint(aSimCtx[i].Path, calculateSimValue(&(aSimCtx[i]))): 
+								if aSimCtx[i].RemainingSteps == 0 {
+									aSimCtx[i].Path = ""
+								}
+							default: utils.Info.Printf("initVehicleInterfaceMgr: dropping dp")
+						}
+					}
 				}
-				
 			}
 		}
 	}
+}
+
+func getSimulatorContainer(aSimCtx []ActuatorSimCtx, path string) int {
+	for i := 0; i < len(aSimCtx); i++ {
+		if aSimCtx[i].Path == path {
+			return i // restart actuation
+		}
+	}
+	for i := 0; i < len(aSimCtx); i++ {
+		if aSimCtx[i].RemainingSteps == 0 {
+			return i
+		}
+	}
+	return -1
 }
 
 func calculateSimValue(aSimCtx *ActuatorSimCtx) string {
@@ -666,10 +681,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	vssInputChan := make(chan DomainData, 1)
-	vssOutputChan := make(chan DomainData, 1)
-	vehicleInputChan := make(chan DomainData, 1)
-	vehicleOutputChan := make(chan DomainData, 1)
+	vssInputChan := make(chan DomainData, 3)
+	vssOutputChan := make(chan DomainData, 3)
+	vehicleInputChan := make(chan DomainData, 3)
+	vehicleOutputChan := make(chan DomainData, 3)
 
 	utils.Info.Printf("Initializing the feeder for mapping file %s.", *mapFile)
 	feederMap := readFeederMap(*mapFile)
@@ -692,7 +707,6 @@ func main() {
 			if simulatedSource != "vssjson" {
 				vssOutputChan <- convertDomainData(false, vehicleInData, feederMap)
 			} else {
-				//utils.Info.Printf("simulatedDataPoints:Path=%s, Value=%s", vehicleInData.Name, vehicleInData.Value)
 				vssOutputChan <- vehicleInData // conversion not needed
 			}
 		}
