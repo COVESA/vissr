@@ -9,7 +9,7 @@
 
     <link rel="shortcut icon" href="/vissr/images/fav.png" type="image/x-icon" />
 
-    <title>VISSR Data Storage :: COVESA VISSv2 Reference Implementation (vissr)</title>
+    <title>VISSR Feederv3 :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
     <link href="/vissr/css/nucleus.css?1760606435" rel="stylesheet">
@@ -41,7 +41,7 @@
     </style>
     
   </head>
-  <body class="" data-url="/vissr/datastore/">
+  <body class="" data-url="/vissr/feeder/feederv3/">
     <nav id="sidebar" class="">
 
 
@@ -174,7 +174,7 @@
     
     <li data-nav-id="/vissr/datastore/" title="VISSR Data Storage" class="dd-item
         
-        active
+        
         
         ">
       <a href="/vissr/datastore/">
@@ -337,7 +337,7 @@
   
     
     <li data-nav-id="/vissr/feeder/" title="VISSR Feeders" class="dd-item
-        
+        parent
         
         
         ">
@@ -367,7 +367,7 @@
     
     <li data-nav-id="/vissr/feeder/feederv3/" title="VISSR Feederv3" class="dd-item
         
-        
+        active
         
         ">
       <a href="/vissr/feeder/feederv3/">
@@ -677,7 +677,7 @@
                   
                   
                   <div id="top-github-link">
-                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/datastore/_index.md" target="blank">
+                    <a class="github-link" title='Edit this page' href="https://github.com/covesa/vissr/edit/master/tutorial/content/feeder/feederv3/_index.md" target="blank">
                       <i class="fas fa-code-branch"></i>
                       <span id="top-github-link-text">Edit this page</span>
                     </a>
@@ -704,7 +704,13 @@
             
           
           
-            <a href='/vissr/'>COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial</a> > VISSR Data Storage
+            
+            
+          
+          
+            <a href='/vissr/'>COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial</a> > <a href='/vissr/feeder/'>VISSR Feeders</a> > VISSR Feederv3
+          
+        
           
         
           
@@ -715,7 +721,15 @@
                 
                     <div class="progress">
     <div class="wrapper">
-<nav id="TableOfContents"></nav>
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#simulated-trip-data">Simulated Trip Data</a>
+      <ul>
+        <li><a href="#simulated-actuation">Simulated actuation</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
     </div>
 </div>
 
@@ -731,7 +745,7 @@
           
             <h1>
               
-              VISSR Data Storage
+              VISSR Feederv3
             </h1>
           
 
@@ -739,34 +753,118 @@
 
 
 
-	<p>The VISSR tech stack architecture contains a data storage component located between the server and the feeder(s).
-This data store provides a decoupling between the server data access operations and the data access operations of a feeder.</p>
-<p>Feeders are expected to keep the data store updated with the latest available value of the signals defined in the VSS tree,
-and for client read/subscribe requests the server reads from what is available in the data store.
-This leads to that for all client read/subscribe requests the underlying vehicle system does not get involved by instantaneously
-having to provide a signal value when asked for by a client.</p>
-<p>For subscriptions it also enables that a more versatile menu of event trigger conditions can be available to the client
-than what the underlying vehicle system actually is supporting.</p>
-<p>Client write requests are not passed through the data store (except for the soon to be deprecated version 1 client template type),
-but are instead communicated over an Unix Domain Socket IPC channel directly to the feeder by the server.</p>
-<p>There are currently four plugin compatible data stores available, based on the following data base solutions.</p>
+	<p>If feederv3 is started with the CLI parameter -h the following is presented:</p>
+<pre tabindex="0"><code>usage: print [-h|--help] [-m|--mapfile &#34;&lt;value&gt;&#34;] [-s|--scldatafile &#34;&lt;value&gt;&#34;]
+             [-t|--tripdatafile &#34;&lt;value&gt;&#34;] [--logfile] [--loglevel
+             (trace|debug|info|warn|error|fatal|panic)] [-i|--simsource
+             (vssjson|internal)] [-d|--statestorage
+             (sqlite|redis|memcache|none)] [-f|--dbfile &#34;&lt;value&gt;&#34;]
+
+             Data feeder template version 3
+
+Arguments:
+
+  -h  --help          Print help information
+  -m  --mapfile       VSS-Vehicle mapping data filename. Default:
+                      VssVehicle.cvt
+  -s  --scldatafile   VSS-Vehicle scaling data filename. Default:
+                      VssVehicleScaling.json
+  -t  --tripdatafile  Filename for simulated trip data. Default: tripdata.json
+      --logfile       outputs to logfile in ./logs folder
+      --loglevel      changes log output level. Default: info
+  -i  --simsource     Simulator source must be either vssjson, or internal.
+                      Default: internal
+  -d  --statestorage  Statestorage must be either sqlite, redis, memcache, or
+                      none. Default: redis
+  -f  --dbfile        statestorage database filename. Default:
+                      ../../server/vissv2server/serviceMgr/statestorage.db
+</code></pre><ul>
+<li>The -m command line option is used to set which mapfile that the feeder will use if the selected simsource is &lsquo;internal&rsquo;.
+The map file is created using the <a href="/vissr/tools/#domain-conversion-tool">Domain Conversion Tool</a>.
+The default file VssVehicle.cvt is an example file containing a small set of signals:
 <ul>
-<li>SQLite</li>
-<li>Redis</li>
-<li>Memcached</li>
-<li>Apache IotDB</li>
+<li>
+<ul>
+<li>VSS: Vehicle.LowVoltageSystemState &lt;-&gt; CAN: LVoltSysSt</li>
 </ul>
-<p>The server is at startup configured via a CLI parameter which DB solution to use, default is Redis.
-A feeder must be configured to use the same DB, and implement the common interface for that DB.
-An example of this is e. g. found in the feeder/feeder-template/feederv3/feederv3.go in the method
-statestorageSet(path, val, ts) which implements SQLite, Redis and Memcached.</p>
-<p>It may be a bit confusing that sometimes this is referred to as &ldquo;data store/storage&rdquo; and sometimes &ldquo;state storage&rdquo;.
-The latter name is legacy from a previous COVESA project, the Cloud &amp; Connected Services project, while the former has emerged later in the COVESA architecture group work.
-An argument for keeping both could be to say that the state storage refers to a storage that only keeps the latest value of a signal,
-while the data store refers to a more general database that can also keep time series of values of a signal.
-There are two scenarios where the VISSv2 server operates on time series data, <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#curvelog-filter-operation">curve logging</a>,
-and <a href="https://raw.githack.com/covesa/vehicle-information-service-specification/main/spec/VISSv2_Core.html#history-filter-operation">historic data</a>,
-but in this server implementation these data series are temporarily stored within the server, so a &ldquo;state storage&rdquo; functionality is sufficient for its needs.</p>
+</li>
+<li>
+<ul>
+<li>VSS: Vehicle.CurrentLocation.GNSSReceiver.FixType &lt;-&gt; CAN: GpsFxTy</li>
+</ul>
+</li>
+<li>
+<ul>
+<li>VSS: Vehicle.CurrentLocation.Longitude &lt;-&gt; CAN: GpsLong</li>
+</ul>
+</li>
+<li>
+<ul>
+<li>VSS: Vehicle.TripMeterReading &lt;-&gt; CAN: TrMetRead</li>
+</ul>
+</li>
+<li>
+<ul>
+<li>VSS: Vehicle.Speed &lt;-&gt; CAN: VehSpd</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>The -s command line option selects the file containing instructions for the feeder on enum value mapping and linear scaling.
+The scaling file is created using the <a href="/vissr/tools/#domain-conversion-tool">Domain Conversion Tool</a>.
+The default file VssVehicleScaling.json is an example file containing instructions used together with the default map file.</li>
+<li>The -t command line option selects a file containing simulated trip data that the feder will use if the selected simsource is &lsquo;vssjson&rsquo;.
+More information about the format of this file is found in &ldquo;Simulated Trip Data&rdquo; below.</li>
+<li>The -i command line option selects which simulation source that shall be used.
+<ul>
+<li>If &lsquo;internal&rsquo; is selected then data from the map file and scaling file are used.</li>
+<li>If &lsquo;vssjson&rsquo; is selected then data from the tripdata file is used.</li>
+</ul>
+</li>
+<li>The -d command line option selects the interface that the feeder shall use in its interaction with the statestorage database.
+The alternatives are:
+<ul>
+<li>sqlite</li>
+<li>redis</li>
+<li>memcache</li>
+</ul>
+</li>
+</ul>
+<p>Default is redis. The server must be CLI configured for the same database. The database must be installed on the computer.
+If SQLite is seleted then the database must be preconfigured. See <a href="/vissr/datastore">VISSR Data Storage</a> for more information.</p>
+<ul>
+<li>The -f command line option selects the SQLite database file to use if that was selected as statestorage type.
+A default file is available, stored in the vissr/server/vissv2server/serviceMgr directory.
+More information on the SQLite preconfiguration can be found <a href="https://github.com/COVESA/ccs-components/tree/master/statestorage/sqlImpl">here</a>.</li>
+</ul>
+<h2 id="simulated-trip-data">Simulated Trip Data</h2>
+<p>When the feederv3 is configured to replay simulated trip data the format of this file must be as described here.
+The feeder reads the JSON formatted file at startup and then it starts to read the first sample for all the signals represented in the file
+and write them into the statestorage. It then waits for one scond before it reads the second sample of all the signals and write them.
+This pattern is repeated until the last sample after which the feeder start from the begining again to replay the first samples.</p>
+<p>The data associated to a sample is a path, a value, and a timestamp.</p>
+<p>The conversion information in a map file is not used with trip data simulations so the path
+must be present in a binary tree that the server is configured with or else it cannot be read by a client.</p>
+<p>The value must be in string format and the content of the string must be compatibe with the datatype that is
+associated with the signal in a tree that the server manages.</p>
+<p>The timestamp is currently not used so it can be set to an empty string.
+However, it may be that coming improvements o the feeder simulation capability starts to use it,
+so to be &lsquo;future proof&rsquo; it is recommended to set it to a relevant time.</p>
+<p>The example file tripdata.json in the feederv3 directory is shown below.</p>
+<pre tabindex="0"><code>[
+{ &#34;path&#34;: &#34;Vehicle.TraveledDistance&#34;, &#34;dp&#34;: [ { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;1000.0&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:05Z&#34;, &#34;value&#34;: &#34;1000.0&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:10Z&#34;, &#34;value&#34;: &#34;1001.0&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:15Z&#34;, &#34;value&#34;: &#34;1001.0&#34; } ]},
+
+{ &#34;path&#34;: &#34;Vehicle.CurrentLocation.Longitude&#34;, &#34;dp&#34;: [ { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;56.02024719364729&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;56.02233748493814&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;56.02565421151008&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:05Z&#34;, &#34;value&#34;: &#34;56.02823595803967&#34; } ]},
+
+{ &#34;path&#34;: &#34;Vehicle.CurrentLocation.Latitude&#34;, &#34;dp&#34;: [ { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;12.599927977070497&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;12.601058355542794&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:00Z&#34;, &#34;value&#34;: &#34;12.602554268256588&#34; }, { &#34;ts&#34;: &#34;2020-04-15T13:37:05Z&#34;, &#34;value&#34;: &#34;12.603616368784676&#34; } ]}
+]
+</code></pre><p>The number of samples for each signal must be the same, so for signals that do not change every second their value must be repeated.
+Boolean values must be represented as &rsquo;true&rsquo; or &lsquo;false&rsquo;.</p>
+<h3 id="simulated-actuation">Simulated actuation</h3>
+<p>For signals written to the server, if the value is of either integer or float datatypes,
+then the feederv3 will simulate that it takes some time for the underlying vehicle system to change the state to this new value.
+The server will in 10 steps linearly update the signal value starting from the value zero.
+After each step it waits one second so the final value is reached after 10 seconds.</p>
 
 
 
@@ -860,7 +958,6 @@ but in this server implementation these data series are temporarily stored withi
             
                 
                     
-                    
                 
                 
 
@@ -876,8 +973,21 @@ but in this server implementation these data series are temporarily stored withi
             
                 
                     
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
                         
-                        
+            
+            
+                
                     
                 
                 
@@ -922,22 +1032,6 @@ but in this server implementation these data series are temporarily stored withi
             
         
                     
-                        
-            
-            
-                
-                    
-                
-                
-
-                    
-                    
-                    
-
-                    
-            
-        
-                    
             
         
                     
@@ -962,6 +1056,7 @@ but in this server implementation these data series are temporarily stored withi
             
                 
                     
+                    
                 
                 
 
@@ -976,6 +1071,7 @@ but in this server implementation these data series are temporarily stored withi
             
             
                 
+                    
                     
                 
                 
@@ -995,6 +1091,9 @@ but in this server implementation these data series are temporarily stored withi
             
             
                 
+                    
+                        
+                        
                     
                 
                 
@@ -1148,10 +1247,10 @@ but in this server implementation these data series are temporarily stored withi
 	 
 	 
 		
-			<a class="nav nav-prev" href="/vissr/client/" title="VISSR Clients"> <i class="fa fa-chevron-left"></i></a>
+			<a class="nav nav-prev" href="/vissr/feeder/" title="VISSR Feeders"> <i class="fa fa-chevron-left"></i></a>
 		
 		
-			<a class="nav nav-next" href="/vissr/datastore/apache-iotdb/" title="VISSR Apache IoTDB" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+			<a class="nav nav-next" href="/vissr/peripheral-components/" title="VISSR peripheral components" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>

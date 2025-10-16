@@ -12,22 +12,22 @@
     <title>VISSR Feeders :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1759331797" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1759331797" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1760606435" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1760606435" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1759331797" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1760606435" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1759331797"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1760606435"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1759331797"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1759331797"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1760606435"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1760606435"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1759331797"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1760606435"></script>
 
     
   </div>
@@ -346,6 +346,44 @@
           
       </a>
       
+      
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/feeder/feederv3/" title="VISSR Feederv3" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/feeder/feederv3/">
+          VISSR Feederv3
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
       
     </li>
   
@@ -680,7 +718,7 @@
 <nav id="TableOfContents">
   <ul>
     <li><a href="#data-storage-interface">Data storage interface</a></li>
-    <li><a href="#simulated-vehicle-data-sources">Simulated vehicle data sources</a></li>
+    <li><a href="#feederv3">Feederv3</a></li>
   </ul>
 </nav>
     </div>
@@ -770,15 +808,9 @@ feeder that enables the interface client to be implemented in a separate executa
 then to configure which to use could be done at startup via a CLI parameter,
 see e. g. how it is done in the feeder/feeder-template/feederv3/feederv3.go.
 There also the interface implementations to some DB solutions can be seen in the method statestorageSet(path, val, ts).</p>
-<h2 id="simulated-vehicle-data-sources">Simulated vehicle data sources</h2>
-<p>The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.</p>
-<p>The one configured by &ldquo;internal&rdquo; uses the conversion instructions data as input for which signals to simulate, which are then randomly selected and set to random values.</p>
-<p>The other configured by &ldquo;vssjson&rdquo; tries to read the file &ldquo;tripdata.json&rdquo;, which must have a format as found in the example file. s seen in that file it contains an array of signal path names, and for each signal it contains an array of datapoints, i.e. timestamps and values. The data points are replayed at a constant frequency of 1 Hz. To change the frequency the time.Sleep input in the code must be changed and recompiled. This sets the rquirement on the data point arrays that their values must have been captured at this frequency, or recalculated to this frequency. Each data point array must have the same length. The simulator waps around and starts again from the beginning after reaching the end.</p>
-<p>The signal names must be VSS paths as they are not processed by the conversion engine.
-Extending the model to instead expect &ldquo;vehicle domain signals&rdquo; (like CAN signal data) should be a simple coding exercise for anyone preferring that.</p>
-<p>For signals written to the server, if the value is of either integer or float datatypes,
-then the feederv3 will simulate that it takes some time for the underlying vehicle system to change the state to this new value.
-This signal value must first have been set once before the simulation logic will be activated.</p>
+<h2 id="feederv3">Feederv3</h2>
+<p>Feederv3 is the recommended feeder template to use as it is an evolution of the previous feeder templates and supports the latest feaure additions.
+More information on feederv3 is found in the <a href="/vissr/feeder/feederv3">Feederv3</a> chapter.</p>
 
 
 
@@ -976,11 +1008,10 @@ This signal value must first have been set once before the simulation logic will
 
                     
                     
+                        
+                    
                     
 
-                    
-            
-        
                     
                         
             
@@ -989,6 +1020,25 @@ This signal value must first have been set once before the simulation logic will
                     
                         
                         
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
+                    
+            
+        
+                    
+                        
+            
+            
+                
                     
                 
                 
@@ -1145,7 +1195,7 @@ This signal value must first have been set once before the simulation logic will
 			<a class="nav nav-prev" href="/vissr/docker-step-by-step/" title="VISSR Docker"> <i class="fa fa-chevron-left"></i></a>
 		
 		
-			<a class="nav nav-next" href="/vissr/peripheral-components/" title="VISSR peripheral components" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
+			<a class="nav nav-next" href="/vissr/feeder/feederv3/" title="VISSR Feederv3" style="margin-right: 0px;"><i class="fa fa-chevron-right"></i></a>
 		
 	
     </div>
@@ -1155,19 +1205,19 @@ This signal value must first have been set once before the simulation logic will
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1759331797"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1759331797"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1759331797"></script>
-    <script src="/vissr/js/jquery.sticky.js?1759331797"></script>
-    <script src="/vissr/js/featherlight.min.js?1759331797"></script>
-    <script src="/vissr/js/highlight.pack.js?1759331797"></script>
+    <script src="/vissr/js/clipboard.min.js?1760606435"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1760606435"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1760606435"></script>
+    <script src="/vissr/js/jquery.sticky.js?1760606435"></script>
+    <script src="/vissr/js/featherlight.min.js?1760606435"></script>
+    <script src="/vissr/js/highlight.pack.js?1760606435"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1759331797"></script>
-    <script src="/vissr/js/learn.js?1759331797"></script>
-    <script src="/vissr/js/hugo-learn.js?1759331797"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1760606435"></script>
+    <script src="/vissr/js/learn.js?1760606435"></script>
+    <script src="/vissr/js/hugo-learn.js?1760606435"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1759331797"></script>
+            <script src="/vissr/mermaid/mermaid.js?1760606435"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

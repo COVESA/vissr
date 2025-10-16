@@ -28,6 +28,8 @@
   </url><url>
     <loc>https://covesa.github.io/vissr/feeder/</loc>
   </url><url>
+    <loc>https://covesa.github.io/vissr/feeder/feederv3/</loc>
+  </url><url>
     <loc>https://covesa.github.io/vissr/build-system/hello-world/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/datastore/memcached/</loc>
