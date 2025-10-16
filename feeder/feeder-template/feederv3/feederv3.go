@@ -599,7 +599,7 @@ func linearConversion(coeffArray []interface{}, north2SouthConv bool, inValue st
 
 func main() {
 	// Create new parser object
-	parser := argparse.NewParser("print", "Data feeder template version 2")
+	parser := argparse.NewParser("print", "Data feeder template version 3")
 	mapFile := parser.String("m", "mapfile", &argparse.Options{
 		Required: false,
 		Help:     "VSS-Vehicle mapping data filename",

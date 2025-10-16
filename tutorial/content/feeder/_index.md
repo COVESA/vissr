@@ -71,16 +71,6 @@ then to configure which to use could be done at startup via a CLI parameter,
 see e. g. how it is done in the feeder/feeder-template/feederv3/feederv3.go.
 There also the interface implementations to some DB solutions can be seen in the method statestorageSet(path, val, ts).
 
-## Simulated vehicle data sources
-The feederv2 template contains two different simulation mechanisms that are selected via the command line configuration parameters.
-
-The one configured by "internal" uses the conversion instructions data as input for which signals to simulate, which are then randomly selected and set to random values.
-
-The other configured by "vssjson" tries to read the file "tripdata.json", which must have a format as found in the example file. s seen in that file it contains an array of signal path names, and for each signal it contains an array of datapoints, i.e. timestamps and values. The data points are replayed at a constant frequency of 1 Hz. To change the frequency the time.Sleep input in the code must be changed and recompiled. This sets the rquirement on the data point arrays that their values must have been captured at this frequency, or recalculated to this frequency. Each data point array must have the same length. The simulator waps around and starts again from the beginning after reaching the end.
-
-The signal names must be VSS paths as they are not processed by the conversion engine.
-Extending the model to instead expect "vehicle domain signals" (like CAN signal data) should be a simple coding exercise for anyone preferring that.
-
-For signals written to the server, if the value is of either integer or float datatypes,
-then the feederv3 will simulate that it takes some time for the underlying vehicle system to change the state to this new value.
-This signal value must first have been set once before the simulation logic will be activated.
+## Feederv3
+Feederv3 is the recommended feeder template to use as it is an evolution of the previous feeder templates and supports the latest feaure additions.
+More information on feederv3 is found in the [Feederv3](/vissr/feeder/feederv3) chapter.
