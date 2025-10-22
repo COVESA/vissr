@@ -184,31 +184,17 @@ func InitForest(himPath string) bool {
 		} else if text[0] != '#' && strings.Contains(text, "local:") {
 			localIndex := strings.Index(text, "local:") + 6
 			localPath := strings.TrimSpace(text[localIndex:len(text)])
-			sameHandle := searchForSameTree(himForest)
-			if sameHandle == nil {
-				himForest[i].Handle = VSSReadTree(localPath)
-			} else {
-				himForest[i].Handle = sameHandle
-			}
+			himForest[i].Handle = VSSReadTree(localPath)
 			if himForest[i].Handle == nil {
 				Error.Printf("Error parsing %s", localPath)
 				return false
 			}
+			himForest[i].Handle.Name = himForest[i].RootName
 		}
 		
 	}
 	file.Close()
 	return true
-}
-
-func searchForSameTree(himForest []HimTree) *Node_t {
-	lastIndex := len(himForest) - 1
-	for i := 0; i < lastIndex; i++ {
-		if himForest[i].Domain == himForest[lastIndex].Domain && himForest[i].Version == himForest[lastIndex].Version {
-			return himForest[i].Handle
-		}
-	}
-	return nil
 }
 
 func SetRootNodePointer(rootPath string) *Node_t {
@@ -395,7 +381,7 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 	context.MaxValidation = getMaxValidation(VSSgetValidation(thisNode), context.MaxValidation)
 	if (VSSgetType(thisNode) != BRANCH || context.LeafNodesOnly == false) {
 		if ( isGetLeafNodeList == false && isGetDefaultList == false) {
-			context.SearchData[context.NumOfMatches].NodePath = rootNodeNameUpdate(context.MatchPath, context)
+			context.SearchData[context.NumOfMatches].NodePath = context.MatchPath
 			context.SearchData[context.NumOfMatches].NodeHandle = thisNode
 		} else {
 			if (isGetLeafNodeList == true) {
@@ -404,7 +390,7 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 			    } else {
 				    context.ListFp.Write([]byte(", \""))
 			    }
-			    context.ListFp.Write([]byte(rootNodeNameUpdate(context.MatchPath, context)))
+			    context.ListFp.Write([]byte(context.MatchPath))
 			    context.ListFp.Write([]byte("\""))
 			} else {
 			    defaultValue := VSSgetDefault(thisNode)
@@ -416,7 +402,7 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 				    } else {
 					    context.ListFp.Write([]byte(", {\"path\":\""))
 				    }
-				    context.ListFp.Write([]byte(rootNodeNameUpdate(context.MatchPath, context)))
+				    context.ListFp.Write([]byte(context.MatchPath))
 				    context.ListFp.Write([]byte("\", \"default\":\""))
 				    context.ListFp.Write([]byte(defaultValue))
 				    context.ListFp.Write([]byte("\"}"))
@@ -437,14 +423,6 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 		return 1
 	}
 	return 0
-}
-
-func rootNodeNameUpdate(origPath string, context *SearchContext_t) string {
-	if !context.SwitchName {
-		return origPath
-	}
-	dotIndex := GetFirstDotIndex(origPath)
-	return context.RootNodeName + origPath[dotIndex:]
 }
 
 func GetFirstDotIndex(path string) int {  // points to the dot
