@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Creation of truck and trailer trees that are used in a client-server scenario using VISS as the interface on COVESA VISSv2 Reference Implementation (vissr)</title>
+    <link>https://covesa.github.io/vissr/pocs/poc6/</link>
+    <description>Recent content in Creation of truck and trailer trees that are used in a client-server scenario using VISS as the interface on COVESA VISSv2 Reference Implementation (vissr)</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language><atom:link href="https://covesa.github.io/vissr/pocs/poc6/index.xml" rel="self" type="application/rss+xml" />
+  </channel>
+</rss>

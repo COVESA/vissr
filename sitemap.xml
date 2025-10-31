@@ -6,11 +6,19 @@
   </url><url>
     <loc>https://covesa.github.io/vissr/</loc>
   </url><url>
+    <loc>https://covesa.github.io/vissr/pocs/poc6/</loc>
+  </url><url>
     <loc>https://covesa.github.io/vissr/pocs/poc2/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/pocs/poc7/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/pocs/poc5/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/tags/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/pocs/poc1/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/pocs/poc4/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/server/access-control-servers/</loc>
   </url><url>
@@ -47,5 +55,7 @@
     <loc>https://covesa.github.io/vissr/tools/</loc>
   </url><url>
     <loc>https://covesa.github.io/vissr/xtra/</loc>
+  </url><url>
+    <loc>https://covesa.github.io/vissr/pocs/poc3/</loc>
   </url>
 </urlset>
