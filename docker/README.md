@@ -15,7 +15,7 @@ https://docs.docker.com/compose/install/
 The file docker-compose-rl.yml builds and runs  a variant of the feeder(feeder-rl, see Readme in feeder/feeder-rl for'
 more details) - which is configured and built to interface the remotive labs cloud.
 The Remotive cloud have recorded vehicle data which we can play back to a cloud version of their data broker. We have an
-interface written in Go - https://github.com/petervolvowinz/viss-rl-interfaces -  that we have integrated into the WAII feeder application. The docker compose version should be from 3.8.
+interface written in Go - https://github.com/petervolvowinz/viss-rl-interfaces -  that we have integrated into the VISSR feeder application. The docker compose version should be from 3.8.
 
 The *docker-compose-rl.yml* is located in the docker/viss-docker-rl folder. The docker file *Dockerfile.rlserver* is located in the project root. 
 Placing the dockerfile which is used to build the image in the root is done for
