@@ -1,7 +1,7 @@
 **(C) 2019 Volvo Cars**<br>
 **(C) 2020 Geotab Inc**<br>
 
-# Project: WAII: client/client-1.0
+# Project: VISSR: client/client-1.0
 
 Client implementations for communication with the server found at the server/server-1.0 directory.<br>
 The functionality in the VISS specs shall be supported, with features such as:<br>

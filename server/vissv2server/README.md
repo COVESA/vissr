@@ -1,4 +1,4 @@
-# Project: WAII: server/server-1.0
+# Project: VISSR: server/server-1.0
 
 Functionality: <br>
 	Long term: Server shall support all features specified in the W3C VISSv2 standard.<br>

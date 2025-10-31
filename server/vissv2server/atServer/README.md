@@ -41,7 +41,7 @@ POST /ats HTTP/1.1
 
 ## MQTT AT Requests
 
-A client using the MQTT transport must apply the application level protocol which is described in the <a  href="https://github.com/MEAE-GOT/WAII/tree/master/server/mqtt_mgr">MQTT manager directory</a>, with the difference that the ATS is subscribing to the following topic:
+A client using the MQTT transport must apply the application level protocol which is described in the <a  href="https://github.com/COVESA/vissr/tree/master/server/mqtt_mgr">MQTT manager directory</a>, with the difference that the ATS is subscribing to the following topic:
 
 VIN/access-control
 
