@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/url"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ import (
 var testedProtocols []string = []string{
 	"http",
 	"ws",
+	"uds",
 	"grpc",
 	"mqtt",
 }
@@ -59,6 +61,7 @@ var httpCommandList []string
 var wsCommandList []string
 var mqttCommandList []string
 var grpcCommandList []string
+var udsCommandList []string
 
 const http_url = "http://0.0.0.0:8888"
 
@@ -89,6 +92,10 @@ func jsonToStructList(jsonList string) int {
 	}
 	if reqList["grpc"] != nil {
 		grpcCommandList = createList(reqList["grpc"])
+		protocols++
+	}
+	if reqList["uds"] != nil {
+		udsCommandList = createList(reqList["uds"])
 		protocols++
 	}
 	return protocols
@@ -199,6 +206,47 @@ func performWsCommand(command string, conn *websocket.Conn) {
 	}
 }
 
+func getUdsResponse(conn net.Conn, buf *[]byte, request []byte) string {
+	_, err := conn.Write(request)
+	if err != nil {
+		fmt.Printf("Request error:%s\n", err)
+		return ""
+	}
+	n, err := conn.Read(*buf)
+	if err != nil {
+		fmt.Printf("Response error: %s\n", err)
+		return ""
+	}
+	resp := string(*buf)
+	return resp[:n]
+}
+
+func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
+	fmt.Printf("Request: %s\n", command)
+	jsonResponse := getUdsResponse(conn, buf, []byte(command))
+	fmt.Printf("Response: %s\n", jsonResponse)
+	if strings.Contains(command, `"subscribe"`) {
+		events := 0
+		for {
+			n, err := conn.Read(*buf)
+			if err != nil {
+				fmt.Printf("Notification error: %s\n", err)
+				return
+			}
+			resp := string(*buf)
+			fmt.Printf("Notification: %s\n", resp[:n])
+			events++
+			if events == maxEvents {
+				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
+				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
+				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
+				performUdsCommand(unsubReq, conn, buf)
+				return
+			}
+		}
+	}
+}
+
 func performHttpCommand(command string) {
 	var err error
 	var req *http.Request
@@ -266,6 +314,28 @@ func wsTesterRun(wsCommandList []string, doneChannel chan bool) {
 		time.Sleep(1 * time.Second)
 	}
 	doneChannel <- ok
+}
+
+func udsTesterRun(udsCommandList []string, doneChannel chan bool) {
+	ok := true
+	conn := initUnixDomainSocket()
+	buf := make([]byte, 8192)
+	fmt.Printf("\n********** Unix domain socket testing **************\n")
+	for i := 0; i < len(wsCommandList); i++ {
+		performUdsCommand(udsCommandList[i], conn, &buf)
+		fmt.Printf("\n\n")
+		time.Sleep(1 * time.Second)
+	}
+	doneChannel <- ok
+}
+
+func initUnixDomainSocket() net.Conn {
+	conn, err := net.Dial("unix", "/var/tmp/vissv2/udsMgr.sock")
+	if err != nil {
+		fmt.Printf("initUnixDomainSocket: UDS Dial failed, err = %s", err)
+		return nil
+	}
+	return conn
 }
 
 func getBrokerSocket(isSecure bool) string {
@@ -491,8 +561,8 @@ func main() {
 		caCertPool = *prepareTransportSecConfig()
 	}
 
-	doneChannel = make([]chan bool, 4)
-	for i := 0; i < 4; i++ {
+	doneChannel = make([]chan bool, len(testedProtocols))
+	for i := 0; i < len(testedProtocols); i++ {
 		doneChannel[i] = make(chan bool)
 	}
 
@@ -525,6 +595,11 @@ func main() {
 			if len(grpcCommandList ) > 0 {
 				protocolId = 3
 				go grpcTesterRun(grpcCommandList, doneChannel[protocolId])
+			}
+		case "uds":
+			if len(udsCommandList ) > 0 {
+				protocolId = 4
+				go udsTesterRun(udsCommandList, doneChannel[protocolId])
 			}
 		}
 		ok := <- doneChannel[protocolId] // wait until each protocol tester is done

@@ -171,5 +171,70 @@
             },
             "requestId": "246"
         }
+    ],
+    "uds": [
+        {
+            "action": "get",
+            "path": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+            "requestId": "232"
+        },
+        {
+            "action": "get",
+            "path": "Incorrect.Path",
+            "requestId": "1957"
+        },
+        {
+            "action": "get",
+            "path": "Vehicle.ADAS",
+            "filter": {
+                "variant": "paths",
+                "parameter": [
+                    "ABS.*",
+                    "CruiseControl.IsError"
+                ]
+            },
+            "requestId": "237"
+        },
+        {
+            "action": "set",
+            "path": "Vehicle.TripMeterReading",
+            "value": "true",
+            "requestId": "245"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Speed",
+            "filter": {
+                "variant": "timebased",
+                "parameter": {
+                    "period": "1000"
+                }
+            },
+            "requestId": "246"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Speed",
+            "filter": {
+                "variant": "change",
+                "parameter": {
+                    "logic-op": "lt",
+                    "diff": "-1"
+                }
+            },
+            "requestId": "247"
+        },
+        {
+            "action": "subscribe",
+            "path": "Vehicle.Speed",
+            "filter": {
+                "variant": "range",
+                "parameter": {
+                    "logic-op": "gte",
+                    "boundary": "2"
+                }
+            },
+            "requestId": "247"
+        }
     ]
 }

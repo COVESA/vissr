@@ -38,6 +38,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
+	"github.com/covesa/vissr/server/vissv2server/udsMgr"
 
 	"github.com/covesa/vissr/utils"
 )
@@ -53,6 +54,7 @@ var serverComponents []string = []string{
 	"wsMgrFT",
 	"mqttMgr",
 	"grpcMgr",
+	"udsMgr",
 	"atServer",
 }
 
@@ -60,10 +62,9 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 4  // order assigned to channels: HTTP, WS, MQTT, gRPC
+ const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
 var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
-//var transportDataChan []chan string
 var backendChan []chan map[string]interface{}
 
 var serviceMgrChannel []chan map[string]interface{}
@@ -884,6 +885,9 @@ func main() {
 		case "grpcMgr":
 			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3])
 			go transportDataSession(transportMgrChannel[3], transportDataChan[3], backendChan[3])
+		case "udsMgr":
+			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
+			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
@@ -903,6 +907,8 @@ func main() {
 			serveRequest(request, 2, 0)
 		case request := <-transportDataChan[3]: // request from gRPC mgr
 			serveRequest(request, 3, 0)
+		case request := <-transportDataChan[4]: // request from UDS mgr
+			serveRequest(request, 4, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			var request map[string]interface{}
