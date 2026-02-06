@@ -63,7 +63,8 @@ The levels currently used are mainly info, warning, error. Info is appropriate d
 If modifications of the server code base is done it is recommended that the following test routine is performed before pushing
 any commits to this repo.
 To test the "VISSR tech stack", the server together with data store and feeder, the runtest.sh is available in the root directory.
-This bash script starts the server and the feederv3 in the background, and then the testClient is started in the terminal window.
+This bash script starts the server and the feedervx (x is the latest of existing feeder templates) in the background,
+and then the testClient is started in the terminal window.
 The testClient reads the testRequests.json file for the requests it will issue to the different transport protocols,
 and then it prints the requests and the responses in the terminal window.
 After each set of test requests for the same transport protocol it will wait until the keyboard return key is received,
@@ -100,6 +101,7 @@ The following transport protocols are supported
 * Websocket
 * MQTT
 * gRPC
+* Unix domain sockets
 
 They are all except MQTT enabled by the server per default.
 
@@ -108,6 +110,16 @@ To enable MQTT add the CLI command "-m" when starting the VISS server.
 To disable any other protocol, the string array serverComponents in the vissv2server.go file contains a list of the components that are spawned on
 separate threads by the main server process, and these can be commented out before building the server.
 For the server to be operationable, the service manager, and at least one transport protocol must not be commented out.
+
+### Git tags and releases
+The project has finally started to create releases with release v1.0 beig the first.
+A few more tags has also been created but not publicized as releases.
+These can be found on the [View all tags](https://github.com/COVESA/vissr/tags) page.
+On the page for each tags there is a short description of it and asset files with the source code of the commit the tag is pointing to.
+Reasons for these tags are:
+* The last commit for a VISS specification version, before features related to the next version begins to appear.
+* The last commit where the VISSR server supports the communication protocol with a specific feeder template version.
+The versions of this protocol is not backwards compatible in most cases.
 
 ### Go modules
 Go modules are used in multiple places in this project, below follows some commands that may be helpful in managing  this.
