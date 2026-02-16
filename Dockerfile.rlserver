@@ -30,6 +30,9 @@ COPY grpc_pb/ ./grpc_pb
 COPY utils ./utils
 COPY go.mod go.sum ./
 
+#workaround issue #115: server/vissv2server/grpcMgr/testprocess does not build. Remove it
+RUN rm -r ./server/vissv2server/grpcMgr/testprocess
+
 RUN ls -a etc/
 
 #copy cert info from testCredGen to path expected by w3c server
