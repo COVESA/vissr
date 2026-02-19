@@ -1,36 +1,29 @@
 HIM:
-  type: branch
-  description: Defines the set of trees that are managed as one virtual domain.
-
+type: branch
+description: Defines the set of trees that are managed as one virtual domain.
 
 HIM.Vehicle:
-  type: direct
-  domain: Automotive.Truck.Data
-  version: 0.1.0
-  local: forest/Truck.binary
-  public: https://github.com/COVESA/commercial-vehicle-information-specifications/tree/main/spec/trees/Vehicle/VSS-core2
-  description: A truck tree.
+type: direct
+domain: Vehicle.Car.Data
+version: 5.0.1
+local: forest/vss-core2.binary
+#public: https://himrepo.oem.com?instance=Vehicle.Car.Data.X.Y.Z
+description: A VSS tree augmented with a struct example.
 
-HIM.Trailer1:
-  type: direct
-  domain: Automotive.Trailer.Data
-  version: 0.1.0
-  local: forest/Trailer.binary
-  public: https://github.com/COVESA/commercial-vehicle-information-specifications/tree/main/spec/trees/Vehicle/Trailer1
-  description: A tree for the first trailer in the train.
+HIM.Types:
+type: direct
+domain: Vehicle.Car.TypeDefinition
+version: 0.1
+local: forest/typedef.binary
+#public: https://himrepo.oem.com?instance=Vehicle.Car.TypeDefinition.X.Y.Z
+description: A type definition tree.
 
-HIM.Trailer2:
-  type: direct
-  domain: Automotive.Trailer.Data
-  version: 0.1.0
-  local: forest/Trailer.binary
-  public: https://github.com/COVESA/commercial-vehicle-information-specifications/tree/main/spec/trees/Vehicle/Trailer
-  description: A tree for the second trailer in the train.
-  
 HIM.Server:
-  type: direct
-  domain: Server.Capabilities.Data
-  version: 0.1
-  local: forest/server.binary
-  public: https://github.com/COVESA/vissr/blob/master/resources/ServerSignalSpecification.vspec
-  description: The server capabilities tree.
+type: direct
+domain: Server.Capabilities.Data
+version: 0.1
+local: forest/server.binary
+#public: https://himrepo.oem.com?instance=Server.Capabilities.Data.X.Y.Z
+description: The server capabilities tree.
+
+
