@@ -194,17 +194,15 @@ func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[strin
 	}
 	if messageMap["dc"] != nil {
 		dataCompression := messageMap["dc"].(string)
-		protoMessage.DataCompression = &dataCompression
+		protoMessage.DC = &dataCompression
 	}
-	if messageMap["requestId"] != nil {
-		reqId := messageMap["requestId"].(string)
-		protoMessage.RequestId = &reqId
-	}
+	reqId := messageMap["requestId"].(string)
+	protoMessage.RequestId = reqId
 }
 
 func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[string]interface{}) {
 	requestId := messageMap["requestId"].(string)
-	protoMessage.RequestId = &requestId
+	protoMessage.RequestId = requestId
 	ts := messageMap["ts"].(string)
 	protoMessage.Ts = ts
 	if messageMap["authorization"] != nil {
@@ -456,12 +454,10 @@ func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageM
 	}
 	if messageMap["dc"] != nil {
 		dataCompression := messageMap["dc"].(string)
-		protoMessage.DataCompression = &dataCompression
+		protoMessage.DC = &dataCompression
 	}
-	if messageMap["requestId"] != nil {
-		reqId := messageMap["requestId"].(string)
-		protoMessage.RequestId = reqId
-	}
+	reqId := messageMap["requestId"].(string)
+	protoMessage.RequestId = reqId
 }
 
 func createSubscribeStreamPb(protoMessage *pb.SubscribeStreamMessage, messageMap map[string]interface{}) {
@@ -513,15 +509,13 @@ func createSetRequestPb(protoMessage *pb.SetRequestMessage, messageMap map[strin
 		auth := messageMap["authorization"].(string)
 		protoMessage.Authorization = &auth
 	}
-	if messageMap["requestId"] != nil {
-		reqId := messageMap["requestId"].(string)
-		protoMessage.RequestId = &reqId
-	}
+	reqId := messageMap["requestId"].(string)
+	protoMessage.RequestId = reqId
 }
 
 func createSetResponsePb(protoMessage *pb.SetResponseMessage, messageMap map[string]interface{}) {
 	requestId := messageMap["requestId"].(string)
-	protoMessage.RequestId = &requestId
+	protoMessage.RequestId = requestId
 	protoMessage.Ts = messageMap["ts"].(string)
 	if messageMap["authorization"] != nil {
 		auth := messageMap["authorization"].(string)
@@ -537,17 +531,13 @@ func createSetResponsePb(protoMessage *pb.SetResponseMessage, messageMap map[str
 
 func createUnsubscribeRequestPb(protoMessage *pb.UnsubscribeRequestMessage, messageMap map[string]interface{}) {
 	protoMessage.SubscriptionId = messageMap["subscriptionId"].(string)
-	if messageMap["requestId"] != nil {
-		reqId := messageMap["requestId"].(string)
-		protoMessage.RequestId = &reqId
-	}
+	reqId := messageMap["requestId"].(string)
+	protoMessage.RequestId = reqId
 }
 
 func createUnsubscribeResponsePb(protoMessage *pb.UnsubscribeResponseMessage, messageMap map[string]interface{}) {
-	if messageMap["requestId"] != nil {
-		reqId := messageMap["requestId"].(string)
-		protoMessage.RequestId = &reqId
-	}
+	reqId := messageMap["requestId"].(string)
+	protoMessage.RequestId = reqId
 	protoMessage.Ts = messageMap["ts"].(string)
 	if messageMap["error"] == nil {
 		protoMessage.Status = pb.ResponseStatus_SUCCESS
@@ -562,7 +552,7 @@ func populateJsonFromProtoGetReq(protoMessage *pb.GetRequestMessage) string {
 	jsonMessage := "{"
 	jsonMessage += `"action":"get"`
 	jsonMessage += `,"path":"` + protoMessage.GetPath() + `"` + getJsonFilter(protoMessage.Filter) +
-		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDataCompression(), "dc") +
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDC(), "dc") +
 		createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }
@@ -602,7 +592,7 @@ func populateJsonFromProtoSubscribeReq(protoMessage *pb.SubscribeRequestMessage)
 	jsonMessage := "{"
 	jsonMessage += `"action":"subscribe"`
 	jsonMessage += `,"path":"` + protoMessage.GetPath() + `"` + getJsonFilter(protoMessage.Filter) +
-		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDataCompression(), "dc") +
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDC(), "dc") +
 		createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }

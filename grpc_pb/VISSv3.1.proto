@@ -113,8 +113,8 @@ message GetRequestMessage {
         string Path = 1;
         optional FilterExpressions Filter = 2;
         optional string Authorization = 3;
-        optional string DataCompression = 4;
-        optional string RequestId = 5;
+        optional string DC = 4;
+        string RequestId = 5;
 }
 
 message GetResponseMessage {
@@ -125,7 +125,7 @@ message GetResponseMessage {
         }
         optional SuccessResponseMessage SuccessResponse = 2;
         optional ErrorResponseMessage ErrorResponse = 3;
-        optional string RequestId = 4;
+        string RequestId = 4;
         string Ts = 5;
         optional string Authorization = 6;
 }
@@ -134,13 +134,13 @@ message SetRequestMessage {
         string Path = 1;
         string Value = 2;
         optional string Authorization = 3;
-        optional string RequestId = 4;
+        string RequestId = 4;
 }
 
 message SetResponseMessage {
         ResponseStatus Status = 1;
         optional ErrorResponseMessage ErrorResponse = 2;
-        optional string RequestId = 3;
+        string RequestId = 3;
         string Ts = 4;
         optional string Authorization = 5;
 }
@@ -149,7 +149,7 @@ message SubscribeRequestMessage {
         string Path = 1;
         optional FilterExpressions Filter = 2;
         optional string Authorization = 3;
-        optional string DataCompression = 4;
+        optional string DC = 4;
         string RequestId = 5;
 }
 
@@ -180,13 +180,13 @@ message SubscribeStreamMessage {
 
 message UnsubscribeRequestMessage {
         string SubscriptionId = 1;
-        optional string RequestId = 2;
+        string RequestId = 2;
 }
 
 message UnsubscribeResponseMessage {
         ResponseStatus Status = 1;
         optional ErrorResponseMessage ErrorResponse = 2;
-        optional string RequestId = 3;
+        string RequestId = 3;
         string Ts = 4;
 }
 
