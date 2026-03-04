@@ -24,7 +24,7 @@ The VISSv3.1 reference implementation supports all of the new features.
 ### VISSR tech stack
 Also found on this repo are implementations of other components that are needed to realize a communication tech stack that reaches from clients through the server and to the underlying vehicle system interface.
 
-![VISSR tech stack](/vissr/images/WAII-tech-stack.jpg?width=40pc)
+![VISSR tech stack](/vissr/images/vissr-tech-stack.jpg?width=40pc)
 
 These software components (SwCs) can be categorized as follows:
 * server
