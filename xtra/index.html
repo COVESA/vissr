@@ -12,22 +12,22 @@
     <title>VISSR Xtra Information :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1772622078" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1772622078" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1778664602" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1778664602" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1772622078" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1778664602" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1772622078"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1778664602"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1772622078"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1772622078"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1778664602"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1778664602"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1772622078"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1778664602"></script>
 
     
   </div>
@@ -900,7 +900,7 @@
 
 
 
-	<p>Extra information about assorted topics.</p>
+	<p>Extra information about assorted to/vissr/images.</p>
 <h3 id="using-docker-compose-to-launch-a-vissr-instance">Using Docker-Compose to launch a vissr instance</h3>
 <h1 id="1-server">1. server</h1>
 <p>A simple process is followed where work packages are create as issues labeled as an implementation issue. The name of the issue is also the name of the branch which is used for implementation. A pull request is created when the task is finished to push the changes to the main branch.</p>
@@ -948,7 +948,7 @@ The master branch is a fork from the single-process branch.</p>
 </ul>
 <p>The server functionality has a complexity level that warrants some thoughts on how a good software architecture could look like.
 Figure 1 is the current proposal on this.<!-- raw HTML omitted -->
-<img src="pics/common_server_swa.png?raw=true" alt="Software architecture"><!-- raw HTML omitted -->
+<img src="/vissr/images/common_server_swa.png?raw=true" alt="Software architecture"><!-- raw HTML omitted -->
 *Fig 1. Software architecture overview</p>
 <p>The design tries to meet the following requirements:</p>
 <ul>
@@ -961,19 +961,19 @@ The following describes the components shown in Figure 1.</li>
 <h2 id="transport-managers-and-interface">Transport managers and interface.</h2>
 <p>The transport manager is responsible for that the VISS v2 client-server communication is carried out according to the transport protocol the manager implements. The payload being communicated shall have the format specified in the W3C VISS v2 TRANSPORT document. A transport manager acts as a proxy between a client and the Server core, see Figure 2. The payload communicated over the Transport interface shall be identical regardless of which Transport manager the Core server communicates with. This payload shall therefore follow the format for the Websocket transport as specified in W3C VISS v2 TRANSPORT. This means that all transport managers except the Websocket transport manager must reformat the payload communicated over their respective transport protocol. The transport interface is divided into two components, a registration interface, and a data channel interface. The registration interface is used by a transport manager to register itself with the Server core. The data channel interface is used for exchanging the requests, responses, and notifications between the communication end points. The data channel must support bidirectional asynchronous communication, and should support both local and remote transport manager deployment.
 At the registration with the core server the transport manager receives a transport manager Id. It must then include this in all payloads forwarded to the core server, for the core server to use in its payload routing. The transport manager must also include a client Id in the payload, to enable its own routing to different app-clients. These Ids must not be part of the payload returned to the app-clients.
-<img src="pics/transport_closeup.png?raw=true" alt="Transport closeup"><!-- raw HTML omitted -->
+<img src="/vissr/images/transport_closeup.png?raw=true" alt="Transport closeup"><!-- raw HTML omitted -->
 *Fig 2. Transport SwA closeup</p>
 <h2 id="tree-manager-and-interface">Tree manager and interface</h2>
 <p>The tree representing the accessible data points is found on the COVESA VSS Github. There is also found a basic tree manager from which the basis of this tree manager is cloned.
 The tree manager abstracts the details of the tree, e. g. its format, which through the VSS tool support can be e. g.  JSON, CSV, or c-native (c.f. VSS). It provides a method for searching the tree, to verify that a given path has a match in the tree, or to find all paths matching a path including wild cards. It also supports access to node internal data associated to a node reference provided by a previous search.
-<img src="pics/tree_closeup.png?raw=true" alt="Tree closeup"><!-- raw HTML omitted -->
+<img src="/vissr/images/tree_closeup.png?raw=true" alt="Tree closeup"><!-- raw HTML omitted -->
 *Fig 3. Tree SwA closeup</p>
 <h2 id="service-managers-and-interface">Service managers and interface</h2>
 <p>Although the service manager internal design is anticipated to substantially differ between OEMs, the internal design in this project follows the architecture of the <!-- raw HTML omitted -->COVESA CCS project<!-- raw HTML omitted --> with a &ldquo;state storage&rdquo; component as the interface that the service manager interacts with. The service manager interface described here should however be common for all implementations.<!-- raw HTML omitted -->A service manager must first register with the Server core, in which it provides the path from tree root to the node that is the root node of the branches &lsquo;owned&rsquo; by this service manager. This means that the existing tree must already be populated with the branches of this service manager. A possible later extension is to allow the service manager to provide new branches to be added to the tree. Another extension could be for the service manager to also provide information whether it supports direct client access (distributed server solution), or not. But this is not supported in the current version. The service manager acts as the server in the data channel communication with the server core, so it shall provide the server core with port number and URL path at the registration.
 The service interface payload shall follow the same format as the transport protocol. However, client requests related to authorize and service discovery actions terminate at the Server core, and should not be issued at this interface, i. e. only requests related to get/set/subscribe/unsubscribe should be communicated here. App-client requests may lead to requests on multiple data points, which shall be resolved by the server core, and over this interface be replaced by an array of fully qualified paths. The subsequent response, or subscription notification, shall contain data from all nodes addressed in the array.
 The service interface is divided into two components, a registration interface, and a data channel interface. The registration interface is used by a service manager to register itself with the Server core. The data channel interface is used for exchanging the requests, responses, and notifications between the communication end points. The data channel must support bidirectional asynchronous communication, and should support both local and remote service manager deployment.
 In this design it is the state-storage responsibility to map the VSS path expressions to whatever vehicle internal addressing scheme that is required to execute the requested data access. It is the responsibility of the service manager to interpret the filter instructions in a subscription request, and make sure these are followed in subsequent notifications to the client.
-<img src="pics/service_closeup.png?raw=true" alt="Service closeup"><!-- raw HTML omitted -->
+<img src="/vissr/images/service_closeup.png?raw=true" alt="Service closeup"><!-- raw HTML omitted -->
 *Fig 4. Service SwA closeup</p>
 <h2 id="server-core">Server core</h2>
 <p>The Server core is the like the spider in the net, tying it all together. Its main tasks are:</p>
@@ -993,7 +993,7 @@ In this design it is the state-storage responsibility to map the VSS path expres
 The authorization solution used in this project may not meet the security robustness required in a real life deployment. It shall however follow the access control model as described in the VISSvs specification.</p>
 <h4 id="4-service-discovery-response">4. Service discovery response</h4>
 <p>The response of a service discovery client request shall contain a JSON formatted tree containing all nodes under the tree node pointed to by the path. It is the responsibility of the Server core to use the tree interface to read node data for all nodes of this sub-tree, and format it into a JSON tree object to be returned to the client.
-<img src="pics/server_core_closeup.png?raw=true" alt="Server core closeup"><!-- raw HTML omitted -->
+<img src="/vissr/images/server_core_closeup.png?raw=true" alt="Server core closeup"><!-- raw HTML omitted -->
 *Fig 5. Server core SwA closeup</p>
 <h1 id="server-configurations">Server configurations</h1>
 <h2 id="vss-tree">VSS tree</h2>
@@ -1015,7 +1015,7 @@ For more information about the reference encoding, see README in the utils direc
 <p>The access control model in the Covesa VISS v2 specification is supported, with the exception of the authentication step.
 The implementation would not pass a security check, for eample the shared key for token signature verification is hardcoded with a redable text as value.
 The access control model architecture is shown below.
-<img src="pics/W3C_VISS_v2_access_control_model.png?raw=true" alt="Access control architecture">
+<img src="/vissr/images/W3C_VISS_v2_access_control_model.png?raw=true" alt="Access control architecture">
 More information about how the Access Control is performed can be found in the agt_server and at_server README. The WebClient README also includes information about how the Access Control is performed.
 The README in the client/client-1.0/Javascript directory describes the requests a client must issue first to the Access Grant Token server,
 and then to the Access Token server in order to obtain an Access token.<!-- raw HTML omitted -->
@@ -1491,19 +1491,19 @@ HTML client implementations for respective access can also be found in the direc
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1772622078"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1772622078"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1772622078"></script>
-    <script src="/vissr/js/jquery.sticky.js?1772622078"></script>
-    <script src="/vissr/js/featherlight.min.js?1772622078"></script>
-    <script src="/vissr/js/highlight.pack.js?1772622078"></script>
+    <script src="/vissr/js/clipboard.min.js?1778664602"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1778664602"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1778664602"></script>
+    <script src="/vissr/js/jquery.sticky.js?1778664602"></script>
+    <script src="/vissr/js/featherlight.min.js?1778664602"></script>
+    <script src="/vissr/js/highlight.pack.js?1778664602"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1772622078"></script>
-    <script src="/vissr/js/learn.js?1772622078"></script>
-    <script src="/vissr/js/hugo-learn.js?1772622078"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1778664602"></script>
+    <script src="/vissr/js/learn.js?1778664602"></script>
+    <script src="/vissr/js/hugo-learn.js?1778664602"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1772622078"></script>
+            <script src="/vissr/mermaid/mermaid.js?1778664602"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
