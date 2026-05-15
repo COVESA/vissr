@@ -157,6 +157,7 @@ func initDataServer(serviceMgrChan chan map[string]interface{}, clientChannel ch
 const MAXTICKERS = 255 // total number of active subscription and history tickers
 var subscriptionTicker [MAXTICKERS]*time.Ticker
 var historyTicker [MAXTICKERS]*time.Ticker
+var tickerDone [MAXTICKERS]chan struct{}
 var tickerIndexList [MAXTICKERS]int
 
 func allocateTicker(subscriptionId int) int {
@@ -186,15 +187,32 @@ func activateInterval(subscriptionChannel chan int, subscriptionId int, interval
 		return
 	}
 	subscriptionTicker[index] = time.NewTicker(time.Duration(interval) * time.Millisecond) // interval in milliseconds
+	tickerDone[index] = make(chan struct{})
+	done := tickerDone[index]
+	ticker := subscriptionTicker[index]
 	go func() {
-		for range subscriptionTicker[index].C {
-			subscriptionChannel <- subscriptionId
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				subscriptionChannel <- subscriptionId
+			}
 		}
 	}()
 }
 
 func deactivateInterval(subscriptionId int) {
-	subscriptionTicker[deallocateTicker(subscriptionId)].Stop()
+	index := deallocateTicker(subscriptionId)
+	if index == -1 {
+		utils.Error.Printf("deactivateInterval: No ticker found for subscriptionId=%d", subscriptionId)
+		return
+	}
+	subscriptionTicker[index].Stop()
+	if tickerDone[index] != nil {
+		close(tickerDone[index])
+		tickerDone[index] = nil
+	}
 }
 
 func activateHistory(historyChannel chan int, signalId int, frequency int) {
@@ -203,16 +221,37 @@ func activateHistory(historyChannel chan int, signalId int, frequency int) {
 		utils.Error.Printf("activateHistory: No available ticker.")
 		return
 	}
+	if frequency <= 0 {
+		utils.Error.Printf("activateHistory: Invalid frequency=%d", frequency)
+		return
+	}
 	historyTicker[index] = time.NewTicker(time.Duration((3600*1000)/frequency) * time.Millisecond) // freq in cycles per hour
+	tickerDone[index] = make(chan struct{})
+	done := tickerDone[index]
+	ticker := historyTicker[index]
 	go func() {
-		for range historyTicker[index].C {
-			historyChannel <- signalId
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				historyChannel <- signalId
+			}
 		}
 	}()
 }
 
 func deactivateHistory(signalId int) {
-	historyTicker[deallocateTicker(signalId)].Stop()
+	index := deallocateTicker(signalId)
+	if index == -1 {
+		utils.Error.Printf("deactivateHistory: No ticker found for signalId=%d", signalId)
+		return
+	}
+	historyTicker[index].Stop()
+	if tickerDone[index] != nil {
+		close(tickerDone[index])
+		tickerDone[index] = nil
+	}
 }
 
 func getSubcriptionStateIndex(subscriptionId int, subscriptionList []SubscriptionState) int {
@@ -1520,8 +1559,10 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	go feederFrontend(toFeeder, fromFeederRorC, fromFeederCl)
 	go curveLogServer()
 	var dummyTicker *time.Ticker
+	var dummyTickerC <-chan time.Time
 	if stateDbType != "none" {
 		dummyTicker = time.NewTicker(47 * time.Millisecond)
+		dummyTickerC = dummyTicker.C
 	}
 	subscriptTicker := time.NewTicker(23 * time.Millisecond) //range/change subscription ticker when no feeder notifications
 	feederReconnectTicker := time.NewTicker(2 * time.Second)
@@ -1650,13 +1691,18 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
 					dataChan <- errorResponseMap
 			} // switch
-		case <-dummyTicker.C:
+		case <-dummyTickerC:
 			dummyValue++
 			if dummyValue > 999 {
 				dummyValue = 0
 			}
 		case subscriptionId := <-subscriptionChan: // interval notification triggered
-			subscriptionState := subscriptionList[getSubcriptionStateIndex(subscriptionId, subscriptionList)]
+			subIndex := getSubcriptionStateIndex(subscriptionId, subscriptionList)
+			if subIndex == -1 {
+				utils.Error.Printf("Subscription not found for id=%d", subscriptionId)
+				continue
+			}
+			subscriptionState := subscriptionList[subIndex]
 			var subscriptionMap = make(map[string]interface{})
 			subscriptionMap["action"] = "subscription"
 			subscriptionMap["ts"] = utils.GetRfcTime()

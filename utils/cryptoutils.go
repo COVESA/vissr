@@ -179,6 +179,7 @@ func ImportRsaKey(filename string, privKey **rsa.PrivateKey) error {
 	if err != nil {
 		return err
 	}
+	defer privFile.Close()
 	prvFileInfo, err := privFile.Stat() // Gets info of io
 	if err != nil {
 		return err
@@ -199,6 +200,7 @@ func ImportRsaPubKey(filename string, pubKey **rsa.PublicKey) error {
 	if err != nil {
 		return err
 	}
+	defer pubFile.Close()
 	pubFileInfo, err := pubFile.Stat()
 	if err != nil {
 		return err
@@ -219,6 +221,7 @@ func ImportEcdsaKey(filename string, privKey **ecdsa.PrivateKey) error {
 	if err != nil {
 		return err
 	}
+	defer privFile.Close()
 	prvFileInfo, err := privFile.Stat() // Gets info of io
 	if err != nil {
 		return err

@@ -21,6 +21,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 //	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
@@ -35,7 +36,14 @@ const MAXFOUNDNODES = 1500
 const GAP = 3      // Used for PoP check
 const LIFETIME = 5 // Used for PoP check
 
-const theAtSecret = "averysecretkeyvalue2" //not shared
+var theAtSecret string
+
+func init() {
+	theAtSecret = os.Getenv("VISSR_AT_SECRET")
+	if theAtSecret == "" {
+		theAtSecret = "averysecretkeyvalue2" // fallback default; set VISSR_AT_SECRET in production
+	}
+}
 const AGT_PUB_KEY_DIRECTORY = "agt_public_key.rsa"
 const PORT = 8600
 const AT_DURATION = 1 * 60 * 60 // 1 hour
@@ -43,6 +51,7 @@ const AT_DURATION = 1 * 60 * 60 // 1 hour
 var agtKey *rsa.PublicKey
 
 var jtiCache map[string]struct{} // PoPs JTIs that must be refused to not be reused
+var jtiCacheMu sync.Mutex
 
 var muxServer = []*http.ServeMux{
 	http.NewServeMux(), // HTTP
@@ -653,8 +662,8 @@ func initGatingId() {
 }
 
 func newGatingId() int {
-	gatingId := (GatingId + 1) % 9999
-	return gatingId
+	GatingId = (GatingId + 1) % 9999
+	return GatingId
 }
 
 func consentInquiryResponse(input string) string {
@@ -773,6 +782,8 @@ func checkVin(vin string) bool {
 
 // Checks if jwt id exist in cache, if it does, return false. If not, it adds it and automatically clear it from cache when it expires
 func addCheckJti(jti string) bool {
+	jtiCacheMu.Lock()
+	defer jtiCacheMu.Unlock()
 	if jtiCache == nil { // If map is empty (first time), it doesnt even check, initializes and add
 		jtiCache = make(map[string]struct{})
 		jtiCache[jti] = struct{}{}
@@ -790,7 +801,9 @@ func addCheckJti(jti string) bool {
 
 func deleteJti(jti string) {
 	time.Sleep((GAP + LIFETIME + 5) * time.Second)
+	jtiCacheMu.Lock()
 	delete(jtiCache, jti)
+	jtiCacheMu.Unlock()
 }
 
 // Validates the Proof of Possession of the client key
@@ -839,7 +852,7 @@ func validateRequest(payload AtGenPayload) (bool, string) {
 	}
 	iat, err := strconv.Atoi(payload.Agt.PayloadClaims["iat"])
 	if err != nil {
-		return false, `{"error": AG token iat timestamp malformed"}`
+		return false, `{"error": "AG token iat timestamp malformed"}`
 	}
 	exp, err := strconv.Atoi(payload.Agt.PayloadClaims["exp"])
 	if err != nil {

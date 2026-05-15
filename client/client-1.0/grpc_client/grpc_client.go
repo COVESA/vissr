@@ -68,12 +68,12 @@ func noStreamCall(commandIndex int) {
 		}
 		tlsCredentials := credentials.NewTLS(config)
 		portNo := secConfig.GrpcSecPort
-		conn, err = grpc.Dial(address+portNo, grpc.WithTransportCredentials(tlsCredentials), grpc.WithBlock())
+		conn, err = grpc.NewClient(address+portNo, grpc.WithTransportCredentials(tlsCredentials))
 	} else {
-		// grpc.Dial
+		// grpc.NewClient
 
 		utils.Info.Printf("connecting to port = 8887")
-		conn, err = grpc.Dial(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+		conn, err = grpc.NewClient(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -92,7 +92,6 @@ func noStreamCall(commandIndex int) {
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err != nil {
 			log.Fatal(err)
-			return
 		}
 		vssResponse = utils.GetResponsePbToJson(pbResponse)
 	case 1: // set

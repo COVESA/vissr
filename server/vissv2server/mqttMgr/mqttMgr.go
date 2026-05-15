@@ -56,14 +56,12 @@ func vissV2Receiver(transportMgrChan chan string, vissv2Channel chan string) {
 
 // TODO add conf file
 func getBrokerSocket(isSecure bool) string {
-	//	FVTAddr := os.Getenv("MQTT_BROKER_ADDR")
-
-	FVTAddr := "test.mosquitto.org"
+	FVTAddr := os.Getenv("MQTT_BROKER_ADDR")
 	if FVTAddr == "" {
 		FVTAddr = "127.0.0.1"
 	}
 
-	if isSecure == true {
+	if isSecure {
 		return "ssl://" + FVTAddr + ":8883"
 	}
 	return "tcp://" + FVTAddr + ":1883"

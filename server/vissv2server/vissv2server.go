@@ -653,8 +653,6 @@ func removeLocalProperty(himMap map[string]interface{}) map[string]interface{} {
 func getRangeBoundaries(paramMap interface{}) (string, string) {
 	var bVal []string = []string{"", ""}
 	switch pMap := paramMap.(type) {
-		case interface{}:
-			bVal[0] = getRangeBoundary(pMap.(map[string]interface{}))
 		case []interface{}:
 			for i := 0; i < len(pMap); i++ {
 				if i > 1 {
@@ -663,6 +661,8 @@ func getRangeBoundaries(paramMap interface{}) (string, string) {
 				}
 				bVal[i] = getRangeBoundary(pMap[i].(map[string]interface{}))
 			}
+		case map[string]interface{}:
+			bVal[0] = getRangeBoundary(pMap)
 		default:
 			utils.Info.Println(pMap, "is of an unknown type")
 	}
@@ -913,7 +913,7 @@ func main() {
 			serveRequest(request, 4, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
-			var request map[string]interface{}
+			request := map[string]interface{}{}
 			request["action"] = "internal-cancelsubscription"
 			request["gatingId"] = gatingId
 			serveRequest(request, 0, 0)
