@@ -790,9 +790,33 @@ func convertFromIsoTime(isoTime string) (time.Time, error) {
 func processHistoryGet(request string) string { // {"path":"X", "period":"Y"}
 	var requestMap = make(map[string]interface{})
 	utils.MapRequest(request, &requestMap)
-	index := getHistoryListIndex(requestMap["path"].(string))
+	// Sibling of processHistoryCtrl. Same defensive shape: type-
+	// assert path/period safely, reject unknown path before any
+	// historyList[index] read. The previous version would panic the
+	// entire serviceMgr on a malformed subscribe/history request,
+	// reachable from any anonymous network peer when --history is
+	// enabled.
+	pathStr, ok := requestMap["path"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: path is not a string")
+		return ""
+	}
+	periodStr, ok := requestMap["period"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: period is not a string")
+		return ""
+	}
+	index := getHistoryListIndex(pathStr)
+	if index == -1 {
+		utils.Error.Printf("processHistoryGet: unknown path %q", pathStr)
+		return ""
+	}
 	currentTs := getCurrentUtcTime()
-	periodTime, _ := convertFromIsoTime(requestMap["period"].(string))
+	periodTime, err := convertFromIsoTime(periodStr)
+	if err != nil {
+		utils.Error.Printf("processHistoryGet: period %q malformed: %s", periodStr, err)
+		return ""
+	}
 	oldTs := currentTs.Add(time.Hour*(time.Duration)((24*periodTime.Day()+periodTime.Hour())*(-1)) -
 		time.Minute*(time.Duration)(periodTime.Minute()) - time.Second*(time.Duration)(periodTime.Second())).UTC()
 	var matches int

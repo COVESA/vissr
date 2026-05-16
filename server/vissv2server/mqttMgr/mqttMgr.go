@@ -85,8 +85,14 @@ func mqttSubscribe(brokerSocket string, topic string) MQTT.Client {
 		return nil
 	}
 	if token := c.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		utils.Error.Println(token.Error())
-		os.Exit(1)
+		// Previously this called os.Exit(1) on subscribe failure, which
+		// terminates the whole vissv2server process (mqttMgr runs in-
+		// proc) — a transient broker outage or a hostile broker would
+		// take WS/HTTP/UDS/gRPC clients down with MQTT. Log and return
+		// nil so the caller can fall back / retry instead.
+		utils.Error.Printf("mqttSubscribe failed: %s", token.Error())
+		c.Disconnect(250)
+		return nil
 	}
 	return c
 }
@@ -157,8 +163,11 @@ func publishMessage(brokerSocket string, topic string, payload string) {
 
 	c := MQTT.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		utils.Error.Println(token.Error())
-		os.Exit(1)
+		// Same rationale as the subscribe-failure path above: do not
+		// tear the whole server down when an MQTT broker hiccups or
+		// rejects the connect.
+		utils.Error.Printf("publishMessage: connect failed: %s", token.Error())
+		return
 	}
 	token := c.Publish(topic, 0, false, payload)
 	token.Wait()

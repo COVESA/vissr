@@ -339,8 +339,19 @@ func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string, co
 				case "unsubscribe":
 					pathList := serverMessageMap["path"].([]interface{})
 					for i := 0; i < len(pathList); i++ {
-						if onNotificationList(pathList[i].(string)) != -1 {
-							notificationList = slices.Delete(notificationList, i, i+1)
+						// Use the index returned by onNotificationList,
+						// not the loop counter i — i is an index into
+						// pathList, not into notificationList. The
+						// previous code panicked on slices.Delete when
+						// len(pathList) > len(notificationList), and
+						// deleted the wrong entry otherwise (state
+						// corruption).
+						pathStr, ok := pathList[i].(string)
+						if !ok {
+							continue
+						}
+						if idx := onNotificationList(pathStr); idx != -1 {
+							notificationList = slices.Delete(notificationList, idx, idx+1)
 						}
 					}
 				case "update":
