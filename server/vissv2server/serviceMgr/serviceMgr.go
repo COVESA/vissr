@@ -458,7 +458,10 @@ func getIntervalPeriod(opValue string) int { // {"period":"X"}
 	}
 	period, err := strconv.Atoi(intervalData.Period)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: Invalid period=%s", period)
+		// Log the original string (not the zero-valued int returned on
+		// parse failure). The previous Printf used %s with the int — a
+		// vet-blocked format error that also told the operator nothing.
+		utils.Error.Printf("getIntervalPeriod: Invalid period=%q", intervalData.Period)
 		return -1
 	}
 	return period
