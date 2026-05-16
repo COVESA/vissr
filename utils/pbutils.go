@@ -29,7 +29,7 @@ func JsonToProtobuf(jsonMessage string) []byte {
 	protoMessage = populateProtoFromJson(jsonMessage)
 	serialisedMessage, err := proto.Marshal(protoMessage)
 	if err != nil {
-		Error.Printf("Marshaling error: ", err)
+		Error.Printf("Marshaling error: %v", err)
 		return nil
 	}
 	return serialisedMessage
