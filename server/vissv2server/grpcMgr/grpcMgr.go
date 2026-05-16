@@ -220,35 +220,47 @@ func initGrpcServer() {
 	}
 }
 
+// dispatchGrpcUnaryRequest sends a JSON request payload to the manager
+// hub via grpcClientChan[0], waits for the response on a freshly
+// allocated channel, and returns it. Used by the three unary RPC
+// stubs (GetRequest, SetRequest, UnsubscribeRequest) which all share
+// the same per-message handshake. Extracted in PR #127 so the
+// handshake can be unit-tested without a live gRPC server. See
+// grpcMgr_dispatch_test.go.
+func dispatchGrpcUnaryRequest(vssReq string) string {
+	grpcResponseChan := make(chan string)
+	grpcClientChan[0] <- GrpcRequestMessage{vssReq, grpcResponseChan}
+	return <-grpcResponseChan
+}
+
+// classifySubscribeResponse inspects a response coming back from the
+// manager hub during a streaming subscribe RPC and tells the caller
+// whether the response indicates an error (subscribe should
+// terminate) or a kill message (the unsubscribe sibling told us to
+// stop). Extracted from SubscribeRequest's response arm in PR #127 so
+// the classification logic can be table-tested without a live gRPC
+// stream. See grpcMgr_dispatch_test.go.
+func classifySubscribeResponse(vssResp string) (isError bool, isKill bool) {
+	isError = strings.Contains(vssResp, `"error"`)
+	isKill = strings.Contains(vssResp, KILL_MESSAGE)
+	return
+}
+
 func (s *Server) GetRequest(ctx context.Context, in *pb.GetRequestMessage) (*pb.GetResponseMessage, error) {
 	vssReq := utils.GetRequestPbToJson(in)
-	grpcResponseChan := make(chan string)
-	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
-	utils.Info.Println(grpcRequestMessage.VssReq)
-	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
-	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.GetResponseJsonToPb(vssResp)
-	return pbResp, nil
+	utils.Info.Println(vssReq)
+	vssResp := dispatchGrpcUnaryRequest(vssReq)
+	return utils.GetResponseJsonToPb(vssResp), nil
 }
 
 func (s *Server) SetRequest(ctx context.Context, in *pb.SetRequestMessage) (*pb.SetResponseMessage, error) {
-	vssReq := utils.SetRequestPbToJson(in)
-	grpcResponseChan := make(chan string)
-	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
-	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
-	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.SetResponseJsonToPb(vssResp)
-	return pbResp, nil
+	vssResp := dispatchGrpcUnaryRequest(utils.SetRequestPbToJson(in))
+	return utils.SetResponseJsonToPb(vssResp), nil
 }
 
 func (s *Server) UnsubscribeRequest(ctx context.Context, in *pb.UnsubscribeRequestMessage) (*pb.UnsubscribeResponseMessage, error) {
-	vssReq := utils.UnsubscribeRequestPbToJson(in)
-	grpcResponseChan := make(chan string)
-	var grpcRequestMessage = GrpcRequestMessage{vssReq, grpcResponseChan}
-	grpcClientChan[0] <- grpcRequestMessage // forward to mgr hub,
-	vssResp := <-grpcResponseChan           //  and wait for response
-	pbResp := utils.UnsubscribeResponseJsonToPb(vssResp)
-	return pbResp, nil
+	vssResp := dispatchGrpcUnaryRequest(utils.UnsubscribeRequestPbToJson(in))
+	return utils.UnsubscribeResponseJsonToPb(vssResp), nil
 }
 
 func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS_SubscribeRequestServer) error {
@@ -266,10 +278,11 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 			resetGrpcRoutingData(subscribeClientId)
 			return nil
 		case vssResp := <-grpcResponseChan: //  forward subscribe response and following events
-			if strings.Contains(vssResp, `"error"`) { // error message
+			isError, isKill := classifySubscribeResponse(vssResp)
+			if isError { // error message
 				return nil
 			}
-			if strings.Contains(vssResp, KILL_MESSAGE) { //issued by unsubscribe thread
+			if isKill { // issued by unsubscribe thread
 				clientId := extractClientId(vssResp)
 				resetGrpcRoutingData(clientId)
 				return nil
@@ -293,6 +306,42 @@ func extractClientId(killMessage string) int { // mesage contains clientId:xyz
 	return clientId
 }
 
+// isMultipleEventsRequest classifies a VSS request as one that will
+// produce a stream of events (i.e. an active subscribe) rather than a
+// one-shot response. Used by handleGrpcNewClientSession to set up the
+// right routing flag. Extracted in PR #127 so the classification can
+// be table-tested.
+func isMultipleEventsRequest(vssReq string) bool {
+	return !strings.Contains(vssReq, "unsubscribe") && strings.Contains(vssReq, "subscribe")
+}
+
+// handleGrpcTransportResponse logs the response coming back from the
+// manager hub and routes it back to the original gRPC client via
+// RemoveRoutingForwardResponse. Extracted from GrpcMgrInit's
+// for/select loop in PR #127.
+func handleGrpcTransportResponse(respMessage string) {
+	utils.Info.Printf("gRPC mgr hub: Response from server core:%s", respMessage)
+	RemoveRoutingForwardResponse(respMessage)
+}
+
+// handleGrpcNewClientSession allocates a new gRPC clientId, sets up
+// routing data, and either forwards the request to the transport
+// manager or short-circuits with a max-clients error response.
+// Extracted from GrpcMgrInit's for/select loop in PR #127 so the
+// allocation/short-circuit behaviour can be unit-tested.
+func handleGrpcNewClientSession(reqMessage GrpcRequestMessage, mgrId int, transportMgrChan chan string) {
+	clientId := getClientId()
+	utils.Info.Print("****************** New gRPC client session ************************: " + reqMessage.VssReq + " clientId=" + strconv.Itoa(clientId))
+	if clientId != -1 {
+		isMultipleEvents := isMultipleEventsRequest(reqMessage.VssReq)
+		setGrpcRoutingData(clientId, reqMessage.GrpcRespChan, isMultipleEvents)
+		utils.AddRoutingForwardRequest(reqMessage.VssReq, mgrId, clientId, transportMgrChan)
+		return
+	}
+	utils.Warning.Printf("Max no of gRPC clients reached.")
+	reqMessage.GrpcRespChan <- `{"action": "get","requestId": "9999","error": {"number": "404", "reason": "max_client_sessions", "description": "Max no of gRPC client sessions reached."},"ts": "2000-01-01T13:37:00Z"}` // requestId and ts values incorrect
+}
+
 func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.ReadTransportSecConfig()
 	grpcMgrId = mgrId
@@ -308,22 +357,9 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case respMessage := <-transportMgrChan:
-			utils.Info.Printf("gRPC mgr hub: Response from server core:%s", respMessage)
-			RemoveRoutingForwardResponse(respMessage)
+			handleGrpcTransportResponse(respMessage)
 		case reqMessage := <-grpcClientChan[0]:
-			clientId := getClientId()
-			utils.Info.Print("****************** New gRPC client session ************************: " + reqMessage.VssReq + " clientId=" + strconv.Itoa(clientId))
-			if clientId != -1 {
-				isMultipleEvents := false
-				if !strings.Contains(reqMessage.VssReq, "unsubscribe") && strings.Contains(reqMessage.VssReq, "subscribe") {
-					isMultipleEvents = true
-				}
-				setGrpcRoutingData(clientId, reqMessage.GrpcRespChan, isMultipleEvents)
-				utils.AddRoutingForwardRequest(reqMessage.VssReq, mgrId, clientId, transportMgrChan)
-			} else {
-				utils.Warning.Printf("Max no of gRPC clients reached.")
-				reqMessage.GrpcRespChan <- `{"action": "get","requestId": "9999","error": {"number": "404", "reason": "max_client_sessions", "description": "Max no of gRPC client sessions reached."},"ts": "2000-01-01T13:37:00Z"}` // requestId and ts values incorrect
-			}
+			handleGrpcNewClientSession(reqMessage, mgrId, transportMgrChan)
 		}
 	}
 }
