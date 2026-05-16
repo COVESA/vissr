@@ -458,7 +458,7 @@ func getIntervalPeriod(opValue string) int { // {"period":"X"}
 	}
 	period, err := strconv.Atoi(intervalData.Period)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: Invalid period=%s", period)
+		utils.Error.Printf("getIntervalPeriod: Invalid period=%q, err=%v", intervalData.Period, err)
 		return -1
 	}
 	return period
@@ -1430,6 +1430,143 @@ func feederReader(udsConn net.Conn, feederName string, feederChannelIndex int) {
 	}
 }
 
+// buildServiceResponseMap returns the standard response skeleton used
+// for replies to dataChan requests inside ServiceMgrInit. Extracted in
+// PR #129 (this PR) so the per-action handlers below can share the
+// setup without duplicating the six-line dance. See
+// serviceMgr_dispatch_test.go.
+func buildServiceResponseMap(requestMap map[string]interface{}) map[string]interface{} {
+	responseMap := make(map[string]interface{})
+	responseMap["RouterId"] = requestMap["RouterId"]
+	responseMap["action"] = requestMap["action"]
+	responseMap["requestId"] = requestMap["requestId"]
+	responseMap["ts"] = utils.GetRfcTime()
+	if requestMap["handle"] != nil {
+		responseMap["authorization"] = requestMap["handle"]
+	}
+	return responseMap
+}
+
+// handleServiceSet processes a "set" action: writes the value via the
+// state-storage backend (setVehicleData) and pushes a success or
+// service_unavailable response back on dataChan. Extracted from
+// ServiceMgrInit's dataChan switch in PR #129.
+func handleServiceSet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	var ts string
+	switch requestMap["value"].(type) {
+	case string:
+		ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
+	case map[string]interface{}:
+		data, _ := json.Marshal(requestMap["value"])
+		ts = setVehicleData(requestMap["path"].(string), string(data))
+	}
+	if len(ts) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
+		dataChan <- errorResponseMap
+		return
+	}
+	responseMap["ts"] = ts
+	dataChan <- responseMap
+}
+
+// handleServiceGet processes a "get" action: unpacks the path array,
+// validates an optional filter, fetches the data pack via
+// getDataPackMap, and pushes the response on dataChan. Extracted from
+// ServiceMgrInit in PR #129. Error paths emit invalid_data or
+// bad_request as appropriate.
+func handleServiceGet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	pathArray := unpackPaths(requestMap["path"].(string))
+	if pathArray == nil {
+		utils.Error.Printf("Unmarshal of path array failed.")
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		dataChan <- errorResponseMap
+		return
+	}
+	var filterList []utils.FilterObject
+	if requestMap["filter"] != nil && requestMap["filter"] != "" {
+		utils.UnpackFilter(requestMap["filter"], &filterList)
+		if len(filterList) == 0 {
+			utils.Error.Printf("Request filter malformed.")
+			utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+			dataChan <- errorResponseMap
+			return
+		}
+	}
+	dataPack := getDataPackMap(pathArray)
+	responseMap["data"] = dataPack["dpack"]
+	dataChan <- responseMap
+}
+
+// handleServiceUnsubscribe processes a client-driven "unsubscribe"
+// action: deactivates the subscription identified by subscriptionId,
+// forwards the request to the feeder so it can drop its end of the
+// stream, and replies to the client. Returns the updated
+// subscriptionList. On missing or invalid subscriptionId an
+// invalid_data error is sent back. Extracted from ServiceMgrInit in
+// PR #129.
+func handleServiceUnsubscribe(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}, subscriptionList []SubscriptionState, toFeederChan chan string) []SubscriptionState {
+	if requestMap["subscriptionId"] != nil {
+		status := -1
+		subscriptId, ok := requestMap["subscriptionId"].(string)
+		if ok == true {
+			status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
+			if status != -1 {
+				dataChan <- responseMap
+				toFeederChan <- utils.FinalizeMessage(requestMap)
+				return subscriptionList
+			}
+			delete(requestMap, "subscriptionId")
+		}
+	}
+	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+	dataChan <- errorResponseMap
+	return subscriptionList
+}
+
+// handleInternalKillSubscriptions processes the
+// "internal-killsubscriptions" action: scans the subscription list and
+// removes every entry whose RouterId matches the request. No response
+// is emitted — this is an internal cleanup message. Returns the
+// updated subscriptionList. Extracted from ServiceMgrInit in PR #129.
+func handleInternalKillSubscriptions(requestMap map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
+	isRemoved := true
+	for isRemoved == true {
+		isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
+		utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
+	}
+	return subscriptionList
+}
+
+// handleInternalCancelSubscription processes the
+// "internal-cancelsubscription" action used when the AGT cancels a
+// token or consent: looks up the subscription by gatingId, rewrites the
+// request as a synthetic "subscription" error event, pushes it to the
+// client, and removes the subscription from the list. Returns the
+// updated subscriptionList. If the gatingId is not found, the list is
+// returned unchanged. Extracted from ServiceMgrInit in PR #129.
+func handleInternalCancelSubscription(requestMap map[string]interface{}, dataChan chan map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
+	routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))
+	if routerId != "" {
+		requestMap["RouterId"] = routerId
+		requestMap["action"] = "subscription"
+		requestMap["requestId"] = nil
+		requestMap["subscriptionId"] = subscriptionId
+		utils.SetErrorResponse(requestMap, errorResponseMap, 2, "Token expired or consent cancelled.")
+		dataChan <- errorResponseMap
+		_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
+	}
+	return subscriptionList
+}
+
+// handleUnknownAction handles the default arm of the dataChan switch:
+// emits an invalid_data response with "Unknown action" as the message.
+// Extracted from ServiceMgrInit in PR #129 so the default arm is just
+// one line at the call site.
+func handleUnknownAction(requestMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
+	dataChan <- errorResponseMap
+}
+
 func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
@@ -1573,60 +1710,21 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 		select {
 		case requestMap := <-dataChan: // request from server core
 //			utils.Info.Printf("Service manager: Request from Server core:%s\n", requestMap["action"].(string))
-			var responseMap = make(map[string]interface{})
-			responseMap["RouterId"] = requestMap["RouterId"]
-			responseMap["action"] = requestMap["action"]
-			responseMap["requestId"] = requestMap["requestId"]
-			responseMap["ts"] = utils.GetRfcTime()
-			if requestMap["handle"] != nil {
-				responseMap["authorization"] = requestMap["handle"]
-			}
+			responseMap := buildServiceResponseMap(requestMap)
 			switch requestMap["action"] {
 			case "invoke": // invokeVehicleService(...
 			case "set":
-				var ts string
-				switch requestMap["value"].(type) {
-					case string:
-						ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
-					case map[string]interface{}:
-						data, _ := json.Marshal(requestMap["value"])
-						ts = setVehicleData(requestMap["path"].(string), string(data))
-				}
-				if len(ts) == 0 {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-					dataChan <- errorResponseMap
-					break
-				}
-				responseMap["ts"] = ts
-				dataChan <- responseMap
+				handleServiceSet(requestMap, responseMap, dataChan)
 			case "get":
-				pathArray := unpackPaths(requestMap["path"].(string))
-				if pathArray == nil {
-					utils.Error.Printf("Unmarshal of path array failed.")
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- errorResponseMap
-					break
-				}
-				var filterList []utils.FilterObject
-				if requestMap["filter"] != nil && requestMap["filter"] != "" {
-					utils.UnpackFilter(requestMap["filter"], &filterList)
-					if len(filterList) == 0 {
-						utils.Error.Printf("Request filter malformed.")
-						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-						dataChan <- errorResponseMap
-						break
-					}
-				}
-				dataPack := getDataPackMap(pathArray)
-/*				if len(dataPack) == 0 {
-					utils.Info.Printf("No historic data available")
-					utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-					dataChan <- errorResponseMap
-					break
-				}*/
-				responseMap["data"] = dataPack["dpack"]
-				dataChan <- responseMap
+				handleServiceGet(requestMap, responseMap, dataChan)
 			case "subscribe":
+				// The subscribe arm is intentionally left inline for now —
+				// it mutates several locals (subscriptionList, subscriptionId)
+				// and sends on three channels (subscriptionChan, CLChannel,
+				// toFeeder), so extracting it cleanly is the next step in
+				// the refactor series. TODO(testing): pull this into
+				// handleServiceSubscribe once the channel ownership story
+				// is sorted.
 				var subscriptionState SubscriptionState
 				subscriptionState.SubscriptionId = subscriptionId
 				subscriptionState.RouterId = requestMap["RouterId"].(string)
@@ -1655,41 +1753,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 				subscriptionId++ // not to be incremented elsewhere
 				dataChan <- responseMap
 			case "unsubscribe":
-				if requestMap["subscriptionId"] != nil {
-					status := -1
-					subscriptId, ok := requestMap["subscriptionId"].(string)
-					if ok == true {
-						status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
-						if status != -1 {
-							dataChan <- responseMap
-							toFeeder <- utils.FinalizeMessage(requestMap)
-							break
-						}
-						delete(requestMap, "subscriptionId")
-					}
-				}
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-				dataChan <- errorResponseMap
+				subscriptionList = handleServiceUnsubscribe(requestMap, responseMap, dataChan, subscriptionList, toFeeder)
 			case "internal-killsubscriptions":
-				isRemoved := true
-				for isRemoved == true {
-					isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
-					utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
-				}
+				subscriptionList = handleInternalKillSubscriptions(requestMap, subscriptionList)
 			case "internal-cancelsubscription":
-				routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))
-				if routerId != "" {
-					requestMap["RouterId"] = routerId
-					requestMap["action"] = "subscription"
-					requestMap["requestId"] = nil
-					requestMap["subscriptionId"] = subscriptionId
-					utils.SetErrorResponse(requestMap, errorResponseMap, 2, "Token expired or consent cancelled.")
-					dataChan <- errorResponseMap
-					_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
-				}
+				subscriptionList = handleInternalCancelSubscription(requestMap, dataChan, subscriptionList)
 			default:
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
-					dataChan <- errorResponseMap
+				handleUnknownAction(requestMap, dataChan)
 			} // switch
 		case <-dummyTickerC:
 			dummyValue++
