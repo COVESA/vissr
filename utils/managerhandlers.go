@@ -26,6 +26,8 @@ import (
 const backendTermination = "internal-backend-termination"
 
 func getWsClientIndex() int {
+	WsClientIndexMu.Lock()
+	defer WsClientIndexMu.Unlock()
 	freeIndex := -1
 	for i := range WsClientIndexList {
 		if WsClientIndexList[i] == true {
@@ -38,6 +40,8 @@ func getWsClientIndex() int {
 }
 
 func ReturnWsClientIndex(index int) {
+	WsClientIndexMu.Lock()
+	defer WsClientIndexMu.Unlock()
 	WsClientIndexList[index] = true
 }
 
@@ -141,7 +145,18 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		requestMap["action"] = "get"
 	case "POST": // set
 		requestMap["action"] = "set"
-		body, _ := io.ReadAll(req.Body)
+		// Bound the request body before io.ReadAll. Without this an
+		// anonymous client can send a Content-Length: <huge> or a
+		// never-closing chunked body and ReadAll will allocate until
+		// the daemon OOMs. VISS set payloads are small JSON envelopes,
+		// so 64 KiB is well above any legitimate use.
+		req.Body = http.MaxBytesReader(w, req.Body, 64*1024)
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			Warning.Printf("frontendHttpAppSession: request body rejected: %s", err)
+			backendHttpAppSession(`{"error": "413", "reason": "Request body too large", "description":"max 64 KiB"}`, &w)
+			return
+		}
 		var bodyMap map[string]interface{}
 		MapRequest(string(body), &bodyMap)
 		requestMap["value"] = bodyMap["value"]

@@ -161,9 +161,15 @@ func makeAtServerHandler(atsChannel chan string) func(http.ResponseWriter, *http
 				http.Error(w, "400 bad request method.", 400)
 			}
 		} else {
+			// Bound the request body before io.ReadAll. The AT endpoint
+			// is reachable pre-auth (it issues short-term access tokens),
+			// so an anonymous peer can otherwise send a giant or chunked
+			// body and force ReadAll to allocate until OOM. AT requests
+			// are small JSON envelopes.
+			req.Body = http.MaxBytesReader(w, req.Body, 64*1024)
 			bodyBytes, err := io.ReadAll(req.Body)
 			if err != nil {
-				http.Error(w, "400 request unreadable.", 400)
+				http.Error(w, "413 request body too large or unreadable.", 413)
 			} else {
 				utils.Info.Printf("atServer:received POST request=%s", string(bodyBytes))
 				atsChannel <- string(bodyBytes) // Sends request to server channel
@@ -704,7 +710,16 @@ func extractKeyValue(key string, input string) string {
 		utils.Error.Printf("extractKeyValue:error input=%s", err)
 		return ""
 	}
-	return inputMap[key].(string)
+	// Guard the type assertion: if `key` is absent (nil interface) or
+	// the value is non-string, the bare `.(string)` panics. This
+	// function is called from the atServer's central event-loop
+	// goroutine, which has no recover() — so a single malformed POST
+	// to /ats by an anonymous peer takes down the atServer entirely.
+	if v, ok := inputMap[key].(string); ok {
+		return v
+	}
+	utils.Error.Printf("extractKeyValue: key %q missing or non-string in input", key)
+	return ""
 }
 
 func validateTokenTimestamps(iat int, exp int) bool {
