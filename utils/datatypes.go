@@ -13,6 +13,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -162,17 +163,60 @@ func (token *JsonWebToken) DecodeFromFull(input string) error {
 	return nil
 }
 
-// Checks if the token is signed correctly. In case of symm sign, key as string must be passed. In case of assym, a crypto.PublicKey must be passed
+// extractAlg parses the JWT header JSON and returns the value of the
+// `alg` claim. Used by CheckSignature to dispatch on the algorithm
+// *as declared in the token's header JSON* rather than a substring
+// match on the raw header bytes.
+//
+// The previous implementation used strings.Contains(header, "HS256")
+// which had two security holes:
+//   1. "HS256" appearing in any other claim (jku, typ, kid, ...)
+//      would force HMAC verification with a caller-supplied symmetric
+//      key, even though the token was actually RSA/ECDSA-signed.
+//   2. Any header that did NOT contain "HS256" (including
+//      `"alg":"none"`) fell through to CheckAssymSignature, which
+//      attempted asymmetric verification with whatever key was passed
+//      — accepting `alg:none` tokens whenever the caller's key
+//      check happened to no-op.
+func extractAlg(header string) string {
+	var hdr struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal([]byte(header), &hdr); err != nil {
+		return ""
+	}
+	return hdr.Alg
+}
+
+// Checks if the token is signed correctly. In case of symm sign, key as string must be passed. In case of assym, a crypto.PublicKey must be passed.
+//
+// Hardening (security bugs 1 and 2 from the utils/crypto audit):
+//   - The HMAC tag comparison is done via hmac.Equal (constant-time)
+//     rather than the previous `==` string compare, which was a
+//     classic timing-attack vector.
+//   - The algorithm is parsed from the header JSON's `alg` field, not
+//     substring-matched on the raw header. The `none` algorithm is
+//     refused outright; unknown algorithms are refused.
 func (token JsonWebToken) CheckSignature(key interface{}) error {
-	if strings.Contains(token.Header, `HS256`) {
+	alg := extractAlg(token.Header)
+	switch alg {
+	case "HS256":
 		strKey, ok := key.(string)
-		if ok && base64.RawURLEncoding.EncodeToString([]byte(GenerateHmac(token.EncodedHeader+"."+token.EncodedPayload, strKey))) == token.EncodedSignature {
-			return nil
-		} else {
+		if !ok {
+			return errors.New("HS256: key must be a string")
+		}
+		expected := []byte(base64.RawURLEncoding.EncodeToString([]byte(GenerateHmac(token.EncodedHeader+"."+token.EncodedPayload, strKey))))
+		presented := []byte(token.EncodedSignature)
+		if !hmac.Equal(expected, presented) {
 			return errors.New("invalid hs256 signature")
 		}
-	} else {
+		return nil
+	case "RS256", "ES256":
 		return token.CheckAssymSignature(key)
+	case "none", "":
+		return errors.New("refusing token with alg=none or missing alg")
+	default:
+		return fmt.Errorf("unsupported alg: %q", alg)
 	}
 }
 
