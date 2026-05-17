@@ -10,9 +10,80 @@ package utils
 
 import (
 	"encoding/json"
+	"strings"
+
 	pb "github.com/covesa/vissr/grpc_pb"
-//	"strconv"
 )
+
+// -- Defensive helpers --------------------------------------------------
+// Every JSON map access in this file flows through these so a malformed
+// request never panics the gRPC server. Pre-fix, ~60 bare type assertions
+// (e.g. `messageMap["path"].(string)`) panicked on any missing or
+// wrong-typed field, turning malformed input into a crash-DoS.
+
+// mapString returns m[key] as a string. Returns "", false when the key
+// is absent, nil, or the wrong type.
+func mapString(m map[string]interface{}, key string) (string, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return s, true
+}
+
+// mapStringOrEmpty is the convenience form for fields where a missing
+// value is equivalent to "".
+func mapStringOrEmpty(m map[string]interface{}, key string) string {
+	s, _ := mapString(m, key)
+	return s
+}
+
+// mapAsMap returns m[key] as a nested map; ok=false on missing or wrong type.
+func mapAsMap(m map[string]interface{}, key string) (map[string]interface{}, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil, false
+	}
+	mm, ok := v.(map[string]interface{})
+	return mm, ok
+}
+
+// asMap converts an interface to a map[string]interface{}, ok=false if
+// it's a different type.
+func asMap(v interface{}) (map[string]interface{}, bool) {
+	if v == nil {
+		return nil, false
+	}
+	m, ok := v.(map[string]interface{})
+	return m, ok
+}
+
+// asString converts an interface to a string, ok=false otherwise.
+func asString(v interface{}) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
+// trimTrailingComma returns s with the final byte stripped iff that byte
+// is a ','. The previous code unconditionally did `s[:len(s)-1]` which
+// panicked on an empty accumulator (e.g. an ERROR response with no data
+// fields, or an empty FilterExp slice).
+func trimTrailingComma(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	if s[len(s)-1] == ',' {
+		return s[:len(s)-1]
+	}
+	return s
+}
 
 func GetRequestPbToJson(pbGetReq *pb.GetRequestMessage) string {
 	jsonMessage := populateJsonFromProtoGetReq(pbGetReq)
@@ -157,92 +228,121 @@ func ExtractSubscriptionId(jsonSubResponse string) string {
 		Error.Printf("ExtractSubscriptionId:Unmarshal error response=%s, err=%s", jsonSubResponse, err)
 		return ""
 	}
-	return subResponseMap["subscriptionId"].(string)
+	return mapStringOrEmpty(subResponseMap, "subscriptionId")
+}
+
+// applyFilterFromMessage parses messageMap["filter"] into a *pb.FilterExpressions.
+// Returns nil if no filter is present or the shape is invalid - the caller
+// leaves the proto's Filter field nil.
+func applyFilterFromMessage(messageMap map[string]interface{}) *pb.FilterExpressions {
+	filter, ok := messageMap["filter"]
+	if !ok || filter == nil {
+		return nil
+	}
+	switch vv := filter.(type) {
+	case []interface{}:
+		if len(vv) != 2 {
+			Error.Printf("Max two filter expressions are allowed.")
+			return nil
+		}
+		m0, ok0 := asMap(vv[0])
+		m1, ok1 := asMap(vv[1])
+		if !ok0 || !ok1 {
+			Error.Printf("applyFilterFromMessage: filter array elements must be objects")
+			return nil
+		}
+		out := &pb.FilterExpressions{
+			FilterExp: []*pb.FilterExpressions_FilterExpression{
+				{}, {},
+			},
+		}
+		createPbFilter(0, m0, out)
+		createPbFilter(1, m1, out)
+		return out
+	case map[string]interface{}:
+		out := &pb.FilterExpressions{
+			FilterExp: []*pb.FilterExpressions_FilterExpression{{}},
+		}
+		createPbFilter(0, vv, out)
+		return out
+	default:
+		Info.Println(filter, "is of an unknown type")
+		return nil
+	}
 }
 
 func createGetRequestPb(protoMessage *pb.GetRequestMessage, messageMap map[string]interface{}) {
-	path := messageMap["path"].(string)
-	protoMessage.Path = path
-	if messageMap["filter"] != nil {
-		filter := messageMap["filter"]
-		switch vv := filter.(type) {
-		case []interface{}:
-//			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
-			if len(vv) != 2 {
-				Error.Printf("Max two filter expressions are allowed.")
-				break
-			}
-			protoMessage.Filter = &pb.FilterExpressions{}
-			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 2)
-			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
-			protoMessage.Filter.FilterExp[1] = &pb.FilterExpressions_FilterExpression{}
-			createPbFilter(0, vv[0].(map[string]interface{}), protoMessage.Filter)
-			createPbFilter(1, vv[1].(map[string]interface{}), protoMessage.Filter)
-		case map[string]interface{}:
-//			Info.Println(vv, "is a map:")
-			protoMessage.Filter = &pb.FilterExpressions{}
-			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 1)
-			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
-			createPbFilter(0, vv, protoMessage.Filter)
-		default:
-			Info.Println(filter, "is of an unknown type")
-		}
+	if path, ok := mapString(messageMap, "path"); ok {
+		protoMessage.Path = path
 	}
-	if messageMap["authorization"] != nil {
-		auth := messageMap["authorization"].(string)
+	if f := applyFilterFromMessage(messageMap); f != nil {
+		protoMessage.Filter = f
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
 		protoMessage.Authorization = &auth
 	}
-	if messageMap["dc"] != nil {
-		dataCompression := messageMap["dc"].(string)
-		protoMessage.DC = &dataCompression
+	if dc, ok := mapString(messageMap, "dc"); ok {
+		protoMessage.DC = &dc
 	}
-	reqId := messageMap["requestId"].(string)
-	protoMessage.RequestId = reqId
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
 }
 
 func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[string]interface{}) {
-	requestId := messageMap["requestId"].(string)
-	protoMessage.RequestId = requestId
-	ts := messageMap["ts"].(string)
-	protoMessage.Ts = ts
-	if messageMap["authorization"] != nil {
-		auth := messageMap["authorization"].(string)
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
 		protoMessage.Authorization = &auth
 	}
-	if messageMap["error"] == nil {
-		protoMessage.Status = pb.ResponseStatus_SUCCESS
-		protoMessage.SuccessResponse = &pb.GetResponseMessage_SuccessResponseMessage{}
-		numOfDataElements := getNumOfDataElements(messageMap["data"])
-		if numOfDataElements > 0 {
-			protoMessage.SuccessResponse.DataPack = &pb.DataPackages{}
-			protoMessage.SuccessResponse.DataPack.Data = make([]*pb.DataPackages_DataPackage, numOfDataElements)
-			for i := 0; i < numOfDataElements; i++ {
-				protoMessage.SuccessResponse.DataPack.Data[i] = createDataElement(i, messageMap["data"])
+	if errMap, isErr := mapAsMap(messageMap, "error"); isErr {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = getProtoErrorMessage(errMap)
+		return
+	}
+	if _, present := messageMap["error"]; present {
+		// Present but not a map — treat as a generic error to avoid silent success.
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
+		return
+	}
+	protoMessage.Status = pb.ResponseStatus_SUCCESS
+	protoMessage.SuccessResponse = &pb.GetResponseMessage_SuccessResponseMessage{}
+	numOfDataElements := getNumOfDataElements(messageMap["data"])
+	if numOfDataElements > 0 {
+		protoMessage.SuccessResponse.DataPack = &pb.DataPackages{}
+		protoMessage.SuccessResponse.DataPack.Data = make([]*pb.DataPackages_DataPackage, 0, numOfDataElements)
+		for i := 0; i < numOfDataElements; i++ {
+			if elem := createDataElement(i, messageMap["data"]); elem != nil {
+				protoMessage.SuccessResponse.DataPack.Data = append(protoMessage.SuccessResponse.DataPack.Data, elem)
 			}
-		} else {
-			metadata, _ := json.Marshal(messageMap["metadata"])
-			metadataStr := string(metadata)
-			protoMessage.SuccessResponse.Metadata = &metadataStr
 		}
 	} else {
-		protoMessage.Status = pb.ResponseStatus_ERROR
-		protoMessage.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
+		metadata, _ := json.Marshal(messageMap["metadata"])
+		metadataStr := string(metadata)
+		protoMessage.SuccessResponse.Metadata = &metadataStr
 	}
 }
 
+// getProtoErrorMessage extracts an error sub-message defensively. Non-string
+// field values are skipped rather than panicking.
 func getProtoErrorMessage(messageErrorMap map[string]interface{}) *pb.ErrorResponseMessage {
 	protoErrorMessage := &pb.ErrorResponseMessage{}
-	for k, v := range messageErrorMap {
-//		Info.Println("key=",k, "v=", v)
-		if k == "number" {
-			protoErrorMessage.Number = v.(string)
-		}
-		if k == "reason" {
-			protoErrorMessage.Reason = v.(string)
-		}
-		if k == "description" {
-			protoErrorMessage.Description = v.(string)
-		}
+	if messageErrorMap == nil {
+		return protoErrorMessage
+	}
+	if v, ok := mapString(messageErrorMap, "number"); ok {
+		protoErrorMessage.Number = v
+	}
+	if v, ok := mapString(messageErrorMap, "reason"); ok {
+		protoErrorMessage.Reason = v
+	}
+	if v, ok := mapString(messageErrorMap, "description"); ok {
+		protoErrorMessage.Description = v
 	}
 	return protoErrorMessage
 }
@@ -258,22 +358,39 @@ func getNumOfDataElements(messageDataMap interface{}) int {
 	return 1
 }
 
+// createDataElement extracts the i'th data element from messageDataMap.
+// Returns nil if the input shape is invalid (not an object, missing fields,
+// or wrong types) so a malformed client payload no longer panics.
 func createDataElement(index int, messageDataMap interface{}) *pb.DataPackages_DataPackage {
-
 	var dataObject map[string]interface{}
 	switch vv := messageDataMap.(type) {
 	case []interface{}:
-		dataObject = vv[index].(map[string]interface{})
+		if index < 0 || index >= len(vv) {
+			return nil
+		}
+		m, ok := asMap(vv[index])
+		if !ok {
+			return nil
+		}
+		dataObject = m
 	default:
-		dataObject = vv.(map[string]interface{})
+		m, ok := asMap(vv)
+		if !ok {
+			return nil
+		}
+		dataObject = m
 	}
 	var protoDataElement pb.DataPackages_DataPackage
-	path := dataObject["path"].(string)
-	protoDataElement.Path = path
-	numOfDataPointElements := getNumOfDataPointElements(dataObject["dp"])
-	protoDataElement.Dp = make([]*pb.DataPackages_DataPackage_DataPoint, numOfDataPointElements)
+	if p, ok := mapString(dataObject, "path"); ok {
+		protoDataElement.Path = p
+	}
+	dpRaw := dataObject["dp"]
+	numOfDataPointElements := getNumOfDataPointElements(dpRaw)
+	protoDataElement.Dp = make([]*pb.DataPackages_DataPackage_DataPoint, 0, numOfDataPointElements)
 	for i := 0; i < numOfDataPointElements; i++ {
-		protoDataElement.Dp[i] = createDataPointElement(i, dataObject["dp"])
+		if dp := createDataPointElement(i, dpRaw); dp != nil {
+			protoDataElement.Dp = append(protoDataElement.Dp, dp)
+		}
 	}
 	return &protoDataElement
 }
@@ -289,51 +406,85 @@ func getNumOfDataPointElements(messageDataPointMap interface{}) int {
 	return 1
 }
 
+// createDataPointElement extracts the i'th data-point. Returns nil for any
+// shape mismatch (not an object, missing fields, etc.) so malformed input
+// doesn't panic.
 func createDataPointElement(index int, messageDataPointMap any) *pb.DataPackages_DataPackage_DataPoint {
 	var dataPointObject map[string]any
 	switch vv := messageDataPointMap.(type) {
 	case []any:
-		dataPointObject = vv[index].(map[string]any)
+		if index < 0 || index >= len(vv) {
+			return nil
+		}
+		m, ok := asMap(vv[index])
+		if !ok {
+			return nil
+		}
+		dataPointObject = m
 	default:
-		dataPointObject = vv.(map[string]any)
+		m, ok := asMap(vv)
+		if !ok {
+			return nil
+		}
+		dataPointObject = m
 	}
 	var protoDataPointElement pb.DataPackages_DataPackage_DataPoint
-	protoDataPointElement.Value = dataPointObject["value"].(string)
-	ts := dataPointObject["ts"].(string)
-	protoDataPointElement.Ts = ts
+	if v, ok := mapString(dataPointObject, "value"); ok {
+		protoDataPointElement.Value = v
+	}
+	if ts, ok := mapString(dataPointObject, "ts"); ok {
+		protoDataPointElement.Ts = ts
+	}
 	return &protoDataPointElement
 }
 
+// createPbFilter populates filter.FilterExp[index] from a JSON filter
+// expression. Defensive: invalid variant or wrong-typed parameter logs
+// and leaves the entry's Value sub-fields nil rather than panicking.
 func createPbFilter(index int, filterExpression map[string]interface{}, filter *pb.FilterExpressions) {
-	filterVariant := getFilterVariant(filterExpression["variant"].(string))
+	if index < 0 || index >= len(filter.FilterExp) {
+		return
+	}
+	variantStr, ok := mapString(filterExpression, "variant")
+	if !ok {
+		Error.Printf("createPbFilter: missing/invalid variant field")
+		return
+	}
+	filterVariant := getFilterVariant(variantStr)
 	filter.FilterExp[index].Variant = filterVariant
 	filter.FilterExp[index].Value = &pb.FilterExpressions_FilterExpression_FilterValue{}
+	parameter := filterExpression["parameter"]
 	switch filterVariant {
 	case pb.FilterExpressions_FilterExpression_PATHS:
-		filter.FilterExp[index].Value.ValuePaths = &pb.FilterExpressions_FilterExpression_FilterValue_PathsValue{}
-		filter.FilterExp[index].Value.ValuePaths = getPbPathsFilterValue(filterExpression["parameter"])
+		filter.FilterExp[index].Value.ValuePaths = getPbPathsFilterValue(parameter)
 	case pb.FilterExpressions_FilterExpression_TIMEBASED:
-		filter.FilterExp[index].Value.ValueTimebased = &pb.FilterExpressions_FilterExpression_FilterValue_TimebasedValue{}
-		filter.FilterExp[index].Value.ValueTimebased = getPbTimebasedFilterValue(filterExpression["parameter"].(map[string]interface{}))
+		if m, ok := asMap(parameter); ok {
+			filter.FilterExp[index].Value.ValueTimebased = getPbTimebasedFilterValue(m)
+		}
 	case pb.FilterExpressions_FilterExpression_RANGE:
-		rangeLen := getNumOfRangeExpressions(filterExpression["parameter"])
-		filter.FilterExp[index].Value.ValueRange = make([]*pb.FilterExpressions_FilterExpression_FilterValue_RangeValue, rangeLen)
+		rangeLen := getNumOfRangeExpressions(parameter)
+		filter.FilterExp[index].Value.ValueRange = make([]*pb.FilterExpressions_FilterExpression_FilterValue_RangeValue, 0, rangeLen)
 		for i := 0; i < rangeLen; i++ {
-			filter.FilterExp[index].Value.ValueRange[i] = getPbRangeFilterValue(i, filterExpression["parameter"])
+			if rv := getPbRangeFilterValue(i, parameter); rv != nil {
+				filter.FilterExp[index].Value.ValueRange = append(filter.FilterExp[index].Value.ValueRange, rv)
+			}
 		}
 	case pb.FilterExpressions_FilterExpression_CHANGE:
-		filter.FilterExp[index].Value.ValueChange = &pb.FilterExpressions_FilterExpression_FilterValue_ChangeValue{}
-		filter.FilterExp[index].Value.ValueChange = getPbChangeFilterValue(filterExpression["parameter"].(map[string]interface{}))
+		if m, ok := asMap(parameter); ok {
+			filter.FilterExp[index].Value.ValueChange = getPbChangeFilterValue(m)
+		}
 	case pb.FilterExpressions_FilterExpression_CURVELOG:
-		filter.FilterExp[index].Value.ValueCurvelog = &pb.FilterExpressions_FilterExpression_FilterValue_CurvelogValue{}
-		filter.FilterExp[index].Value.ValueCurvelog = getPbCurvelogFilterValue(filterExpression["parameter"].(map[string]interface{}))
+		if m, ok := asMap(parameter); ok {
+			filter.FilterExp[index].Value.ValueCurvelog = getPbCurvelogFilterValue(m)
+		}
 	case pb.FilterExpressions_FilterExpression_HISTORY:
-		filter.FilterExp[index].Value.ValueHistory = &pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{}
-		filter.FilterExp[index].Value.ValueHistory.TimePeriod = filterExpression["parameter"].(string)
+		if period, ok := asString(parameter); ok {
+			filter.FilterExp[index].Value.ValueHistory = &pb.FilterExpressions_FilterExpression_FilterValue_HistoryValue{TimePeriod: period}
+		}
 	case pb.FilterExpressions_FilterExpression_METADATA:
 		Warning.Printf("Filter variant is not supported by protobuf encoding.")
 	default:
-		Error.Printf("Filter variant is unknown.")
+		Error.Printf("Filter variant is unknown: %q", variantStr)
 	}
 }
 
@@ -350,15 +501,17 @@ func getPbPathsFilterValue(filterValueExpression interface{}) *pb.FilterExpressi
 	var protoPathsValue pb.FilterExpressions_FilterExpression_FilterValue_PathsValue
 	switch vv := filterValueExpression.(type) {
 	case []interface{}:
-//		Info.Println(filterValueExpression, "is a string array:, len=", strconv.Itoa(len(vv)))
-		protoPathsValue.RelativePath = make([]string, len(vv))
+		protoPathsValue.RelativePath = make([]string, 0, len(vv))
 		for i := 0; i < len(vv); i++ {
-			protoPathsValue.RelativePath[i] = vv[i].(string)
+			s, ok := asString(vv[i])
+			if !ok {
+				Error.Printf("getPbPathsFilterValue: element %d not a string", i)
+				continue
+			}
+			protoPathsValue.RelativePath = append(protoPathsValue.RelativePath, s)
 		}
 	case string:
-//		Info.Println(filterValueExpression, "is a string:")
-		protoPathsValue.RelativePath = make([]string, 1)
-		protoPathsValue.RelativePath[0] = vv
+		protoPathsValue.RelativePath = []string{vv}
 	default:
 		Info.Println(filterValueExpression, "is of an unknown type")
 	}
@@ -366,39 +519,51 @@ func getPbPathsFilterValue(filterValueExpression interface{}) *pb.FilterExpressi
 }
 
 func getPbTimebasedFilterValue(filterExpression map[string]interface{}) *pb.FilterExpressions_FilterExpression_FilterValue_TimebasedValue {
-	var protoTimebasedValue pb.FilterExpressions_FilterExpression_FilterValue_TimebasedValue
-	protoTimebasedValue.Period = filterExpression["period"].(string)
-	return &protoTimebasedValue
+	period, _ := mapString(filterExpression, "period")
+	return &pb.FilterExpressions_FilterExpression_FilterValue_TimebasedValue{Period: period}
 }
 
 func getPbRangeFilterValue(index int, valueMap interface{}) *pb.FilterExpressions_FilterExpression_FilterValue_RangeValue {
-	var protoRangeValue pb.FilterExpressions_FilterExpression_FilterValue_RangeValue
+	var rangeObject map[string]interface{}
 	switch vv := valueMap.(type) {
 	case []interface{}:
-		rangeObject := vv[index].(map[string]interface{})
-		protoRangeValue.LogicOperator = rangeObject["logic-op"].(string)
-		protoRangeValue.Boundary = rangeObject["boundary"].(string)
+		if index < 0 || index >= len(vv) {
+			return nil
+		}
+		m, ok := asMap(vv[index])
+		if !ok {
+			return nil
+		}
+		rangeObject = m
 	case map[string]interface{}:
-		protoRangeValue.LogicOperator = vv["logic-op"].(string)
-		protoRangeValue.Boundary = vv["boundary"].(string)
+		rangeObject = vv
 	default:
 		return nil
 	}
-	return &protoRangeValue
+	logicOp, _ := mapString(rangeObject, "logic-op")
+	boundary, _ := mapString(rangeObject, "boundary")
+	return &pb.FilterExpressions_FilterExpression_FilterValue_RangeValue{
+		LogicOperator: logicOp,
+		Boundary:      boundary,
+	}
 }
 
 func getPbChangeFilterValue(filterExpression map[string]interface{}) *pb.FilterExpressions_FilterExpression_FilterValue_ChangeValue {
-	var protoChangeValue pb.FilterExpressions_FilterExpression_FilterValue_ChangeValue
-	protoChangeValue.LogicOperator = filterExpression["logic-op"].(string)
-	protoChangeValue.Diff = filterExpression["diff"].(string)
-	return &protoChangeValue
+	logicOp, _ := mapString(filterExpression, "logic-op")
+	diff, _ := mapString(filterExpression, "diff")
+	return &pb.FilterExpressions_FilterExpression_FilterValue_ChangeValue{
+		LogicOperator: logicOp,
+		Diff:          diff,
+	}
 }
 
 func getPbCurvelogFilterValue(filterExpression map[string]interface{}) *pb.FilterExpressions_FilterExpression_FilterValue_CurvelogValue {
-	var protoCurvelogValue pb.FilterExpressions_FilterExpression_FilterValue_CurvelogValue
-	protoCurvelogValue.MaxErr = filterExpression["maxerr"].(string)
-	protoCurvelogValue.BufSize = filterExpression["bufsize"].(string)
-	return &protoCurvelogValue
+	maxErr, _ := mapString(filterExpression, "maxerr")
+	bufSize, _ := mapString(filterExpression, "bufsize")
+	return &pb.FilterExpressions_FilterExpression_FilterValue_CurvelogValue{
+		MaxErr:  maxErr,
+		BufSize: bufSize,
+	}
 }
 
 func getFilterVariant(filterVariant string) pb.FilterExpressions_FilterExpression_FilterVariant {
@@ -422,128 +587,144 @@ func getFilterVariant(filterVariant string) pb.FilterExpressions_FilterExpressio
 }
 
 func createSubscribeRequestPb(protoMessage *pb.SubscribeRequestMessage, messageMap map[string]interface{}) {
-	protoMessage.Path = messageMap["path"].(string)
-	if messageMap["filter"] != nil {
-		filter := messageMap["filter"]
-		switch vv := filter.(type) {
-		case []interface{}:
-//			Info.Println(filter, "is an array:, len=", strconv.Itoa(len(vv)))
-			if len(vv) != 2 {
-				Error.Printf("Max two filter expressions are allowed.")
-				break
-			}
-			protoMessage.Filter = &pb.FilterExpressions{}
-			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 2)
-			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
-			protoMessage.Filter.FilterExp[1] = &pb.FilterExpressions_FilterExpression{}
-			createPbFilter(0, vv[0].(map[string]interface{}), protoMessage.Filter)
-			createPbFilter(1, vv[1].(map[string]interface{}), protoMessage.Filter)
-		case map[string]interface{}:
-//			Info.Println(filter, "is a map:")
-			protoMessage.Filter = &pb.FilterExpressions{}
-			protoMessage.Filter.FilterExp = make([]*pb.FilterExpressions_FilterExpression, 1)
-			protoMessage.Filter.FilterExp[0] = &pb.FilterExpressions_FilterExpression{}
-			createPbFilter(0, vv, protoMessage.Filter)
-		default:
-			Info.Println(filter, "is of an unknown type")
-		}
+	if path, ok := mapString(messageMap, "path"); ok {
+		protoMessage.Path = path
 	}
-	if messageMap["authorization"] != nil {
-		auth := messageMap["authorization"].(string)
+	if f := applyFilterFromMessage(messageMap); f != nil {
+		protoMessage.Filter = f
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
 		protoMessage.Authorization = &auth
 	}
-	if messageMap["dc"] != nil {
-		dataCompression := messageMap["dc"].(string)
-		protoMessage.DC = &dataCompression
+	if dc, ok := mapString(messageMap, "dc"); ok {
+		protoMessage.DC = &dc
 	}
-	reqId := messageMap["requestId"].(string)
-	protoMessage.RequestId = reqId
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
 }
 
 func createSubscribeStreamPb(protoMessage *pb.SubscribeStreamMessage, messageMap map[string]interface{}) {
-	if messageMap["action"] == "subscribe" { // RESPONSE
+	action, _ := mapString(messageMap, "action")
+	errMap, isErr := mapAsMap(messageMap, "error")
+	_, errPresent := messageMap["error"]
+	if action == "subscribe" { // RESPONSE
 		protoMessage.MType = pb.SubscribeResponseType_SUB_RESPONSE
 		protoMessage.Response = &pb.SubscribeStreamMessage_SubscribeResponseMessage{}
-		protoMessage.Response.RequestId = messageMap["requestId"].(string)
-		protoMessage.Response.Ts = messageMap["ts"].(string)
-		if messageMap["authorization"] != nil {
-			auth := messageMap["authorization"].(string)
+		if reqId, ok := mapString(messageMap, "requestId"); ok {
+			protoMessage.Response.RequestId = reqId
+		}
+		if ts, ok := mapString(messageMap, "ts"); ok {
+			protoMessage.Response.Ts = ts
+		}
+		if auth, ok := mapString(messageMap, "authorization"); ok {
 			protoMessage.Response.Authorization = &auth
 		}
-		if messageMap["error"] == nil {
-			if messageMap["subscriptionId"] != nil {
-				subId := messageMap["subscriptionId"].(string)
+		if !errPresent {
+			if subId, ok := mapString(messageMap, "subscriptionId"); ok {
 				protoMessage.Response.SubscriptionId = &subId
 			}
 			protoMessage.Status = pb.ResponseStatus_SUCCESS
 		} else {
 			protoMessage.Status = pb.ResponseStatus_ERROR
-			protoMessage.Response.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
-		}
-	} else { //EVENT
-		protoMessage.MType = pb.SubscribeResponseType_SUB_EVENT
-		protoMessage.Event = &pb.SubscribeStreamMessage_SubscribeEventMessage{}
-		protoMessage.Event.SubscriptionId = messageMap["subscriptionId"].(string)
-		ts := messageMap["ts"].(string)
-		protoMessage.Event.Ts = ts
-		if messageMap["error"] == nil {
-			protoMessage.Status = pb.ResponseStatus_SUCCESS
-			protoMessage.Event.SuccessResponse = &pb.SubscribeStreamMessage_SubscribeEventMessage_SuccessResponseMessage{}
-			numOfDataElements := getNumOfDataElements(messageMap["data"])
-			protoMessage.Event.SuccessResponse.DataPack = &pb.DataPackages{}
-			protoMessage.Event.SuccessResponse.DataPack.Data = make([]*pb.DataPackages_DataPackage, numOfDataElements)
-			for i := 0; i < numOfDataElements; i++ {
-				protoMessage.Event.SuccessResponse.DataPack.Data[i] = createDataElement(i, messageMap["data"])
+			if isErr {
+				protoMessage.Response.ErrorResponse = getProtoErrorMessage(errMap)
+			} else {
+				protoMessage.Response.ErrorResponse = &pb.ErrorResponseMessage{}
 			}
+		}
+		return
+	}
+	// EVENT
+	protoMessage.MType = pb.SubscribeResponseType_SUB_EVENT
+	protoMessage.Event = &pb.SubscribeStreamMessage_SubscribeEventMessage{}
+	if subId, ok := mapString(messageMap, "subscriptionId"); ok {
+		protoMessage.Event.SubscriptionId = subId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Event.Ts = ts
+	}
+	if !errPresent {
+		protoMessage.Status = pb.ResponseStatus_SUCCESS
+		protoMessage.Event.SuccessResponse = &pb.SubscribeStreamMessage_SubscribeEventMessage_SuccessResponseMessage{}
+		numOfDataElements := getNumOfDataElements(messageMap["data"])
+		protoMessage.Event.SuccessResponse.DataPack = &pb.DataPackages{}
+		protoMessage.Event.SuccessResponse.DataPack.Data = make([]*pb.DataPackages_DataPackage, 0, numOfDataElements)
+		for i := 0; i < numOfDataElements; i++ {
+			if elem := createDataElement(i, messageMap["data"]); elem != nil {
+				protoMessage.Event.SuccessResponse.DataPack.Data = append(protoMessage.Event.SuccessResponse.DataPack.Data, elem)
+			}
+		}
+	} else {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		if isErr {
+			protoMessage.Event.ErrorResponse = getProtoErrorMessage(errMap)
 		} else {
-			protoMessage.Status = pb.ResponseStatus_ERROR
-			protoMessage.Event.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
+			protoMessage.Event.ErrorResponse = &pb.ErrorResponseMessage{}
 		}
 	}
 }
 
 func createSetRequestPb(protoMessage *pb.SetRequestMessage, messageMap map[string]interface{}) {
-	protoMessage.Path = messageMap["path"].(string)
-	protoMessage.Value = messageMap["value"].(string)
-	if messageMap["authorization"] != nil {
-		auth := messageMap["authorization"].(string)
+	if path, ok := mapString(messageMap, "path"); ok {
+		protoMessage.Path = path
+	}
+	if val, ok := mapString(messageMap, "value"); ok {
+		protoMessage.Value = val
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
 		protoMessage.Authorization = &auth
 	}
-	reqId := messageMap["requestId"].(string)
-	protoMessage.RequestId = reqId
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
 }
 
 func createSetResponsePb(protoMessage *pb.SetResponseMessage, messageMap map[string]interface{}) {
-	requestId := messageMap["requestId"].(string)
-	protoMessage.RequestId = requestId
-	protoMessage.Ts = messageMap["ts"].(string)
-	if messageMap["authorization"] != nil {
-		auth := messageMap["authorization"].(string)
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
 		protoMessage.Authorization = &auth
 	}
-	if messageMap["error"] == nil {
-		protoMessage.Status = pb.ResponseStatus_SUCCESS
-	} else {
+	if errMap, isErr := mapAsMap(messageMap, "error"); isErr {
 		protoMessage.Status = pb.ResponseStatus_ERROR
-		protoMessage.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
+		protoMessage.ErrorResponse = getProtoErrorMessage(errMap)
+	} else if _, present := messageMap["error"]; present {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
+	} else {
+		protoMessage.Status = pb.ResponseStatus_SUCCESS
 	}
 }
 
 func createUnsubscribeRequestPb(protoMessage *pb.UnsubscribeRequestMessage, messageMap map[string]interface{}) {
-	protoMessage.SubscriptionId = messageMap["subscriptionId"].(string)
-	reqId := messageMap["requestId"].(string)
-	protoMessage.RequestId = reqId
+	if subId, ok := mapString(messageMap, "subscriptionId"); ok {
+		protoMessage.SubscriptionId = subId
+	}
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
 }
 
 func createUnsubscribeResponsePb(protoMessage *pb.UnsubscribeResponseMessage, messageMap map[string]interface{}) {
-	reqId := messageMap["requestId"].(string)
-	protoMessage.RequestId = reqId
-	protoMessage.Ts = messageMap["ts"].(string)
-	if messageMap["error"] == nil {
-		protoMessage.Status = pb.ResponseStatus_SUCCESS
-	} else {
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+	if errMap, isErr := mapAsMap(messageMap, "error"); isErr {
 		protoMessage.Status = pb.ResponseStatus_ERROR
-		protoMessage.ErrorResponse = getProtoErrorMessage(messageMap["error"].(map[string]interface{}))
+		protoMessage.ErrorResponse = getProtoErrorMessage(errMap)
+	} else if _, present := messageMap["error"]; present {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
+	} else {
+		protoMessage.Status = pb.ResponseStatus_SUCCESS
 	}
 }
 
@@ -561,8 +742,14 @@ func populateJsonFromProtoGetResp(protoMessage *pb.GetResponseMessage) string {
 	jsonMessage := "{"
 	jsonMessage += `"action":"get"`
 	if protoMessage.GetStatus() == 0 { //SUCCESSFUL
-		jsonMessage += createJsonData(protoMessage.SuccessResponse.GetDataPack().GetData())
-
+		// Defensive: SuccessResponse may be nil for a metadata-only response,
+		// or if the proto was incompletely populated. GetDataPack() / GetData()
+		// are nil-safe but only when SuccessResponse itself is non-nil.
+		var data []*pb.DataPackages_DataPackage
+		if sr := protoMessage.GetSuccessResponse(); sr != nil {
+			data = sr.GetDataPack().GetData()
+		}
+		jsonMessage += createJsonData(data)
 	} else { // ERROR
 		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
 	}
@@ -602,19 +789,50 @@ func populateJsonFromProtoSubscribeStream(protoMessage *pb.SubscribeStreamMessag
 	switch protoMessage.GetMType() {
 	case pb.SubscribeResponseType_SUB_RESPONSE:
 		jsonMessage += `"action":"subscribe"`
+		// Defensive: Response sub-message may be nil if the proto was
+		// incompletely populated.
+		resp := protoMessage.GetResponse()
 		if protoMessage.GetStatus() != 0 { //ERROR
-			jsonMessage += getJsonError(protoMessage.Response.GetErrorResponse())
+			var errResp *pb.ErrorResponseMessage
+			if resp != nil {
+				errResp = resp.GetErrorResponse()
+			}
+			jsonMessage += getJsonError(errResp)
 		}
-		jsonMessage += `,"ts":"` + protoMessage.Response.GetTs() + `"` + createJSON(protoMessage.Response.GetSubscriptionId(), "subscriptionId") +
-			createJSON(protoMessage.Response.GetRequestId(), "requestId") + createJSON(protoMessage.Response.GetAuthorization(), "authorization")
+		var ts, subId, reqId, auth string
+		if resp != nil {
+			ts = resp.GetTs()
+			subId = resp.GetSubscriptionId()
+			reqId = resp.GetRequestId()
+			auth = resp.GetAuthorization()
+		}
+		jsonMessage += `,"ts":"` + ts + `"` + createJSON(subId, "subscriptionId") +
+			createJSON(reqId, "requestId") + createJSON(auth, "authorization")
 	case pb.SubscribeResponseType_SUB_EVENT:
 		jsonMessage += `"action":"subscription"`
+		// Defensive: Event sub-message may be nil.
+		ev := protoMessage.GetEvent()
 		if protoMessage.GetStatus() == 0 { //SUCCESSFUL
-			jsonMessage += createJsonData(protoMessage.Event.SuccessResponse.GetDataPack().GetData())
+			var data []*pb.DataPackages_DataPackage
+			if ev != nil {
+				if sr := ev.GetSuccessResponse(); sr != nil {
+					data = sr.GetDataPack().GetData()
+				}
+			}
+			jsonMessage += createJsonData(data)
 		} else { // ERROR
-			jsonMessage += getJsonError(protoMessage.Event.GetErrorResponse())
+			var errResp *pb.ErrorResponseMessage
+			if ev != nil {
+				errResp = ev.GetErrorResponse()
+			}
+			jsonMessage += getJsonError(errResp)
 		}
-		jsonMessage += `,"ts":"` + protoMessage.Event.GetTs() + `"` + createJSON(protoMessage.Event.GetSubscriptionId(), "subscriptionId")
+		var ts, subId string
+		if ev != nil {
+			ts = ev.GetTs()
+			subId = ev.GetSubscriptionId()
+		}
+		jsonMessage += `,"ts":"` + ts + `"` + createJSON(subId, "subscriptionId")
 	}
 	return jsonMessage + "}"
 }
@@ -637,11 +855,13 @@ func populateJsonFromProtoUnsubscribeResp(protoMessage *pb.UnsubscribeResponseMe
 }
 
 func getJsonFilter(filter *pb.FilterExpressions) string {
-	var filterExp []*pb.FilterExpressions_FilterExpression
 	if filter == nil {
 		return ""
 	}
-	filterExp = filter.GetFilterExp()
+	filterExp := filter.GetFilterExp()
+	if len(filterExp) == 0 {
+		return ""
+	}
 	jsonFilter := ""
 	if len(filterExp) > 1 {
 		jsonFilter = "["
@@ -649,7 +869,7 @@ func getJsonFilter(filter *pb.FilterExpressions) string {
 	for i := 0; i < len(filterExp); i++ {
 		jsonFilter += synthesizeFilter(filterExp[i]) + ","
 	}
-	jsonFilter = jsonFilter[:len(jsonFilter)-1]
+	jsonFilter = trimTrailingComma(jsonFilter)
 	if len(filterExp) > 1 {
 		jsonFilter += "]"
 	}
@@ -687,14 +907,17 @@ func synthesizeFilter(filterExp *pb.FilterExpressions_FilterExpression) string {
 
 func getJsonFilterValuePaths(filterExp *pb.FilterExpressions_FilterExpression) string {
 	relativePaths := filterExp.GetValue().GetValuePaths().GetRelativePath()
+	if len(relativePaths) == 0 {
+		return `""`
+	}
 	value := ""
 	if len(relativePaths) > 1 {
 		value = "["
 	}
 	for i := 0; i < len(relativePaths); i++ {
-		value += `"` + relativePaths[i] + `",`
+		value += `"` + jsonEscape(relativePaths[i]) + `",`
 	}
-	value = value[:len(value)-1]
+	value = trimTrailingComma(value)
 	if len(relativePaths) > 1 {
 		value += "]"
 	}
@@ -708,6 +931,9 @@ func getJsonFilterValueTimebased(filterExp *pb.FilterExpressions_FilterExpressio
 
 func getJsonFilterValueRange(filterExp *pb.FilterExpressions_FilterExpression) string {
 	rangeValue := filterExp.GetValue().GetValueRange()
+	if len(rangeValue) == 0 {
+		return `{}`
+	}
 	value := ""
 	if len(rangeValue) > 1 {
 		value = "["
@@ -715,9 +941,9 @@ func getJsonFilterValueRange(filterExp *pb.FilterExpressions_FilterExpression) s
 	for i := 0; i < len(rangeValue); i++ {
 		logicOperator := rangeValue[i].GetLogicOperator()
 		boundary := rangeValue[i].GetBoundary()
-		value += `{"logic-op":"` + logicOperator + `","boundary":"` + boundary + `"},`
+		value += `{"logic-op":"` + jsonEscape(logicOperator) + `","boundary":"` + jsonEscape(boundary) + `"},`
 	}
-	value = value[:len(value)-1]
+	value = trimTrailingComma(value)
 	if len(rangeValue) > 1 {
 		value += "]"
 	}
@@ -754,17 +980,23 @@ func createJSON(value string, key string) string {
 }
 
 func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
+	// Defensive: empty dataPack must not produce malformed JSON.
+	if len(dataPack) == 0 {
+		return ""
+	}
 	data := ""
 	if len(dataPack) > 1 {
 		data += "["
 	}
 	for i := 0; i < len(dataPack); i++ {
-		var path string
-		path = dataPack[i].GetPath()
+		if dataPack[i] == nil {
+			continue
+		}
+		path := dataPack[i].GetPath()
 		dp := getJsonDp(dataPack[i])
-		data += `{"path":"` + path + `","dp":` + dp + `},`
+		data += `{"path":"` + jsonEscape(path) + `","dp":` + dp + `},`
 	}
-	data = data[:len(data)-1]
+	data = trimTrailingComma(data)
 	if len(dataPack) > 1 {
 		data += "]"
 	}
@@ -772,19 +1004,26 @@ func createJsonData(dataPack []*pb.DataPackages_DataPackage) string {
 }
 
 func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
+	if dataPack == nil {
+		return `{}`
+	}
 	dpPack := dataPack.GetDp()
-	//Info(dpPack)
+	if len(dpPack) == 0 {
+		return `{}`
+	}
 	dp := ""
 	if len(dpPack) > 1 {
 		dp += "["
 	}
 	for i := 0; i < len(dpPack); i++ {
+		if dpPack[i] == nil {
+			continue
+		}
 		value := dpPack[i].GetValue()
-		var ts string
-		ts = dpPack[i].GetTs()
-		dp += `{"value":"` + value + `","ts":"` + ts + `"},`
+		ts := dpPack[i].GetTs()
+		dp += `{"value":"` + jsonEscape(value) + `","ts":"` + jsonEscape(ts) + `"},`
 	}
-	dp = dp[:len(dp)-1]
+	dp = trimTrailingComma(dp)
 	if len(dpPack) > 1 {
 		dp += "]"
 	}
@@ -792,8 +1031,58 @@ func getJsonDp(dataPack *pb.DataPackages_DataPackage) string {
 }
 
 func getJsonError(errorResponse *pb.ErrorResponseMessage) string {
+	// Defensive nil receiver: GetNumber/etc. are nil-safe via the generated
+	// proto getters, so this is belt-and-suspenders.
 	number := errorResponse.GetNumber()
 	reason := errorResponse.GetReason()
 	description := errorResponse.GetDescription()
-	return `,"error":{"number":"` + number + `","reason":"` + reason + `","description":"` + description + `"}`
+	return `,"error":{"number":"` + jsonEscape(number) + `","reason":"` + jsonEscape(reason) + `","description":"` + jsonEscape(description) + `"}`
+}
+
+// jsonEscape produces a JSON-safe string body (without surrounding quotes).
+// Pre-fix the file built JSON via string concatenation, so any value
+// containing '"' or '\' produced invalid JSON that downstream parsers
+// rejected. This helper handles the minimum set of metacharacters that
+// json.Marshal would escape.
+func jsonEscape(s string) string {
+	if !needsEscape(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				// Control char - encode as \u00XX
+				b.WriteString(`\u00`)
+				const hex = "0123456789abcdef"
+				b.WriteByte(hex[(r>>4)&0xf])
+				b.WriteByte(hex[r&0xf])
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return b.String()
+}
+
+func needsEscape(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == '"' || c == '\\' {
+			return true
+		}
+	}
+	return false
 }
