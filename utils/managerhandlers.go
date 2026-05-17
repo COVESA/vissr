@@ -331,7 +331,7 @@ func GetTLSConfig(host string, caCertFile string, certOpt tls.ClientAuthType, se
 	if certOpt > tls.RequestClientCert { // If a client certificate is required, then the CA certificate is needed
 		caCert, err = os.ReadFile(caCertFile)
 		if err != nil {
-			Error.Printf("Error opening cert file", caCertFile, ", error ", err)
+			Error.Printf("Error opening cert file %s, error %v", caCertFile, err)
 			return nil
 		}
 		caCertPool = x509.NewCertPool()
