@@ -73,11 +73,15 @@ func (s *sqliteBackend) Get(path string) string {
 		return `{"value":"Data-error", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			utils.Warning.Printf("sqliteBackend.Get: rows.Err for path=%s err=%v", path, err)
+		}
+		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+	}
 	value := ""
 	timestamp := ""
-	rows.Next()
-	err = rows.Scan(&value, &timestamp)
-	if err != nil {
+	if err := rows.Scan(&value, &timestamp); err != nil {
 		utils.Warning.Printf("Data not found: %s for path=%s", err, path)
 		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
 	}
@@ -92,7 +96,11 @@ func (s *sqliteBackend) Set(path, value string) string {
 		return ""
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(value, ts, path[1:len(path)-1]) // remove quotes surrounding path
+	trimmedPath := path
+	if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+		trimmedPath = path[1 : len(path)-1]
+	}
+	_, err = stmt.Exec(value, ts, trimmedPath)
 	if err != nil {
 		utils.Error.Printf("Could not update statestorage, err = %s", err)
 		return ""

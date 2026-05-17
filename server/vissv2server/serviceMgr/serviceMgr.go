@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -163,7 +164,13 @@ var historyTicker [MAXTICKERS]*time.Ticker
 var tickerDone [MAXTICKERS]chan struct{}
 var tickerIndexList [MAXTICKERS]int
 
+// tickerMu protects the four ticker tables above from concurrent
+// access by the subscription and history goroutines.
+var tickerMu sync.Mutex
+
 func allocateTicker(subscriptionId int) int {
+	tickerMu.Lock()
+	defer tickerMu.Unlock()
 	for i := 0; i < len(tickerIndexList); i++ {
 		if tickerIndexList[i] == 0 {
 			tickerIndexList[i] = subscriptionId
@@ -174,6 +181,8 @@ func allocateTicker(subscriptionId int) int {
 }
 
 func deallocateTicker(subscriptionId int) int {
+	tickerMu.Lock()
+	defer tickerMu.Unlock()
 	for i := 0; i < len(tickerIndexList); i++ {
 		if tickerIndexList[i] == subscriptionId {
 			tickerIndexList[i] = 0
@@ -1720,7 +1729,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	// toFeeder is created here (moved up from its old slot further
 	// below) so the redis and memcache adapters can capture it at
 	// construction time rather than referencing a package global.
-	toFeeder = make(chan string)
+	toFeeder = make(chan string, 32)
 
 	switch stateDbType {
 	case "sqlite":
@@ -1846,8 +1855,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	go initFeederRegServer(feederRegChan)
 	// toFeeder was moved up to before the storage init switch so the
 	// redis/memcache adapters can capture it at construction time.
-	fromFeederRorC = make(chan string)
-	fromFeederCl = make(chan string)
+	fromFeederRorC = make(chan string, 32)
+	fromFeederCl = make(chan string, 32)
 	go feederFrontend(toFeeder, fromFeederRorC, fromFeederCl)
 	go curveLogServer()
 	var dummyTicker *time.Ticker

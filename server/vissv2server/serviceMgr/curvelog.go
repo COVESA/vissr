@@ -167,9 +167,12 @@ type Dim3Elem struct {
 	Path3 string `json:"path3"`
 }
 
+// SignalDimensionLists groups dim2/dim3 path-tuples. JSON tags would be
+// pointless here because we decode via map[string]interface{} in
+// unpacksignalDimensionMap rather than directly into this struct.
 type SignalDimensionLists struct {
-	dim2List []Dim2Elem `json:"dim2"`
-	dim3List []Dim3Elem `json:"dim3"`
+	dim2List []Dim2Elem
+	dim3List []Dim3Elem
 }
 
 type PathDimElem struct {
@@ -487,7 +490,7 @@ func curveLogServer() {
 							for i  := 0; i < len(routingDataList); i++ {
 								if routingDataList[i].SubscriptionId == subscriptionId {
 									deallocateTriggChannels(i, routingDataList)
-									slices.Delete(routingDataList, i, i+1)
+									routingDataList = slices.Delete(routingDataList, i, i+1)
 								}
 							}
 						}
@@ -748,7 +751,6 @@ func postProcess1dim(aRingBuffer *RingBuffer, firstSelected int, lastSelected in
 			}
 		}
 	}
-	return "", postProc // should not happen
 }
 
 func writePostProcElement1dim(aRingBuffer *RingBuffer, firstSelected int, postProc []PostProcessBufElement1dim, pos int) []PostProcessBufElement1dim {
