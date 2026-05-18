@@ -11,6 +11,7 @@ import (
 	utils "github.com/covesa/vissr/utils"
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"io"
 	"crypto/sha1"
