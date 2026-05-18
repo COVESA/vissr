@@ -27,7 +27,7 @@ import (
 // sessionListMu protects the sessionList read-modify-write in
 // getDataSessionIndex / returnDataSessionIndex from concurrent WS
 // upgrade goroutines.
-var sessionListMu sync.Mutex
+//var sessionListMu sync.Mutex
 
 // validateTransferName rejects file-transfer names that contain path
 // separators or parent-directory references. Without this, a VISS
