@@ -25,21 +25,32 @@ import (
 
 const backendTermination = "internal-backend-termination"
 
+// getWsClientIndex allocates the first free WS client slot from
+// WsClientIndexList. Pre-fix this raced with ReturnWsClientIndex (both
+// called from per-connection goroutines with no mutex) - two simultaneous
+// Accepts could observe the same `true` slot and both reserve it, breaking
+// the at-most-one-client-per-slot invariant. Now mutex-protected.
 func getWsClientIndex() int {
 	WsClientIndexMu.Lock()
 	defer WsClientIndexMu.Unlock()
-	freeIndex := -1
 	for i := range WsClientIndexList {
-		if WsClientIndexList[i] == true {
+		if WsClientIndexList[i] {
 			WsClientIndexList[i] = false
-			freeIndex = i
-			break
+			return i
 		}
 	}
-	return freeIndex
+	return -1
 }
 
+// ReturnWsClientIndex releases a WS client slot back to the free pool.
+// Pre-fix this had no bounds check, so a clientId of -1 (e.g. from an
+// earlier exhausted allocation that was never guarded against) would panic
+// with slice-out-of-range. Now bounds-checked + mutex-protected.
 func ReturnWsClientIndex(index int) {
+	if index < 0 || index >= len(WsClientIndexList) {
+		Error.Printf("ReturnWsClientIndex: invalid index=%d (len=%d)", index, len(WsClientIndexList))
+		return
+	}
 	WsClientIndexMu.Lock()
 	defer WsClientIndexMu.Unlock()
 	WsClientIndexList[index] = true
