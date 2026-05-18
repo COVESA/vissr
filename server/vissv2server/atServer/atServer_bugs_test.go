@@ -34,12 +34,16 @@ import (
 
 func TestMain(m *testing.M) {
 	utils.InitLog("atServer-bugs-test.log", os.TempDir(), false, "error")
-	// Make sure activeList is allocated so the empty-token tests have
-	// a populated slice to iterate over. atServer normally allocates
-	// these via initialise functions called from atServerSession; we
-	// just need a non-nil slice for the unit tests.
+	// Make sure activeList and pendingList are allocated so the
+	// token / consent tests have a populated slice to iterate over.
+	// atServer normally allocates these via initialise functions
+	// called from atServerSession; we just need non-nil slices for
+	// the unit tests.
 	if activeList == nil {
 		activeList = make([]ActiveListElem, LISTSIZE)
+	}
+	if pendingList == nil {
+		pendingList = make([]PendingListElem, LISTSIZE)
 	}
 	os.Exit(m.Run())
 }

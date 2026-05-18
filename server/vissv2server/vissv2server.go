@@ -163,6 +163,8 @@ func getTokenErrorMessage(index int) string {
 		return "Invalid AUD. "
 	case 21:
 		return "Invalid Context. "
+	case 22:
+		return "Invalid ISS. "
 	case 30:
 		return "Invalid Token: token revoked. "
 	case 40, 41, 42:

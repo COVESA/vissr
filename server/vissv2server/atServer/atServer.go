@@ -10,8 +10,10 @@
 package atServer
 
 import (
+	"crypto/hmac"
 	cryptorand "crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
@@ -83,6 +85,117 @@ var jtiCacheMu sync.Mutex
 // the wire format the main select loop expects, which is out of
 // scope for this bug-fix PR.)
 var atsHandlerMu sync.Mutex
+
+// ----------------------------------------------------------------------------
+// Protocol-hardening configuration (set at init() from env vars)
+//
+// Each of these is OPTIONAL — when unset, atServer logs a loud
+// warning at startup and falls back to the pre-existing (insecure)
+// behaviour. This preserves dev/CI workflows while giving production
+// deployments the knobs to harden the access-token server.
+//
+//   VISSR_AT_ISSUER          The `iss` claim value emitted on new ATs
+//                             and required at validation. Default
+//                             "vissr-atServer".
+//
+//   VISSR_ECF_SECRET         HMAC-SHA256 key used to authenticate
+//                             consent-reply / consent-cancel messages
+//                             from the External Consent Framework
+//                             (ECF). When set, every ECF message must
+//                             carry an "hmac" field over the canonical
+//                             string "<action>|<messageId>|<consent>"
+//                             (consent is "" for cancel). Unset =
+//                             warn + skip verification.
+//
+//   VISSR_ECF_CERT_PATH      Paths to a TLS certificate / key pair
+//   VISSR_ECF_KEY_PATH        used by the ECF websocket listener.
+//                             Both must be set together. Unset =
+//                             warn + plaintext.
+//
+//   VISSR_ECF_ALLOWED_ORIGIN Comma-separated list of Origin header
+//                             values accepted by the ECF websocket
+//                             upgrade. Unset = warn + accept any
+//                             origin (preserves the previous
+//                             CheckOrigin = return true behaviour).
+// ----------------------------------------------------------------------------
+
+const AT_AUDIENCE = "w3org/gen2" // pinned by the VISS spec; not deployment-configurable
+
+var atIssuer string
+var ecfSecret string
+var ecfCertPath string
+var ecfKeyPath string
+var ecfAllowedOrigins []string
+
+func init() {
+	atIssuer = os.Getenv("VISSR_AT_ISSUER")
+	if atIssuer == "" {
+		atIssuer = "vissr-atServer"
+	}
+	ecfSecret = os.Getenv("VISSR_ECF_SECRET")
+	if ecfSecret == "" {
+		log.Printf("WARNING: atServer: VISSR_ECF_SECRET not set; ECF consent messages will be accepted without HMAC verification. Set VISSR_ECF_SECRET in production.")
+	}
+	ecfCertPath = os.Getenv("VISSR_ECF_CERT_PATH")
+	ecfKeyPath = os.Getenv("VISSR_ECF_KEY_PATH")
+	if ecfCertPath == "" || ecfKeyPath == "" {
+		log.Printf("WARNING: atServer: VISSR_ECF_CERT_PATH and/or VISSR_ECF_KEY_PATH not set; ECF websocket will accept plaintext connections. Set both in production.")
+	}
+	if origins := os.Getenv("VISSR_ECF_ALLOWED_ORIGIN"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				ecfAllowedOrigins = append(ecfAllowedOrigins, trimmed)
+			}
+		}
+	} else {
+		log.Printf("WARNING: atServer: VISSR_ECF_ALLOWED_ORIGIN not set; ECF websocket will accept any Origin header. Set a comma-separated allow-list in production.")
+	}
+}
+
+// computeEcfHmac returns the hex-encoded HMAC-SHA256 of the canonical
+// signing string for an ECF message. The canonical string format is
+// "<action>|<messageId>|<consent>" where consent is "" for the
+// consent-cancel action. The HMAC is sent as the "hmac" field of the
+// JSON message; the ECF client must compute it the same way.
+func computeEcfHmac(action, messageId, consent string) string {
+	mac := hmac.New(sha256.New, []byte(ecfSecret))
+	mac.Write([]byte(action))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(messageId))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(consent))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// verifyEcfHmac compares a presented HMAC against the expected one,
+// using constant-time comparison. When ecfSecret is unset (compat
+// mode) this returns true unconditionally — atServer logged a warning
+// at startup; per-request logging would be too noisy.
+func verifyEcfHmac(action, messageId, consent, presented string) bool {
+	if ecfSecret == "" {
+		return true // compat mode — warn was logged at init()
+	}
+	expected := computeEcfHmac(action, messageId, consent)
+	return hmac.Equal([]byte(expected), []byte(presented))
+}
+
+// checkEcfOrigin implements the upgrader's CheckOrigin function. When
+// VISSR_ECF_ALLOWED_ORIGIN is set, the Origin header must exactly
+// match one of the configured values. When unset, any origin is
+// allowed (the warning was logged at startup).
+func checkEcfOrigin(r *http.Request) bool {
+	if len(ecfAllowedOrigins) == 0 {
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	for _, allowed := range ecfAllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+	utils.Error.Printf("atServer: ECF websocket rejected origin=%q (not in VISSR_ECF_ALLOWED_ORIGIN)", origin)
+	return false
+}
 
 var muxServer = []*http.ServeMux{
 	http.NewServeMux(), // HTTP
@@ -251,14 +364,28 @@ func initClientComm(atsChannel chan string, muxServer *http.ServeMux) {
 func initEcfComm(ecfReceiveChan chan string, ecfSendChan chan string, muxServer *http.ServeMux) {
 	ecfHandler := makeEcfHandler(ecfReceiveChan, ecfSendChan)
 	muxServer.HandleFunc("/", ecfHandler)
-	utils.Info.Print(http.ListenAndServe(":8445", muxServer))
+	// Tier-2 fix: switch to TLS when VISSR_ECF_CERT_PATH and
+	// VISSR_ECF_KEY_PATH are both set. When either is missing, fall
+	// back to plaintext (a startup warning was already logged).
+	addr := ":8445"
+	if ecfCertPath != "" && ecfKeyPath != "" {
+		utils.Info.Printf("atServer: ECF websocket listening on %s with TLS (cert=%s)", addr, ecfCertPath)
+		utils.Info.Print(http.ListenAndServeTLS(addr, ecfCertPath, ecfKeyPath, muxServer))
+		return
+	}
+	utils.Info.Printf("atServer: ECF websocket listening on %s plaintext (set VISSR_ECF_CERT_PATH and VISSR_ECF_KEY_PATH to enable TLS)", addr)
+	utils.Info.Print(http.ListenAndServe(addr, muxServer))
 }
 
 func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		if req.Header.Get("Upgrade") == "websocket" {
 			utils.Info.Printf("Received websocket request: we are upgrading to a websocket connection.")
-			Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+			// Tier-2 fix: replace the `return true` CheckOrigin with
+			// an allow-list driven by VISSR_ECF_ALLOWED_ORIGIN. When
+			// unset, the allow-list is empty and checkEcfOrigin
+			// accepts any origin (the startup warning covers this).
+			Upgrader.CheckOrigin = checkEcfOrigin
 			h := http.Header{}
 			conn, err := Upgrader.Upgrade(w, req, h)
 			if err != nil {
@@ -353,6 +480,15 @@ func consentReplyResponse(request string) string {
 		utils.Error.Printf("consentReplyResponse:missing or non-string consent in request=%s", request)
 		return `{"action":"consent-reply", "status":"401-Bad request"}`
 	}
+	// HMAC authentication of the ECF message (Tier-2 fix). When
+	// VISSR_ECF_SECRET is unset, verifyEcfHmac returns true and
+	// startup logged a warning. When set, the ECF must include an
+	// `hmac` field over "consent-reply|<messageId>|<consent>".
+	presentedHmac, _ := requestMap["hmac"].(string)
+	if !verifyEcfHmac("consent-reply", messageIdStr, consentStr, presentedHmac) {
+		utils.Error.Printf("consentReplyResponse:HMAC verification failed for messageId=%s", messageIdStr)
+		return `{"action":"consent-reply", "status":"401-Unauthorized"}`
+	}
 	gatingId, err := strconv.Atoi(messageIdStr)
 	if err != nil {
 		utils.Error.Printf("consentReplyResponse:error converting id=%s", err)
@@ -379,6 +515,13 @@ func consentCancelResponse(request string, vissChan chan string) string {
 	if !ok {
 		utils.Error.Printf("consentCancelResponse:missing or non-string messageId in request=%s", request)
 		return `{"action":"consent-cancel", "status":"401-Bad request"}`
+	}
+	// HMAC authentication of the ECF message. Cancel has no consent
+	// field; canonical signing string is "consent-cancel|<messageId>|".
+	presentedHmac, _ := requestMap["hmac"].(string)
+	if !verifyEcfHmac("consent-cancel", messageIdStr, "", presentedHmac) {
+		utils.Error.Printf("consentCancelResponse:HMAC verification failed for messageId=%s", messageIdStr)
+		return `{"action":"consent-cancel", "status":"401-Unauthorized"}`
 	}
 	gatingId, err := strconv.Atoi(messageIdStr)
 	if err != nil {
@@ -525,6 +668,20 @@ func tokenValidationResponse(input string) string {
 	if err != nil {
 		utils.Info.Printf("tokenValidationResponse:invalid signature, error= %s, token=%s", err, atValidatePayload.Token)
 		return `{"validation":"5"}`
+	}
+	// Validate the `aud` and `iss` claims. The AT generator already
+	// emits aud="w3org/gen2" (pinned by the VISS spec) and an iss
+	// derived from VISSR_AT_ISSUER. The previous code never checked
+	// either, which allowed a leaked AT signed with this server's
+	// secret to be replayed against any audience that trusted the
+	// signature.
+	if got := utils.ExtractFromToken(atValidatePayload.Token, "aud"); got != AT_AUDIENCE {
+		utils.Info.Printf("tokenValidationResponse:invalid aud claim=%q (want %q)", got, AT_AUDIENCE)
+		return `{"validation":"20"}` // 20 = Invalid AUD (see getTokenErrorMessage)
+	}
+	if got := utils.ExtractFromToken(atValidatePayload.Token, "iss"); got != atIssuer {
+		utils.Info.Printf("tokenValidationResponse:invalid iss claim=%q (want %q)", got, atIssuer)
+		return `{"validation":"22"}` // 22 = Invalid ISS (new code; see PR description)
 	}
 	purpose := utils.ExtractFromToken(atValidatePayload.Token, "scp")
 	res := validateRequestAccess(purpose, atValidatePayload.Action, atValidatePayload.Paths)
@@ -1012,7 +1169,8 @@ func generateAt(payload AtGenPayload) string {
 	jwtoken.AddClaim("exp", strconv.Itoa(exp))
 	jwtoken.AddClaim("scp", payload.Purpose)
 	jwtoken.AddClaim("clx", payload.Agt.PayloadClaims["clx"])
-	jwtoken.AddClaim("aud", "w3org/gen2")
+	jwtoken.AddClaim("aud", AT_AUDIENCE)
+	jwtoken.AddClaim("iss", atIssuer)
 	jwtoken.AddClaim("jti", unparsedId.String())
 	utils.Info.Printf("generateAt:jwtHeader=%s", jwtoken.GetHeader())
 	utils.Info.Printf("generateAt:jwtPayload=%s", jwtoken.GetPayload())
