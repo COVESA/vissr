@@ -16,6 +16,7 @@ import (
 	"strings"
 	"strconv"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,11 @@ const NUMOFUDSCLIENTS = 20
 var udsClientChan []chan string
 var clientBackendChan []chan string
 var UdsClientIndexList []bool
+// udsClientIndexMu protects the UdsClientIndexList read-modify-write
+// in getUdsClientIndex / returnUdsClientIndex from concurrent Accept-
+// loop and udsReader goroutines. Mirrors WsClientIndexMu added in
+// PR #119.
+var udsClientIndexMu sync.Mutex
 var udsClientIndex int
 const isClientLocal = false
 
@@ -386,6 +392,16 @@ func initClientServer(mgrId int, clientIndex *int) {
 			continue
 		}
 		*clientIndex = getUdsClientIndex()
+		if *clientIndex == -1 {
+			// The pool is full (NUMOFUDSCLIENTS active connections).
+			// Without this check, the next two lines index
+			// udsClientChan[-1] / clientBackendChan[-1] which panics
+			// and tears down the daemon. Close the new connection,
+			// log, and continue accepting.
+			utils.Error.Printf("UdsMgrInit:UDS client pool full (max %d); rejecting connection", NUMOFUDSCLIENTS)
+			conn.Close()
+			continue
+		}
 		go udsReader(conn, udsClientChan[*clientIndex], clientBackendChan[*clientIndex], *clientIndex)
 		go udsWriter(conn, clientBackendChan[*clientIndex])
 	}
@@ -393,6 +409,8 @@ func initClientServer(mgrId int, clientIndex *int) {
 
 
 func getUdsClientIndex() int {
+	udsClientIndexMu.Lock()
+	defer udsClientIndexMu.Unlock()
 	freeIndex := -1
 	for i := range UdsClientIndexList {
 		if UdsClientIndexList[i] == true {
@@ -405,6 +423,8 @@ func getUdsClientIndex() int {
 }
 
 func returnUdsClientIndex(index int) {
+	udsClientIndexMu.Lock()
+	defer udsClientIndexMu.Unlock()
 	UdsClientIndexList[index] = true
 }
 
