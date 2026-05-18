@@ -15,7 +15,6 @@ package serviceMgr
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"github.com/apache/iotdb-client-go/client"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/covesa/vissr/utils"
@@ -98,15 +97,19 @@ const FEEDER_REG_SOCKFILE = FEEDER_REG_DIR + "feederReg.sock"
 
 var errorResponseMap = map[string]interface{}{}
 
-var dbHandle *sql.DB
-var dbErr error
-var redisClient *redis.Client
-var memcacheClient *memcache.Client
+// stateBackend is the storage adapter wired up by ServiceMgrInit.
+// It defaults to noneBackend{} so that any getVehicleData /
+// setVehicleData call before ServiceMgrInit finishes (e.g. inside
+// tests that exercise the dispatch helpers directly) does not
+// nil-deref. Replaced at init time with the adapter matching
+// stateDbType. See storage_backend.go for the interface contract and
+// the five adapter implementations.
+var stateBackend StorageBackend = &noneBackend{}
+
 var stateDbType string
 var historySupport bool
 
 // Apache IoTDB
-var IoTDBsession client.Session
 var IoTDBClientConfig = &client.Config{
 	Host:     "127.0.0.1",
 	Port:     "6667",
@@ -526,127 +529,21 @@ func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan ch
 	return subscriptionList
 }
 
+// getVehicleData reads the data point at path through the configured
+// state-storage backend and returns the canonical
+// {"value":"...","ts":"..."} JSON string. The long backend-specific
+// switch that used to live here has been moved into the adapter
+// implementations in storage_backend.go.
 func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
-	switch stateDbType {
-	case "sqlite":
-
-		rows, err := dbHandle.Query("SELECT `c_value`, `c_ts` FROM VSS_MAP WHERE `path`=?", path)
-		if err != nil {
-			return `{"value":"Data-error", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		defer rows.Close()
-		value := ""
-		timestamp := ""
-
-		rows.Next()
-		err = rows.Scan(&value, &timestamp)
-		if err != nil {
-			utils.Warning.Printf("Data not found: %s for path=%s", err, path)
-			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
-	case "redis":
-//		utils.Info.Printf(path)
-		dp, err := redisClient.Get(path).Result()
-		if err != nil {
-			if err.Error() != "redis: nil" {
-				utils.Error.Printf("Job failed. Error()=%s", err.Error())
-				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
-			} else {
-//				utils.Warning.Printf("Data not found.")
-				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-			}
-		} else {
-			return dp
-		}
-	case "apache-iotdb":
-		var (
-			// Back-quote the VSS node for the DB query, e.g. `Vehicle.CurrentLocation.Longitude`
-			selectLastSQL = fmt.Sprintf("select last `%v` from %v", path, IoTDBConfig.PrefixPath)
-			value         = ""
-			ts            = ""
-		)
-		//		utils.Info.Printf("IoTDB: query using: %v", selectLastSQL)
-		sessionDataSet, err := IoTDBsession.ExecuteQueryStatement(selectLastSQL, &IoTDBConfig.Timeout)
-		if err == nil {
-			var success bool
-			success, err = sessionDataSet.Next()
-			if err == nil && success {
-				value = sessionDataSet.GetText("Value")
-				ts = sessionDataSet.GetText(client.TimestampColumnName)
-				//				utils.Info.Printf("IoTDB: get returned: ts=%v, Value=%v", ts, value)
-				//				resultStr := `{"value":"` + value + `", "ts":"` + ts + `"}`
-				//				utils.Info.Printf("IoTDB: returning get result=%v", resultStr)
-			}
-			sessionDataSet.Close()
-		} else {
-			utils.Error.Printf("IoTDB: Query failed with error=%s", err)
-			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		return `{"value":"` + value + `", "ts":"` + ts + `"}`
-	case "memcache":
-		mcItem, err := memcacheClient.Get(path)
-		if err != nil {
-			if err.Error() != "memcache: cache miss" {
-				utils.Error.Printf("Job failed. Error()=%s", err.Error())
-				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
-			} else {
-				utils.Warning.Printf("Data not found.")
-				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-			}
-		} else {
-			return string(mcItem.Value)
-		}
-	case "none":
-		return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
-	}
-	return ""
+	return stateBackend.Get(path)
 }
 
+// setVehicleData writes value at path through the configured
+// state-storage backend and returns the timestamp used for the write
+// (or "" on failure). The backend-specific switch is now in the
+// adapter implementations -- see storage_backend.go.
 func setVehicleData(path string, value string) string {
-	ts := utils.GetRfcTime()
-	switch stateDbType {
-	case "sqlite":
-		stmt, err := dbHandle.Prepare("UPDATE VSS_MAP SET d_value=?, d_ts=? WHERE `path`=?")
-		if err != nil {
-			utils.Error.Printf("Could not prepare for statestorage updating, err = %s", err)
-			return ""
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(value, ts, path[1:len(path)-1]) // remove quotes surrounding path
-		if err != nil {
-			utils.Error.Printf("Could not update statestorage, err = %s", err)
-			return ""
-		}
-		return ts
-	case "memcache":
-		fallthrough
-	case "redis":
-		message := `{"action": "set", "data": {"path":"` + path + `", "dp":{"value":"` + value + `", "ts":"` + ts + `"}}}`
-		toFeeder <- message
-		return ts
-	case "apache-iotdb":
-		vssKey := []string{"`" + path + "`"} // Back-quote the VSS node for the DB insert, e.g. `Vehicle.CurrentLocation.Longitude`
-		vssValue := []string{value}
-		IoTDBts := time.Now().UTC().UnixNano() / 1000000
-
-		// IoTDB will automatically convert the value string to the native data type in the timeseries schema for basic types
-		//		utils.Info.Printf("IoTDB: DB insert with prefixPath: %v vssKey: %v, vssValue: %v, ts: %v", IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts)
-		if status, err := IoTDBsession.InsertStringRecord(IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts); err != nil {
-			utils.Error.Printf("IoTDB: DB insert using InsertStringRecord failed with: %v", err)
-			return ""
-		} else {
-			if status != nil {
-				if err = client.VerifySuccess(status); err != nil {
-					utils.Error.Printf("IoTDB: DB insert Verify failed with: %v", err)
-					return ""
-				}
-			}
-		}
-		return ts
-	}
-	return ""
+	return stateBackend.Set(path, value)
 }
 
 func unpackPaths(paths string) []string {
@@ -1801,16 +1698,21 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 
 	utils.ReadUdsRegistrations("uds-registration.json")
 
+	// toFeeder is created here (moved up from its old slot further
+	// below) so the redis and memcache adapters can capture it at
+	// construction time rather than referencing a package global.
+	toFeeder = make(chan string)
+
 	switch stateDbType {
 	case "sqlite":
 		if utils.FileExists(dbFile) {
-			dbHandle, dbErr = sql.Open("sqlite3", dbFile)
-			if dbErr != nil {
-				utils.Error.Printf("Could not open state storage file = %s, err = %s", dbFile, dbErr)
+			db, openErr := sql.Open("sqlite3", dbFile)
+			if openErr != nil {
+				utils.Error.Printf("Could not open state storage file = %s, err = %s", dbFile, openErr)
 				os.Exit(1)
-			} else {
-				utils.Info.Printf("SQLite state storage initialised.")
 			}
+			stateBackend = newSqliteBackend(db)
+			utils.Info.Printf("SQLite state storage initialised.")
 		} else {
 			utils.Error.Printf("Could not find state storage file = %s", dbFile)
 		}
@@ -1822,28 +1724,27 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			return
 		}
 		utils.Info.Printf(addr)
-		redisClient = redis.NewClient(&redis.Options{
+		redisCli := redis.NewClient(&redis.Options{
 			Network:  "unix",
 			Addr:     addr,
 			Password: "",
 			DB:       1,
 		})
-		err := redisClient.Ping().Err()
-		if err != nil {
+		if err := redisCli.Ping().Err(); err != nil {
 			utils.Info.Printf("Redis-server not started. Trying to start it.")
 			if utils.FileExists("redis.log") {
 				os.Remove("redis.log")
 			}
 			cmd := exec.Command("/usr/bin/bash", "redisNativeInit.sh")
-			err := cmd.Run()
-			if err != nil {
-				utils.Error.Printf("redis-server startup failed, err=%s", err)
+			if runErr := cmd.Run(); runErr != nil {
+				utils.Error.Printf("redis-server startup failed, err=%s", runErr)
 				// os.Exit(1) should terminate the process
 				return
 			}
 		} else {
 			utils.Info.Printf("Redis state ping is ok")
 		}
+		stateBackend = newRedisBackend(redisCli, toFeeder)
 		utils.Info.Printf("Redis state storage initialised.")
 	case "apache-iotdb":
 		// Read configuration from file if present else use defaults
@@ -1871,12 +1772,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 
 		// Create new client session with IoTDB server
 		utils.Info.Printf("IoTDB: Creating new session with client config = %+v", *IoTDBClientConfig)
-		IoTDBsession = client.NewSession(IoTDBClientConfig)
-		if err := IoTDBsession.Open(false, 0); err != nil {
+		session := client.NewSession(IoTDBClientConfig)
+		if err := session.Open(false, 0); err != nil {
 			utils.Error.Printf("IoTDB: Failed to open server session with error=%s", err)
 			os.Exit(1)
 		}
-		defer IoTDBsession.Close()
+		defer session.Close()
+		stateBackend = newIoTDBBackend(session, IoTDBConfig)
 	case "memcache":
 		addr := utils.GetUdsPath("Vehicle", "memcache")
 		if len(addr) == 0 {
@@ -1884,19 +1786,24 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			// os.Exit(1) should terminate the process
 			return
 		}
-		memcacheClient = memcache.New(addr)
-		err := memcacheClient.Ping()
-		if err != nil {
+		mcCli := memcache.New(addr)
+		if err := mcCli.Ping(); err != nil {
 			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
 			cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
-			err := cmd.Run()
-			if err != nil {
-				utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+			if runErr := cmd.Run(); runErr != nil {
+				utils.Error.Printf("Memcache daemon startup failed, err=%s", runErr)
 				// os.Exit(1) should terminate the process
 				return
 			}
 		}
+		stateBackend = newMemcacheBackend(mcCli, toFeeder)
 		utils.Info.Printf("Memcache daemon alive.")
+	case "none":
+		// noneBackend is also the package-level default for
+		// stateBackend, so this case is a no-op (kept explicit so the
+		// init log lines line up with the documented set of backends).
+		stateBackend = newNoneBackend()
+		utils.Info.Printf("State storage type = none (dummyValue counter backend).")
 	default:
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 	}
@@ -1918,7 +1825,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	feederRegChan := make(chan FeederRegElem)
 	go initFeederRegServer(feederRegChan)
-	toFeeder = make(chan string)
+	// toFeeder was moved up to before the storage init switch so the
+	// redis/memcache adapters can capture it at construction time.
 	fromFeederRorC = make(chan string)
 	fromFeederCl = make(chan string)
 	go feederFrontend(toFeeder, fromFeederRorC, fromFeederCl)
