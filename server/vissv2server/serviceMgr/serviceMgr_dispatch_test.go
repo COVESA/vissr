@@ -8,8 +8,9 @@
 * ----------------------------------------------------------------------------
 *
 * Tests for the per-message dispatch helpers extracted from
-* ServiceMgrInit's dataChan switch in PR #129 (this PR):
+* ServiceMgrInit's dataChan switch.
 *
+* Originally added in PR #129 covering:
 *   - buildServiceResponseMap        shared response-skeleton builder
 *   - handleServiceSet               "set" action arm
 *   - handleServiceGet               "get" action arm (error paths)
@@ -18,13 +19,12 @@
 *   - handleInternalCancelSubscription AGT-cancelled subscription cleanup
 *   - handleUnknownAction            default arm
 *
-* The subscribe arm is intentionally left inline in this PR — it mutates
-* several locals (subscriptionList, subscriptionId) and sends on three
-* channels (subscriptionChan, CLChannel, toFeeder), so extracting it
-* cleanly will be a follow-up. The storage-backend interface
-* (StorageBackend) injection is also deferred to a future PR — it is a
-* genuinely separate architectural change touching 5 backends and their
-* init paths, and bundling it here would balloon this diff.
+* Follow-up PR (this PR) adds tests for the subscribe arm, which was
+* left inline in #129 with a TODO(testing) note and has now been
+* extracted to handleServiceSubscribe. The storage-backend interface
+* (StorageBackend) injection is still deferred to a separate PR — it
+* is a genuinely separate architectural change touching 5 backends
+* and their init paths.
 *
 * Same shape as the dispatch tests in PRs #124 (udsMgr+httpMgr), #125
 * (feederv4), #126 (wsMgr), #127 (grpcMgr), and #128 (vissv2server core).
@@ -423,5 +423,241 @@ func TestHandleUnknownAction(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("handleUnknownAction did not reply on dataChan")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Tests for handleServiceSubscribe (added in the follow-up PR after #129).
+//
+// The subscribe arm was left inline in PR #129 with a TODO(testing) note.
+// These tests cover the extracted handleServiceSubscribe — the clean error
+// paths, the happy path with a non-special filter (one that doesn't trip
+// subscriptionChan / CLChannel / toFeeder), and a regression-pinning test
+// for the pre-existing missing-break bug in the empty-FilterList branch.
+// ----------------------------------------------------------------------------
+
+// TestHandleServiceSubscribe_MissingFilterReturnsBadRequest exercises
+// the nil-filter short-circuit: no filter field at all on the request,
+// so the helper returns immediately with a bad_request error and does
+// not touch the subscription list or any side channels.
+func TestHandleServiceSubscribe_MissingFilterReturnsBadRequest(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 2)
+	subChan := make(chan int, 1)
+	clChan := make(chan CLPack, 1)
+	toFeederChan := make(chan string, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?0",
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		// no filter
+	}
+	resp := buildServiceResponseMap(req)
+	list := []SubscriptionState{}
+
+	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, list, 99, subChan, clChan, toFeederChan)
+	if len(updatedList) != 0 {
+		t.Errorf("subscriptionList grew on the error path; len=%d", len(updatedList))
+	}
+	if nextId != 99 {
+		t.Errorf("subscriptionId advanced on the error path; got %d, want 99", nextId)
+	}
+
+	select {
+	case got := <-dataChan:
+		errMap, ok := got["error"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected error response; got %v", got)
+		}
+		if errMap["reason"] != "bad_request" {
+			t.Errorf("error.reason = %v; want bad_request", errMap["reason"])
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleServiceSubscribe did not reply on dataChan")
+	}
+
+	// Nothing should reach the side channels on this error path.
+	select {
+	case <-subChan:
+		t.Errorf("subChan was sent to on the error path")
+	case <-clChan:
+		t.Errorf("clChan was sent to on the error path")
+	case <-toFeederChan:
+		t.Errorf("toFeederChan was sent to on the error path")
+	default:
+	}
+}
+
+// TestHandleServiceSubscribe_EmptyStringFilterReturnsBadRequest covers
+// the same short-circuit when the filter field is present but is the
+// empty string (which the original arm explicitly rejected alongside
+// nil).
+func TestHandleServiceSubscribe_EmptyStringFilterReturnsBadRequest(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 2)
+	subChan := make(chan int, 1)
+	clChan := make(chan CLPack, 1)
+	toFeederChan := make(chan string, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?0",
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		"filter":    "",
+	}
+	resp := buildServiceResponseMap(req)
+
+	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, []SubscriptionState{}, 7, subChan, clChan, toFeederChan)
+	if len(updatedList) != 0 || nextId != 7 {
+		t.Errorf("subscription state mutated on the error path; list=%d, id=%d", len(updatedList), nextId)
+	}
+
+	select {
+	case got := <-dataChan:
+		errMap, _ := got["error"].(map[string]interface{})
+		if errMap == nil || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("no response on dataChan")
+	}
+}
+
+// TestHandleServiceSubscribe_HappyPath exercises the success path
+// using a "paths" filter — one that does NOT trip the timebased,
+// curvelog, change, or range branches, so the three side channels
+// (subChan, clChan, toFeederChan) all stay quiet. We verify:
+//   1) the subscription is appended to the list
+//   2) subscriptionId is incremented by one
+//   3) responseMap["subscriptionId"] is set to the old id (the one the
+//      client should use for unsubscribe)
+//   4) the response is pushed to dataChan
+func TestHandleServiceSubscribe_HappyPath(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 2)
+	subChan := make(chan int, 1)
+	clChan := make(chan CLPack, 1)
+	toFeederChan := make(chan string, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?5",
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		// A "paths" filter: not timebased / curvelog / range / change,
+		// so it triggers none of the side channels.
+		"filter": map[string]interface{}{
+			"variant":   "paths",
+			"parameter": "Vehicle.Speed",
+		},
+	}
+	resp := buildServiceResponseMap(req)
+	startId := 42
+
+	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, []SubscriptionState{}, startId, subChan, clChan, toFeederChan)
+
+	if len(updatedList) != 1 {
+		t.Fatalf("subscriptionList len = %d; want 1", len(updatedList))
+	}
+	if updatedList[0].SubscriptionId != startId {
+		t.Errorf("appended SubscriptionId = %d; want %d", updatedList[0].SubscriptionId, startId)
+	}
+	if updatedList[0].RouterId != "0?5" {
+		t.Errorf("appended RouterId = %q; want 0?5", updatedList[0].RouterId)
+	}
+	if nextId != startId+1 {
+		t.Errorf("nextId = %d; want %d (subscriptionId must advance by 1)", nextId, startId+1)
+	}
+
+	select {
+	case got := <-dataChan:
+		if _, isErr := got["error"]; isErr {
+			t.Fatalf("happy path produced an error response: %v", got)
+		}
+		if got["subscriptionId"] != "42" {
+			t.Errorf("responseMap.subscriptionId = %v; want \"42\"", got["subscriptionId"])
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("no response on dataChan on happy path")
+	}
+
+	// Side channels stay quiet for a "paths" filter.
+	select {
+	case <-subChan:
+		t.Errorf("subChan was sent to on the paths-filter path")
+	case <-clChan:
+		t.Errorf("clChan was sent to on the paths-filter path")
+	case <-toFeederChan:
+		t.Errorf("toFeederChan was sent to on the paths-filter path")
+	default:
+	}
+}
+
+// TestHandleServiceSubscribe_EmptyFilterListBugPreserved is a
+// regression-pinning test for a PRE-EXISTING bug in the original
+// inline arm that handleServiceSubscribe preserves verbatim:
+//
+//   When UnpackFilter unpacks a non-nil filter into an EMPTY
+//   FilterList, the arm sends a "invalid_data" error response on
+//   dataChan AND THEN falls through to append the empty-filter
+//   subscription, sending a SECOND response on dataChan and
+//   incrementing subscriptionId. The arm was missing a `break` after
+//   the error send.
+//
+// If a future fix adds the missing break, THIS TEST WILL FAIL — that
+// is intentional. Update the test to reflect the corrected behaviour
+// (single error response, list unchanged, id unchanged) at that time.
+func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 2) // room for both messages
+	subChan := make(chan int, 1)
+	clChan := make(chan CLPack, 1)
+	toFeederChan := make(chan string, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?5",
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		// A non-empty string filter hits the default arm of
+		// utils.UnpackFilter (which only branches on []interface{} or
+		// map[string]interface{}), leaving the FilterList nil — i.e.
+		// len() == 0 — and tripping the buggy empty-FilterList path.
+		"filter": "this-is-neither-a-map-nor-an-array",
+	}
+	resp := buildServiceResponseMap(req)
+	startId := 100
+
+	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, []SubscriptionState{}, startId, subChan, clChan, toFeederChan)
+
+	// First message on dataChan should be the invalid_data error.
+	select {
+	case got := <-dataChan:
+		errMap, _ := got["error"].(map[string]interface{})
+		if errMap == nil || errMap["reason"] != "invalid_data" {
+			t.Errorf("first message was not invalid_data error: %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("no first response on dataChan")
+	}
+
+	// Second message exists due to the missing-break bug — the arm
+	// keeps going and sends responseMap as if the subscription was
+	// added. If this select hits the timeout instead, the bug has
+	// been fixed; update the test to the corrected behaviour.
+	select {
+	case got := <-dataChan:
+		if got["subscriptionId"] != "100" {
+			t.Errorf("second (buggy) message did not carry the new subscriptionId: %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("missing second message — bug may have been fixed; update this test to the corrected behaviour")
+	}
+
+	// And the list / id reflect the buggy append.
+	if len(updatedList) != 1 {
+		t.Errorf("subscriptionList len = %d; bug-preserved behaviour appends 1", len(updatedList))
+	}
+	if nextId != startId+1 {
+		t.Errorf("nextId = %d; bug-preserved behaviour increments to %d", nextId, startId+1)
 	}
 }

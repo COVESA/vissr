@@ -1562,6 +1562,68 @@ func handleServiceGet(requestMap map[string]interface{}, responseMap map[string]
 	dataChan <- responseMap
 }
 
+// handleServiceSubscribe processes a "subscribe" action: builds a
+// SubscriptionState from the request, validates the filter, appends
+// it to the subscription list, activates interval/curve-log timers
+// when needed via activateIfIntervalOrCL, and notifies the feeder for
+// curvelog/range/change variants. Returns the updated subscription
+// list and the next subscriptionId. Extracted from ServiceMgrInit's
+// dataChan switch as a follow-up to PR #129 — the inline version
+// carried a TODO(testing) note pointing here.
+//
+// PRE-EXISTING BUGS preserved as-is (file separately for fix):
+//   1. After the empty-FilterList error response, execution falls
+//      through to append the subscription anyway, producing a second
+//      message on dataChan. The original arm had no `break` after the
+//      `dataChan <- errorResponseMap` send and we preserve that bug
+//      here so this stays behaviour-preserving. See the marker below.
+//   2. subscriptionState.Path is dereferenced at index 0 without a
+//      nil check. If unpackPaths returned nil (malformed JSON path
+//      array), this panics. Original code has the same hazard.
+func handleServiceSubscribe(
+	requestMap map[string]interface{},
+	responseMap map[string]interface{},
+	dataChan chan map[string]interface{},
+	subscriptionList []SubscriptionState,
+	subscriptionId int,
+	subscriptionChan chan int,
+	clChannel chan CLPack,
+	toFeederChan chan string,
+) ([]SubscriptionState, int) {
+	var subscriptionState SubscriptionState
+	subscriptionState.SubscriptionId = subscriptionId
+	subscriptionState.RouterId = requestMap["RouterId"].(string)
+	subscriptionState.Path = unpackPaths(requestMap["path"].(string))
+	if requestMap["filter"] == nil || requestMap["filter"] == "" {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId
+	}
+	utils.UnpackFilter(requestMap["filter"], &(subscriptionState.FilterList))
+	if len(subscriptionState.FilterList) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		dataChan <- errorResponseMap
+		// BUG-PRESERVED: original arm had no break here. Execution
+		// continues and appends the empty-filter subscription, then
+		// sends a second response on dataChan further down. Fix in a
+		// separate PR so reviewers see exactly what changed.
+	}
+	if requestMap["gatingId"] != nil {
+		subscriptionState.GatingId = requestMap["gatingId"].(string)
+	}
+	subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
+	subscriptionList = append(subscriptionList, subscriptionState)
+	responseMap["subscriptionId"] = strconv.Itoa(subscriptionId)
+	subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, clChannel, subscriptionId, subscriptionState.Path, subscriptionList)
+	variant := getFeederNotifyType(subscriptionState.FilterList)
+	if variant == "curvelog" || variant == "range" || variant == "change" {
+		toFeederChan <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
+	}
+	subscriptionId++ // not to be incremented elsewhere
+	dataChan <- responseMap
+	return subscriptionList, subscriptionId
+}
+
 // handleServiceUnsubscribe processes a client-driven "unsubscribe"
 // action: deactivates the subscription identified by subscriptionId,
 // forwards the request to the feeder so it can drop its end of the
@@ -1783,40 +1845,11 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			case "get":
 				handleServiceGet(requestMap, responseMap, dataChan)
 			case "subscribe":
-				// The subscribe arm is intentionally left inline for now —
-				// it mutates several locals (subscriptionList, subscriptionId)
-				// and sends on three channels (subscriptionChan, CLChannel,
-				// toFeeder), so extracting it cleanly is the next step in
-				// the refactor series. TODO(testing): pull this into
-				// handleServiceSubscribe once the channel ownership story
-				// is sorted.
-				var subscriptionState SubscriptionState
-				subscriptionState.SubscriptionId = subscriptionId
-				subscriptionState.RouterId = requestMap["RouterId"].(string)
-				subscriptionState.Path = unpackPaths(requestMap["path"].(string))
-				if requestMap["filter"] == nil || requestMap["filter"] == "" {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-					dataChan <- errorResponseMap
-					break
-				}
-				utils.UnpackFilter(requestMap["filter"], &(subscriptionState.FilterList))
-				if len(subscriptionState.FilterList) == 0 {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- errorResponseMap
-				}
-				if requestMap["gatingId"] != nil {
-					subscriptionState.GatingId = requestMap["gatingId"].(string)
-				}
-				subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
-				subscriptionList = append(subscriptionList, subscriptionState)
-				responseMap["subscriptionId"] = strconv.Itoa(subscriptionId)
-				subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, CLChannel, subscriptionId, subscriptionState.Path, subscriptionList)
-				variant := getFeederNotifyType(subscriptionState.FilterList)
-				if variant == "curvelog" || variant == "range" || variant == "change" {
-					toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
-				}
-				subscriptionId++ // not to be incremented elsewhere
-				dataChan <- responseMap
+				subscriptionList, subscriptionId = handleServiceSubscribe(
+					requestMap, responseMap, dataChan,
+					subscriptionList, subscriptionId,
+					subscriptionChan, CLChannel, toFeeder,
+				)
 			case "unsubscribe":
 				subscriptionList = handleServiceUnsubscribe(requestMap, responseMap, dataChan, subscriptionList, toFeeder)
 			case "internal-killsubscriptions":
