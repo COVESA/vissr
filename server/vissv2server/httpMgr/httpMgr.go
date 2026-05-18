@@ -24,6 +24,35 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 	HttpClientChan[clientId] <- trimmedResponse
 }
 
+// handleHttpClientRequest processes a single inbound HTTP request from
+// HttpClientChan. Validates against the JSON schema; on failure,
+// returns the schema error back to the client via the same channel.
+// On success, forwards the request to the manager hub via
+// AddRoutingForwardRequest. Extracted from HttpMgrInit's for/select
+// loop so the validation + forwarding behaviour can be unit-tested
+// independently of the goroutine machinery — see
+// httpMgr_dispatch_test.go.
+func handleHttpClientRequest(reqMessage string, mgrId int, transportMgrChan chan string) {
+	utils.Info.Printf("HTTP mgr hub: Request from client:%s", reqMessage)
+	validationError := utils.JsonSchemaValidate(reqMessage)
+	if len(validationError) > 0 {
+		var requestMap map[string]interface{}
+		utils.MapRequest(reqMessage, &requestMap)
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
+		HttpClientChan[0] <- utils.FinalizeMessage(errorResponseMap)
+		return
+	}
+	utils.AddRoutingForwardRequest(reqMessage, mgrId, 0, transportMgrChan)
+}
+
+// handleHttpTransportResponse processes a single response from the
+// server core. Extracted from HttpMgrInit so the response path can be
+// unit-tested.
+func handleHttpTransportResponse(respMessage string, transportMgrChan chan string) {
+	utils.Info.Printf("HTTP mgr hub: Response from server core:%s", respMessage)
+	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+}
+
 func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.ReadTransportSecConfig()
 	utils.JsonSchemaInit()
@@ -35,19 +64,9 @@ func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case reqMessage := <-HttpClientChan[0]:
-			utils.Info.Printf("HTTP mgr hub: Request from client:%s", reqMessage)
-			validationError := utils.JsonSchemaValidate(reqMessage)
-			if len(validationError) > 0 {
-				var requestMap map[string]interface{}
-				utils.MapRequest(reqMessage, &requestMap)
-				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
-				HttpClientChan[0] <- utils.FinalizeMessage(errorResponseMap)
-				continue
-			}
-			utils.AddRoutingForwardRequest(reqMessage, mgrId, 0, transportMgrChan)
+			handleHttpClientRequest(reqMessage, mgrId, transportMgrChan)
 		case respMessage := <-transportMgrChan:
-			utils.Info.Printf("HTTP mgr hub: Response from server core:%s", respMessage)
-			RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+			handleHttpTransportResponse(respMessage, transportMgrChan)
 		}
 	}
 }
