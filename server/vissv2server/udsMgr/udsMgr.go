@@ -428,6 +428,38 @@ func returnUdsClientIndex(index int) {
 	UdsClientIndexList[index] = true
 }
 
+// handleUdsTransportResponse processes a single response coming back
+// from the server core. Extracted from UdsMgrInit's for/select loop so
+// the response path can be unit-tested independently of the goroutine
+// machinery — see udsMgr_dispatch_test.go.
+func handleUdsTransportResponse(respMessage string, transportMgrChan chan string) {
+	utils.Info.Printf("UDS mgr hub: Response from server core:%s", respMessage)
+	respMessage = checkCompressionResponse(respMessage)
+	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+}
+
+// handleUdsClientRequest processes a single inbound UDS-client
+// request. Extracted from UdsMgrInit so the validation + compression
+// + forwarding behaviour can be unit-tested. The four-way decision
+// (kill-bypass / validation-error / compression-tagged / forward)
+// previously lived inline at the bottom of UdsMgrInit; it now lives
+// here as a named function.
+func handleUdsClientRequest(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
+	if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
+		validationError := utils.JsonSchemaValidate(reqMessage)
+		if len(validationError) > 0 {
+			requestMap := make(map[string]interface{})
+			requestMap["action"] = utils.ExtractFromRequest(reqMessage, "action")
+			requestMap["requestId"] = utils.ExtractFromRequest(reqMessage, "requestId")
+			utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
+			udsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
+			return
+		}
+		checkCompressionRequest(reqMessage)
+	}
+	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
+}
+
 func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 	var reqMessage string
 	var clientId int
@@ -441,9 +473,7 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case respMessage := <-transportMgrChan:
-			utils.Info.Printf("UDS mgr hub: Response from server core:%s", respMessage)
-			respMessage = checkCompressionResponse(respMessage)
-			RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+			handleUdsTransportResponse(respMessage, transportMgrChan)
 			continue
 		case reqMessage = <-udsClientChan[0]: clientId = 0
 		case reqMessage = <-udsClientChan[1]: clientId = 1
@@ -466,19 +496,7 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-udsClientChan[18]: clientId = 18
 		case reqMessage = <-udsClientChan[19]: clientId = 19
 		}
-		if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
-			validationError := utils.JsonSchemaValidate(reqMessage)
-			if len(validationError) > 0 {
-				requestMap := make(map[string]interface{})
-				requestMap["action"] = utils.ExtractFromRequest(reqMessage, "action")
-				requestMap["requestId"] = utils.ExtractFromRequest(reqMessage, "requestId")
-				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
-				udsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
-				continue
-			}
-			checkCompressionRequest(reqMessage)
-		}
-		utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleUdsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
 	}
 }
 
