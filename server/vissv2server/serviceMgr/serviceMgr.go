@@ -1460,23 +1460,23 @@ func handleServiceGet(requestMap map[string]interface{}, responseMap map[string]
 }
 
 // handleServiceSubscribe processes a "subscribe" action: builds a
-// SubscriptionState from the request, validates the filter, appends
-// it to the subscription list, activates interval/curve-log timers
-// when needed via activateIfIntervalOrCL, and notifies the feeder for
-// curvelog/range/change variants. Returns the updated subscription
-// list and the next subscriptionId. Extracted from ServiceMgrInit's
-// dataChan switch as a follow-up to PR #129 — the inline version
-// carried a TODO(testing) note pointing here.
+// SubscriptionState from the request, validates the path and filter,
+// appends it to the subscription list, activates interval/curve-log
+// timers when needed via activateIfIntervalOrCL, and notifies the
+// feeder for curvelog/range/change variants. Returns the updated
+// subscription list and the next subscriptionId. Extracted from
+// ServiceMgrInit's dataChan switch as a follow-up to PR #129.
 //
-// PRE-EXISTING BUGS preserved as-is (file separately for fix):
-//   1. After the empty-FilterList error response, execution falls
-//      through to append the subscription anyway, producing a second
-//      message on dataChan. The original arm had no `break` after the
-//      `dataChan <- errorResponseMap` send and we preserve that bug
-//      here so this stays behaviour-preserving. See the marker below.
-//   2. subscriptionState.Path is dereferenced at index 0 without a
-//      nil check. If unpackPaths returned nil (malformed JSON path
-//      array), this panics. Original code has the same hazard.
+// This is the post-fix version: the two pre-existing bugs documented
+// when the function was extracted are now fixed.
+//   1. The empty-FilterList error path now `return`s instead of
+//      falling through to append the empty-filter subscription. The
+//      original (and prior extracted) code sent the invalid_data
+//      error then kept going, producing a second message on dataChan
+//      and growing the subscription list with garbage.
+//   2. subscriptionState.Path is now nil-checked after unpackPaths
+//      before any Path[0] access. A malformed JSON path array
+//      (`["Vehicle.Speed`) would previously panic here.
 func handleServiceSubscribe(
 	requestMap map[string]interface{},
 	responseMap map[string]interface{},
@@ -1491,6 +1491,11 @@ func handleServiceSubscribe(
 	subscriptionState.SubscriptionId = subscriptionId
 	subscriptionState.RouterId = requestMap["RouterId"].(string)
 	subscriptionState.Path = unpackPaths(requestMap["path"].(string))
+	if len(subscriptionState.Path) == 0 { // Fix bug 2: unpackPaths returned nil for malformed JSON
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId
+	}
 	if requestMap["filter"] == nil || requestMap["filter"] == "" {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 		dataChan <- errorResponseMap
@@ -1500,10 +1505,7 @@ func handleServiceSubscribe(
 	if len(subscriptionState.FilterList) == 0 {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
 		dataChan <- errorResponseMap
-		// BUG-PRESERVED: original arm had no break here. Execution
-		// continues and appends the empty-filter subscription, then
-		// sends a second response on dataChan further down. Fix in a
-		// separate PR so reviewers see exactly what changed.
+		return subscriptionList, subscriptionId // Fix bug 1: return instead of falling through
 	}
 	if requestMap["gatingId"] != nil {
 		subscriptionState.GatingId = requestMap["gatingId"].(string)
@@ -1623,28 +1625,45 @@ func handleIntervalNotification(subscriptionId int, subscriptionList []Subscript
 // subscription, removes it from the list when this was the
 // close-signal for the requested subscription, and forwards the data
 // pack to backendChan. Reads and clears the package global
-// closeClSubId in the close-signal path. Returns the updated
-// subscriptionList. Extracted from ServiceMgrInit in follow-up PR B
-// to #129.
+// closeClSubId under mcloseClSubId so the close-signal observation is
+// race-safe relative to deactivateSubscription. Returns the updated
+// subscriptionList.
 //
-// PRE-EXISTING HAZARD preserved as-is (file separately for fix):
-// after removeFromsubscriptionList, `index` may now point past the
-// end of the slice (the helper does a swap-with-last + truncate). The
-// subsequent subscriptionList[index] accesses then panic when the
-// removed entry was the last one. The original arm has the same
-// hazard.
+// This is the post-fix version: two pre-existing bugs documented when
+// the function was extracted are now fixed.
+//   3. After removeFromsubscriptionList, `index` may point past the
+//      end of the slice (the helper does a swap-with-last + truncate).
+//      The post-remove code path now returns early instead of touching
+//      subscriptionList[index] again. There is no notification to
+//      forward for a subscription that just got removed.
+//   4. closeClSubId is read and written here without holding
+//      mcloseClSubId, while deactivateSubscription writes it under the
+//      mutex. We now lock around the entire read-modify-write so
+//      observation and clearing happen atomically with deactivate.
 func handleCurveLogNotification(clPack CLPack, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
 	index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
 	if index == -1 {
+		mcloseClSubId.Lock()
 		closeClSubId = -1
+		mcloseClSubId.Unlock()
 		return subscriptionList
 	}
-	//subscriptionState := subscriptionList[index]
 	subscriptionList[index].SubscriptionThreads--
-	if clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0 {
-		subscriptionList = removeFromsubscriptionList(subscriptionList, index)
+
+	mcloseClSubId.Lock()
+	shouldRemove := clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0
+	if shouldRemove {
 		closeClSubId = -1
 	}
+	mcloseClSubId.Unlock()
+
+	if shouldRemove {
+		// Fix bug 3: do not attempt to index into the slice after the
+		// remove. The subscription is gone; there is no notification
+		// event to forward for it.
+		return removeFromsubscriptionList(subscriptionList, index)
+	}
+
 	var subscriptionMap = make(map[string]interface{})
 	subscriptionMap["action"] = "subscription"
 	subscriptionMap["ts"] = utils.GetRfcTime()

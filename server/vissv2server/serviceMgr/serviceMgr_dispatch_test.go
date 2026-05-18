@@ -23,8 +23,21 @@
 * inline in #129 with a TODO(testing) note and has now been extracted
 * to handleServiceSubscribe.
 *
-* Follow-up PR B (this PR) extracts the five notification-side arms
-* of ServiceMgrInit's select loop and adds tests for the four that
+* The Tier-1 bug-fix PR (most recent) closes out four pre-existing
+* bugs documented as PRESERVED in #130 / #131:
+*   - bug 1: subscribe arm missing break after empty-FilterList
+*            error  (test renamed from _BugPreserved to _ReturnsError,
+*                    assertions flipped)
+*   - bug 2: subscribe arm panicked on malformed JSON path arrays
+*            (new TestHandleServiceSubscribe_MalformedPathReturnsError)
+*   - bug 3: handleCurveLogNotification indexed past the slice end
+*            after remove (new
+*            TestHandleCurveLogNotification_CloseSignalRemovesEntryAndReturns)
+*   - bug 4: closeClSubId accessed without mcloseClSubId mutex
+*            (locking added; -race verifies)
+*
+* Follow-up PR B extracted the five notification-side arms of
+* ServiceMgrInit's select loop and added tests for the four that
 * are unit-testable without a live UDS socket:
 *   - handleIntervalNotification       <-subscriptionChan
 *   - handleCurveLogNotification       <-CLChannel
@@ -604,23 +617,18 @@ func TestHandleServiceSubscribe_HappyPath(t *testing.T) {
 	}
 }
 
-// TestHandleServiceSubscribe_EmptyFilterListBugPreserved is a
-// regression-pinning test for a PRE-EXISTING bug in the original
-// inline arm that handleServiceSubscribe preserves verbatim:
+// TestHandleServiceSubscribe_EmptyFilterListReturnsError verifies the
+// corrected behaviour after fixing bug 1 (the missing `break` /
+// `return` after the empty-FilterList error response). The function
+// must now send exactly one invalid_data error to dataChan and leave
+// the subscription list and subscriptionId untouched.
 //
-//   When UnpackFilter unpacks a non-nil filter into an EMPTY
-//   FilterList, the arm sends a "invalid_data" error response on
-//   dataChan AND THEN falls through to append the empty-filter
-//   subscription, sending a SECOND response on dataChan and
-//   incrementing subscriptionId. The arm was missing a `break` after
-//   the error send.
-//
-// If a future fix adds the missing break, THIS TEST WILL FAIL — that
-// is intentional. Update the test to reflect the corrected behaviour
-// (single error response, list unchanged, id unchanged) at that time.
-func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
+// This test previously pinned the BUG-PRESERVED behaviour where the
+// arm fell through and sent a second message. See the Tier-1 bug-fix
+// PR for the fix.
+func TestHandleServiceSubscribe_EmptyFilterListReturnsError(t *testing.T) {
 	resetErrorResponseMap()
-	dataChan := make(chan map[string]interface{}, 2) // room for both messages
+	dataChan := make(chan map[string]interface{}, 2) // size 2 catches any erroneous second message
 	subChan := make(chan int, 1)
 	clChan := make(chan CLPack, 1)
 	toFeederChan := make(chan string, 1)
@@ -631,8 +639,7 @@ func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
 		"path":      "Vehicle.Speed",
 		// A non-empty string filter hits the default arm of
 		// utils.UnpackFilter (which only branches on []interface{} or
-		// map[string]interface{}), leaving the FilterList nil — i.e.
-		// len() == 0 — and tripping the buggy empty-FilterList path.
+		// map[string]interface{}), leaving the FilterList empty.
 		"filter": "this-is-neither-a-map-nor-an-array",
 	}
 	resp := buildServiceResponseMap(req)
@@ -640,7 +647,7 @@ func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
 
 	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, []SubscriptionState{}, startId, subChan, clChan, toFeederChan)
 
-	// First message on dataChan should be the invalid_data error.
+	// Exactly one message — the invalid_data error.
 	select {
 	case got := <-dataChan:
 		errMap, _ := got["error"].(map[string]interface{})
@@ -648,28 +655,68 @@ func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
 			t.Errorf("first message was not invalid_data error: %v", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatalf("no first response on dataChan")
+		t.Fatalf("no response on dataChan")
 	}
 
-	// Second message exists due to the missing-break bug — the arm
-	// keeps going and sends responseMap as if the subscription was
-	// added. If this select hits the timeout instead, the bug has
-	// been fixed; update the test to the corrected behaviour.
+	// No second message: the bug-preserving fall-through is gone.
 	select {
 	case got := <-dataChan:
-		if got["subscriptionId"] != "100" {
-			t.Errorf("second (buggy) message did not carry the new subscriptionId: %v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatalf("missing second message — bug may have been fixed; update this test to the corrected behaviour")
+		t.Errorf("a second message was sent on dataChan; fix has regressed: %v", got)
+	default:
 	}
 
-	// And the list / id reflect the buggy append.
-	if len(updatedList) != 1 {
-		t.Errorf("subscriptionList len = %d; bug-preserved behaviour appends 1", len(updatedList))
+	// List and id must be unchanged.
+	if len(updatedList) != 0 {
+		t.Errorf("subscriptionList len = %d; want 0 (no append after error)", len(updatedList))
 	}
-	if nextId != startId+1 {
-		t.Errorf("nextId = %d; bug-preserved behaviour increments to %d", nextId, startId+1)
+	if nextId != startId {
+		t.Errorf("nextId = %d; want %d (no increment after error)", nextId, startId)
+	}
+}
+
+// TestHandleServiceSubscribe_MalformedPathReturnsError exercises the
+// bug-2 fix: a path string that looks like a JSON array but isn't
+// valid JSON would previously make subscriptionState.Path = nil and
+// then panic at Path[0]. Now the helper short-circuits with a
+// bad_request response before any Path[0] access.
+func TestHandleServiceSubscribe_MalformedPathReturnsError(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 2)
+	subChan := make(chan int, 1)
+	clChan := make(chan CLPack, 1)
+	toFeederChan := make(chan string, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?5",
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      `["Vehicle.Speed`, // opens an array but never closes it
+		"filter": map[string]interface{}{
+			"variant":   "paths",
+			"parameter": "Vehicle.Speed",
+		},
+	}
+	resp := buildServiceResponseMap(req)
+	startId := 7
+
+	// Must not panic. The previous code dereferenced Path[0] on a nil
+	// slice immediately after unpackPaths.
+	updatedList, nextId := handleServiceSubscribe(req, resp, dataChan, []SubscriptionState{}, startId, subChan, clChan, toFeederChan)
+
+	select {
+	case got := <-dataChan:
+		errMap, _ := got["error"].(map[string]interface{})
+		if errMap == nil || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("no response on dataChan")
+	}
+
+	if len(updatedList) != 0 {
+		t.Errorf("subscriptionList grew on malformed-path error path; len=%d", len(updatedList))
+	}
+	if nextId != startId {
+		t.Errorf("nextId advanced on the error path; got %d, want %d", nextId, startId)
 	}
 }
 
@@ -825,6 +872,51 @@ func TestHandleCurveLogNotification_DecrementsThreadsAndForwards(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("handleCurveLogNotification did not push to backChan")
+	}
+}
+
+// TestHandleCurveLogNotification_CloseSignalRemovesEntryAndReturns
+// exercises the bug-3 / bug-4 fix path: when closeClSubId matches and
+// SubscriptionThreads decrements to 0, the helper must remove the
+// entry AND return without further indexing into the slice (the old
+// code accessed subscriptionList[index] after the remove, which
+// panics when the removed entry was the last one). Also confirms
+// closeClSubId is cleared and that the post-fix run does not send a
+// stray notification for the just-removed subscription.
+//
+// Run with -race to verify the mcloseClSubId mutex pairing for bug 4.
+func TestHandleCurveLogNotification_CloseSignalRemovesEntryAndReturns(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	// Two subs in the list. The one at index 1 (last) is the close
+	// target — that is the index position where the old swap-with-last
+	// + truncate would leave `index` past the end.
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 1, RouterId: "0?1", SubscriptionThreads: 2},
+		{SubscriptionId: 5, RouterId: "0?2", SubscriptionThreads: 1},
+	}
+	closeClSubId = 5 // pending close for subscriptionId 5
+
+	updated := handleCurveLogNotification(
+		CLPack{SubscriptionId: 5, DataPack: `{"value":"42","ts":"2026-01-01T00:00:00Z"}`},
+		subscriptionList, backChan,
+	)
+
+	// The matching subscription should be gone.
+	if len(updated) != 1 {
+		t.Fatalf("subscriptionList len = %d; want 1 after remove", len(updated))
+	}
+	if updated[0].SubscriptionId == 5 {
+		t.Errorf("subscriptionId 5 still present after close signal")
+	}
+	// closeClSubId should be cleared.
+	if closeClSubId != -1 {
+		t.Errorf("closeClSubId = %d; want -1 after close-signal handling", closeClSubId)
+	}
+	// No notification event for the just-removed entry.
+	select {
+	case got := <-backChan:
+		t.Errorf("backChan should be empty after removing the subscription; got %v", got)
+	default:
 	}
 }
 
