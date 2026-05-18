@@ -1,9 +1,9 @@
 # Testing
 
-This document covers vissr's unit-test and fuzz-test infrastructure as
-of the regression-test PR landed alongside the stability/security
-batches (commit `ef639f0`, PRs #119, #120, #121, and the broader test-
-debt fill-in shipped here).
+This document describes vissr's unit-test and fuzz-test infrastructure
+as of the broad-coverage push landed alongside the stability/security
+batches (commit `ef639f0` plus PRs #119, #120, #121, #122 and the
+present comprehensive-coverage PR).
 
 ## Running the test suite
 
@@ -19,21 +19,28 @@ go test \
     ./server/vissv2server/udsMgr \
     ./server/vissv2server/grpcMgr \
     ./server/agt_server \
+    ./client/client-1.0/compress_client \
+    ./client/client-1.0/csv_client \
     ./client/client-1.0/filetransfer_client \
+    ./client/client-1.0/grpc_client \
+    ./client/client-1.0/testClient \
     ./feeder/feeder-rl \
-    ./feeder/feeder-template/feederv4
+    ./feeder/feeder-template/feederv4 \
+    ./feeder/feeder-evic \
+    ./feeder/feeder-evic/evicSim
 ```
 
 `./...` from the repo root currently fails because of a long-standing
 mixed-package layout in `server/vissv2server/grpcMgr/testprocess/`
-unrelated to this PR. Use the explicit list above.
+unrelated to these tests. Use the explicit list above.
 
 ## Race-detector tests
 
-Five tests target the mutex fixes shipped across the batches
+Tests for the mutex fixes shipped across the security batches
 (`WsClientIndexMu`, `sessionListMu`, `jtiCacheMu` in atServer and
-agt_server, `udsClientIndexMu`, `grpcStateMu`). They're designed to
-fail under `go test -race` if the mutex is removed or weakened. Run:
+agt_server, `udsClientIndexMu`, `grpcStateMu`) are designed to fail
+under `go test -race` if the mutex protecting their shared state is
+removed. Run:
 
 ```bash
 go test -race ./server/vissv2server/atServer \
@@ -46,26 +53,30 @@ go test -race ./server/vissv2server/atServer \
 
 ## Fuzz tests
 
-Seven native Go fuzz harnesses cover parsers that consume attacker-
-controlled input. Run an individual fuzzer for ~30 s:
+Native Go fuzz harnesses cover parsers that consume attacker-
+controlled input. Run an individual fuzzer for ~30s:
 
 ```bash
 go test -run='^$' -fuzz=FuzzValidateTransferName -fuzztime=30s \
     ./server/vissv2server/wsMgrFT
 ```
 
-All seven (suitable for a CI nightly job):
+Run all of them in turn (CI nightly):
 
 ```bash
 fuzzers=(
     'FuzzValidateTransferName   ./server/vissv2server/wsMgrFT'
     'FuzzSafeServerFilename     ./client/client-1.0/filetransfer_client'
+    'FuzzEncodeDlRequest        ./client/client-1.0/filetransfer_client'
     'FuzzExtractKeyValue        ./server/vissv2server/atServer'
     'FuzzProcessHistoryCtrl     ./server/vissv2server/serviceMgr'
     'FuzzProcessHistoryGet      ./server/vissv2server/serviceMgr'
     'FuzzMapRequest             ./utils'
     'FuzzJsonSchemaValidate     ./utils'
     'FuzzGetFileDescriptorData  ./server/vissv2server'
+    'FuzzGetRangeBoundaries     ./server/vissv2server'
+    'FuzzGetValueForKey         ./server/vissv2server/wsMgr'
+    'FuzzCompressTs             ./server/vissv2server/wsMgr'
 )
 for entry in "${fuzzers[@]}"; do
     set -- $entry
@@ -74,13 +85,13 @@ for entry in "${fuzzers[@]}"; do
 done
 ```
 
-Failures land as files under `testdata/fuzz/<FuzzerName>/`. Commit any
-that surface real bugs as part of the fix; the file becomes a seed
-corpus entry for that fuzzer.
+Failures land under `testdata/fuzz/<FuzzerName>/`. Commit any that
+surface real bugs as part of the fix; the file then becomes a seed
+corpus entry.
 
 ## Coverage by area
 
-### Regression coverage of the stability/security batches
+### Regression coverage of the stability/security batches (PR #122)
 
 | Fix area                                                       | Test file                                                                                  |
 |----------------------------------------------------------------|--------------------------------------------------------------------------------------------|
@@ -89,22 +100,20 @@ corpus entry for that fuzzer.
 | `safeServerFilename` client-side path traversal                 | `client/client-1.0/filetransfer_client/filetransfer_client_test.go`                        |
 | `extractKeyValue` safe type-assert (atServer)                   | `server/vissv2server/atServer/atServer_fixes_test.go`                                      |
 | `jtiCache` mutex (atServer, agt_server)                         | `server/vissv2server/atServer/atServer_fixes_test.go`, `server/agt_server/agt_server_test.go` |
+| AGT / AT / HTTP POST body limits (`MaxBytesReader`)              | `server/agt_server/agt_server_test.go`, `server/vissv2server/atServer/atServer_fixes_test.go`, `utils/managerhandlers_test.go` |
 | `processHistoryCtrl` panic + index + bufSize cap                | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
 | `processHistoryGet` panic + index                               | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
-| `getBrokerSocket` env var / fallback / TLS (mqttMgr)             | `server/vissv2server/mqttMgr/mqttMgr_test.go`                                              |
-| `JsonSchemaValidate` nil-deref guard (utils)                    | `utils/common_fixes_test.go`                                                               |
-| `WsClientIndexMu` race + `MaxBytesReader` POST body limit         | `utils/managerhandlers_test.go`                                                            |
-| `udsClientIndexMu` race + -1 protection                         | `server/vissv2server/udsMgr/udsMgr_test.go`                                                |
+| `activate/deactivateInterval` ticker-leak                       | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
+| `getBrokerSocket` env-var / fallback / TLS (mqttMgr)             | `server/vissv2server/mqttMgr/mqttMgr_test.go`                                              |
+| `JsonSchemaValidate` nil-deref guard                            | `utils/common_fixes_test.go`                                                               |
+| `WsClientIndexMu` race                                          | `utils/managerhandlers_test.go`                                                            |
+| `udsClientIndexMu` race + `-1` pool-exhaustion guard             | `server/vissv2server/udsMgr/udsMgr_test.go`                                                |
 | `grpcStateMu` race                                              | `server/vissv2server/grpcMgr/grpcMgr_test.go`                                              |
 | `getFileDescriptorData` type-assert (vissv2server)              | `server/vissv2server/vissv2server_test.go`                                                 |
-| `TouchFile` mode 0644 (feeder-rl)                               | `feeder/feeder-rl/feeder-rl_test.go`                                                       |
-| `onNotificationList` lookup contract (feederv4)                 | `feeder/feeder-template/feederv4/feederv4_test.go`                                         |
-| AGT POST body limit + 404 path                                  | `server/agt_server/agt_server_test.go`                                                     |
-| AT POST body limit                                              | `server/vissv2server/atServer/atServer_fixes_test.go`                                      |
-| HTTP VISS POST body limit                                       | `utils/managerhandlers_test.go`                                                            |
-| `activateInterval`/`deactivateInterval` ticker leak             | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
+| `TouchFile` mode 0644                                           | `feeder/feeder-rl/feeder-rl_test.go`                                                       |
+| `onNotificationList` lookup contract                            | `feeder/feeder-template/feederv4/feederv4_test.go`                                         |
 
-### Broader coverage (independent of recent fixes)
+### Broader coverage of pure helpers (PR #122)
 
 | Area                                                           | Test file                                                            |
 |----------------------------------------------------------------|----------------------------------------------------------------------|
@@ -115,53 +124,111 @@ corpus entry for that fuzzer.
 | `utils.GenerateHmac` / `VerifyTokenSignature` round-trip + tamper | `utils/common_broader_test.go`                                       |
 | `utils.AddKeyValue` no-Marshal value injection                  | `utils/common_broader_test.go`                                       |
 | `utils.MapRequest` fuzz                                         | `utils/common_fixes_test.go`                                         |
-| `wsMgr.getValueForKey` JSON value extractor                     | `server/vissv2server/wsMgr/wsMgr_test.go`                            |
-| `wsMgr.getSortedPaths` deterministic ordering                   | `server/vissv2server/wsMgr/wsMgr_test.go`                            |
-| `wsMgr` data-compression cache (insert / lookup / reset)         | `server/vissv2server/wsMgr/wsMgr_test.go`                            |
+| `wsMgr.getValueForKey`, `getSortedPaths`, dcCache               | `server/vissv2server/wsMgr/wsMgr_test.go`                            |
 
-## Still not covered (open follow-ups)
+### Whole-subsystem coverage (this PR)
 
-The fixes below would all be testable but require either non-trivial
-refactoring of production code (to expose seams) or integration-style
-harnesses that are out of scope for this PR:
+#### vissv2server core
 
-- `mqttMgr::createSubscribeClient` / `publishMessage` `os.Exit` removal
-  (PR #121). The fix is "absence of process exit"; to test it, the
-  helpers need to be refactored to accept a token-getter / client
-  factory.
-- `vissv2server.go::issueServiceRequest` `dt[:5]` panic fix (PR #121).
-  The check is inline in the long message-dispatch goroutine; tests
-  here are integration-style and live in `runtest.sh`.
-- `vissv2server.go::initiateFileTransfer` `[utils.UIDLEN]byte` panic
-  fix (PR #121). Same shape as above; deeply embedded in the channel
-  flow.
+| Helper                                  | Test file                                              |
+|-----------------------------------------|--------------------------------------------------------|
+| `extractMgrId` (`mgrId?clientId` parser) | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `getPathLen` (NUL-aware buffer length)   | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `countPathSegments`                      | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `getTokenErrorMessage` (all indices)     | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `setTokenErrorResponse`                  | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `singleToDoubleQuote`                    | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `extractNoScopeElementsLevel1` / `Level2`| `server/vissv2server/vissv2server_helpers_test.go`     |
+| `getTokenContext` (safe defaults)        | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `removeLocalProperty`                    | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `getInternalFileName`                    | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `calculateHash` (SHA-1)                  | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `getRangeBoundary` / `getRangeBoundaries`| `server/vissv2server/vissv2server_helpers_test.go`     |
+| `FuzzGetRangeBoundaries`                 | `server/vissv2server/vissv2server_helpers_test.go`     |
 
-## Broader vissr test debt — areas with no automated coverage
+#### wsMgr (beyond pure helpers covered in PR #122)
 
-These are not covered by this PR's tests. Listed roughly in order of
-attack surface and review value, for future PRs:
+| Helper                                  | Test file                                              |
+|-----------------------------------------|--------------------------------------------------------|
+| `getDcConfig`                            | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
+| `setDcValue` (pc + tsc parsing)          | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
+| `dcCacheInsert` / `getDcCacheIndex` / `resetDcCache` / `updatepayloadId` lifecycle | `server/vissv2server/wsMgr/wsMgr_helpers_test.go` |
+| `signedTimeDiff`                         | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
+| `compressTs` malformed-JSON rejection    | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
+| `getDpTsList` (single / array / unknown) | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
+| `FuzzGetValueForKey`, `FuzzCompressTs`   | `server/vissv2server/wsMgr/wsMgr_helpers_test.go`      |
 
-| Subsystem                                  | Surface          |
-|--------------------------------------------|------------------|
-| `server/vissv2server/vissv2server.go` core | ~700 LOC, only `getFileDescriptorData` is tested. Most of the message-dispatch loop, routing, and helper functions have no unit tests. |
-| `server/vissv2server/wsMgr` beyond pure helpers | The WS upgrade path, message handling goroutine, and dispatch logic. Currently covered only by `runtest.sh` integration. |
-| `server/vissv2server/httpMgr` top-level    | HTTP transport init and dispatch. No unit tests. |
-| `server/vissv2server/grpcMgr` streaming    | The `SubscribeRequest` streaming RPC. Only the index-allocator helpers are tested. |
-| All client subdirs (compress, csv, mqtt)   | Only `filetransfer_client/safeServerFilename` is tested. The transports and request/response loops are untested. |
-| `feeder/feeder-template/feederv4` main loop | Only the `onNotificationList` lookup. The dispatch/update/redis paths are untested. |
-| `feeder/feeder-evic`                       | No tests at all. |
-| `paho-mqtt` integration                    | Existing `paho_go_test.go` only; no expansion. |
-| `tools/DomainConversionTool`               | No tests at all. |
+#### grpcMgr (beyond mutex tests covered in PR #122)
 
-These represent multi-PR work; addressing them comprehensively is a
-multi-session effort that should be planned as a sequence of focused
-PRs rather than one large drop.
+| Helper                                  | Test file                                              |
+|-----------------------------------------|--------------------------------------------------------|
+| `getSubscriptionId` (valid / missing / malformed JSON) | `server/vissv2server/grpcMgr/grpcMgr_helpers_test.go` |
+| `extractClientId` (valid + malformed parse) | `server/vissv2server/grpcMgr/grpcMgr_helpers_test.go` |
+
+#### Clients (`client/client-1.0/`)
+
+| Client                  | Test file                                                                  |
+|-------------------------|----------------------------------------------------------------------------|
+| `compress_client`        | `client/client-1.0/compress_client/compress_client_test.go`                |
+| `csv_client`             | `client/client-1.0/csv_client/csv_client_test.go`                          |
+| `filetransfer_client`    | `client/client-1.0/filetransfer_client/filetransfer_client_helpers_test.go` |
+| `grpc_client`            | `client/client-1.0/grpc_client/grpc_client_test.go`                        |
+| `testClient`             | `client/client-1.0/testClient/testClient_test.go`                          |
+
+Each covers the pure helpers in that client (path conversion, JSON
+parsing, request marshalling, file reading). Network-driven entry
+points are tested via runtest.sh integration.
+
+#### Feeders
+
+| Feeder                    | Test file                                                       |
+|---------------------------|-----------------------------------------------------------------|
+| `feeder-rl`                | `feeder/feeder-rl/feeder-rl_test.go` (PR #122)                  |
+| `feeder-template/feederv4` | `feeder/feeder-template/feederv4/feederv4_helpers_test.go`      |
+| `feeder-evic`              | `feeder/feeder-evic/evicFeeder_test.go`                         |
+| `feeder-evic/evicSim`      | `feeder/feeder-evic/evicSim/evicSim_test.go`                    |
+
+Covers `fileExists`, `deSerializeUInt` (1/2/4-byte), `inFeederScope`,
+`splitToDomainDataAndTs`, `convertToDomainData`, `makeDataPoint`,
+`calcInputValue`, `incDpIndex`, `enumConversion`, `linearConversion`.
+
+## Functions that need code refactoring to be unit-testable
+
+Documented inline as `TODO(testing):` comments in each test file.
+Listed here for visibility:
+
+| Function                                                       | Why not testable                                                                            | Refactor approach                                                                       |
+|----------------------------------------------------------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| `mqttMgr::createSubscribeClient`, `publishMessage` (post-`os.Exit` removal) | The fix is "absence of process exit". Helpers are wrapped around `MQTT.NewClient`.   | Extract a client-factory function so a mock `MQTT.Client` can be injected.              |
+| `vissv2server::issueServiceRequest` `dt[:5]` panic fix          | Inline in the main message-dispatch goroutine.                                              | Extract the SET-on-struct-Type branch into a function that takes (`requestMap`, `dt`).  |
+| `vissv2server::initiateFileTransfer` uid bounds check           | Embedded in channel-driven flow.                                                            | Extract `validateFileDescriptorUid([]byte) error`; call from `initiateFileTransfer`.    |
+| `feederv4::feederRegister`, `statestorageSet`                   | Coupled to live UDS / SQLite / Redis / memcache.                                            | Inject a storage interface; mock for tests.                                             |
+| `feederv4::udsReader`, `udsWriter`                              | Inline goroutine loops driving channels.                                                    | Extract per-message dispatch function; test it directly.                                |
+| `feederv4::simulateInput`, `selectRandomInput`, `getRandomVssfMapIndex` | Non-deterministic (`math/rand`).                                                       | Inject `*rand.Rand`; seed in tests.                                                     |
+| `feeder-evic::statestorageSet`, `udsReader/Writer`, `canDriverClient`, `serverSession`, `reDialer` | Coupled to live network / DB.                                                | Same shape: inject interfaces / extract per-message handlers.                           |
+| All client `initWebSocket*`, `controlClient`, `dataClient`, `downloadFile`, `uploadFile` | Need a running vissv2server.                                                  | Already integration-tested via runtest.sh.                                              |
+| `grpcMgr::GetRequest`, `SetRequest`, `UnsubscribeRequest`, `SubscribeRequest` | Streaming gRPC handlers; need a full gRPC fixture.                                   | Extract per-request body into a function taking plain Go values; test the helper.       |
+| `httpMgr` (entire package)                                     | Two functions, both giant goroutine loops with no extractable pure-function surface.        | Refactor `HttpMgrInit` to call out to a `handleRequest(msg) string` helper.             |
+
+## Subsystems with genuinely no .go code
+
+- `server/vissv2server/forest/` — VSS-tree binary data files only.
+- `server/transport_sec/` — TLS certs and `transportSec.json` config only.
+- `client/client-1.0/Javascript/`, `mqtt_client/`, `transport_sec/` — no Go code (JS client, certs, sample configs).
 
 ## Note on `.gitignore`
 
 The repo's `.gitignore` has unanchored patterns `feeder` and
 `agt_server` (lines 30, 53) that silently swallow any path with those
-names — including three of the test files in this PR. Three files
-required `git add -f`. The patterns should be anchored
-(`/feeder/feeder-template/feederv4/feeder` for the built binary, etc.)
-in a separate cleanup PR.
+names — multiple test files in this PR and PR #122 needed
+`git add -f`. The patterns should be anchored
+(`/feeder/feeder-template/feederv4/feeder` for the actual built
+binary, etc.) in a separate cleanup PR.
+
+## Note on dependency between PRs
+
+This test PR depends on PRs #119, #120, #121, and #122 being merged
+first. The tests reference helpers and mutexes added across those
+batches; without them, `go test` against this branch alone will not
+build. Once the four prior PRs land, the full suite builds and
+passes.
