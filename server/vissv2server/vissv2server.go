@@ -744,10 +744,30 @@ func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, pa
 	var ftInitData utils.FileTransferCache
 	var responseMap = map[string]interface{}{}
 	if requestMap["action"] == "set" && nodeType == utils.ACTUATOR { // download
+		// requestMap["value"] arrives from client JSON. If the client
+		// sends a non-object value (e.g. a bare string) for a
+		// FileDescriptor actuator, the previous direct
+		// .(interface{}) cast plus getFileDescriptorData's internal
+		// .(map[string]interface{}) panic-walked into a daemon
+		// crash. Type-check up front and reject malformed inputs.
+		if requestMap["value"] == nil {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing value for FileDescriptor set")
+			return errorResponseMap
+		}
 		var uidString string
 		ftInitData.UploadTransfer = false
-		ftInitData.Name, ftInitData.Hash, uidString = getFileDescriptorData(requestMap["value"].(interface{}))
-		uidByte, _ := hex.DecodeString(uidString)
+		ftInitData.Name, ftInitData.Hash, uidString = getFileDescriptorData(requestMap["value"])
+		if ftInitData.Name == "" {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "FileDescriptor value malformed")
+			return errorResponseMap
+		}
+		uidByte, err := hex.DecodeString(uidString)
+		if err != nil || len(uidByte) != utils.UIDLEN {
+			// Go ≥1.20 panics on [N]byte(slice) when len(slice) != N.
+			// Reject malformed uids before the array conversion.
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "FileDescriptor uid malformed")
+			return errorResponseMap
+		}
 		ftInitData.Uid = [utils.UIDLEN]byte(uidByte)
 		ftInitData.Path = "./"  //get it from statestorage when vss-tools have updated.
 		ftChannel <- ftInitData
@@ -761,7 +781,7 @@ func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, pa
 			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
 			return errorResponseMap
 		}
-		
+
 	} else if requestMap["action"] == "get" && nodeType == utils.SENSOR { //upload
 		if requestMap["path"] != nil {
 			path := requestMap["path"].(string)
@@ -812,7 +832,15 @@ func getInternalFileName(path string) (string, string) {  // maps between tree p
 
 func getFileDescriptorData(value interface{}) (string, string, string) { // {"name": "xxx","hash": "yyy","uid": "zzz"}
 	var name, hash, uid string
-	for k, v := range value.(map[string]interface{}) {
+	// Type-assert defensively. The caller (initiateFileTransfer)
+	// passes requestMap["value"] straight through from client JSON,
+	// and a non-object value (bare string, array, etc.) used to
+	// panic the daemon here.
+	valueMap, ok := value.(map[string]interface{})
+	if !ok {
+		return "", "", ""
+	}
+	for k, v := range valueMap {
 		switch vv := v.(type) {
 		case string:
 //			utils.Info.Println(k, "is string", vv)

@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/akamensky/argparse"
@@ -38,6 +39,13 @@ var privKey *rsa.PrivateKey
 
 // Stores a cache of the jwt ids received to not be reused
 var jtiCache map[string]struct{}
+
+// jtiCacheMu serialises access to jtiCache from the main request loop
+// (addCheckJti) and the per-jti expiry goroutines (deleteJti). Without
+// it the Go runtime aborts the process with "concurrent map read and
+// map write" once two AGT requests overlap. Mirrors the equivalent
+// fix in server/vissv2server/atServer/atServer.go.
+var jtiCacheMu sync.Mutex
 
 type Payload struct {
 	// Action  string `json:"action"`
@@ -65,9 +73,15 @@ func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *
 				http.Error(w, "400 bad request method.", 400)
 			}
 		} else {
+			// Bound the request body before io.ReadAll. The AGT
+			// endpoint is reachable pre-auth (its purpose is to issue
+			// access-grant tokens), so an anonymous peer can otherwise
+			// send a giant or chunked body and force ReadAll to
+			// allocate until OOM. AGT requests are small JSON envelopes.
+			req.Body = http.MaxBytesReader(w, req.Body, 64*1024)
 			bodyBytes, err := io.ReadAll(req.Body)
 			if err != nil {
-				http.Error(w, "400 request unreadable.", 400)
+				http.Error(w, "413 request body too large or unreadable.", 413)
 			} else { // POST REQUEST TO /agts
 				utils.Info.Printf("agtServer:received POST request=%s\n", string(bodyBytes))
 				serverChannel <- string(bodyBytes) // Sends to serverChannel the body of the request
@@ -196,6 +210,8 @@ func authenticateClient(payload Payload) bool {
 
 // Checks if jwt id exist in cache, if it does, return false. If not, it adds it and automatically clear it from cache when it expires
 func addCheckJti(jti string) bool {
+	jtiCacheMu.Lock()
+	defer jtiCacheMu.Unlock()
 	if jtiCache == nil { // If map is empty (first time), it doesnt even check, initializes and add
 		jtiCache = make(map[string]struct{})
 		jtiCache[jti] = struct{}{}
@@ -214,7 +230,9 @@ func addCheckJti(jti string) bool {
 // Deletes the JTI from cache
 func deleteJti(jti string) {
 	time.Sleep((GAP + LIFETIME + 5) * time.Second)
+	jtiCacheMu.Lock()
 	delete(jtiCache, jti)
+	jtiCacheMu.Unlock()
 }
 
 // generate UUID
