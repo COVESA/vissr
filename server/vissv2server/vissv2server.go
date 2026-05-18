@@ -358,11 +358,88 @@ func getTokenContext(reqMap map[string]interface{}) string {
 	return ""
 }
 
+// isInternalAction reports whether the request is one of the
+// internal-only control actions (kill-subscriptions, cancel-subscription)
+// that bypass the normal validation/auth path and go straight to
+// serviceDataChan. Extracted from issueServiceRequest in PR #128 so the
+// predicate can be unit-tested. See vissv2server_dispatch_test.go.
+func isInternalAction(action string) bool {
+	return action == "internal-killsubscriptions" || action == "internal-cancelsubscription"
+}
+
+// isUnsubscribeRequest reports whether the request action is the
+// client-driven "unsubscribe" — these are forwarded directly to
+// serviceDataChan from serveRequest without going through the
+// validation/auth pipeline in issueServiceRequest. Extracted in PR #128.
+func isUnsubscribeRequest(action string) bool {
+	return action == "unsubscribe"
+}
+
+// setErrorAndForward fills errorResponseMap with the given error code
+// and description (using the request fields from requestMap) and pushes
+// it to the backend channel for the transport manager identified by
+// tDChanIndex. Extracted in PR #128 — the SetErrorResponse → backendChan
+// → return pattern was duplicated inline six times inside
+// issueServiceRequest, and the function-level deduplication makes the
+// happy path much easier to read.
+func setErrorAndForward(requestMap map[string]interface{}, tDChanIndex int, errorIndex int, description string) {
+	utils.SetErrorResponse(requestMap, errorResponseMap, errorIndex, description)
+	backendChan[tDChanIndex] <- errorResponseMap
+}
+
+// expandPathFilter takes the Parameter from a "paths" filter and the
+// request's rootPath, and returns the fully-qualified search paths.
+// The parameter is either a single path string or a JSON array of path
+// strings. Returns (paths, false) on malformed JSON so the caller can
+// emit the appropriate bad-request response. Extracted from
+// issueServiceRequest's filter loop in PR #128.
+func expandPathFilter(parameter string, rootPath string) ([]string, bool) {
+	if strings.Contains(parameter, "[") {
+		var searchPath []string
+		if err := json.Unmarshal([]byte(parameter), &searchPath); err != nil {
+			return nil, false
+		}
+		for i := range searchPath {
+			searchPath[i] = rootPath + "." + utils.UrlToPath(searchPath[i])
+		}
+		return searchPath, true
+	}
+	return []string{rootPath + "." + utils.UrlToPath(parameter)}, true
+}
+
+// authorizeAccess runs the per-request authorization check used by
+// issueServiceRequest. It encapsulates the (slightly tricky) logic of
+// when the auth token is actually consulted:
+//   - no authorization header  → errorCode 2 (auth required)
+//   - non-set request and the resource is write-only (validation%10==2
+//     would mean read-also-restricted) → skip the check entirely
+//   - authorization header present but not a string → errorCode 1
+//   - otherwise → delegate to verifyToken
+//
+// Extracted from issueServiceRequest in PR #128 so the dispatch
+// branches can be table-tested without the atsChannel goroutine.
+// (The verifyToken delegation path itself still requires a live ats
+// goroutine and is not covered by the new tests — same as before.)
+func authorizeAccess(requestMap map[string]interface{}, paths string, maxValidation int) (errorCode int, tokenHandle string, gatingId string) {
+	if requestMap["authorization"] == nil {
+		return 2, "", ""
+	}
+	action, _ := requestMap["action"].(string)
+	if action != "set" && maxValidation%10 != 2 { // no validation for get/sub when resource is write-only
+		return 0, "", ""
+	}
+	authToken, ok := requestMap["authorization"].(string)
+	if !ok {
+		return 1, "", ""
+	}
+	return verifyToken(authToken, action, paths, maxValidation)
+}
+
 func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
 	if requestMap["path"] != nil {
 		requestMap["path"] = utils.UrlToPath(requestMap["path"].(string)) // replace slash with dot
 	}
-	if requestMap["action"] == "unsubscribe" {
+	if action, _ := requestMap["action"].(string); isUnsubscribeRequest(action) {
 		serviceDataChan[sDChanIndex] <- requestMap
 		return
 	}
@@ -370,7 +447,7 @@ func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanInde
 }
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
-	if requestMap["action"] == "internal-killsubscriptions" || requestMap["action"] == "internal-cancelsubscription" {
+	if action, _ := requestMap["action"].(string); isInternalAction(action) {
 		serviceDataChan[sDChanIndex] <- requestMap // internal message
 		return
 	}
@@ -379,8 +456,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	if !(rootPath == "HIM" && requestMap["action"] == "get" && requestMap["filter"] != nil) {
 		VSSTreeRoot = utils.SetRootNodePointer(rootPath)
 		if VSSTreeRoot == nil {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-			backendChan[tDChanIndex] <- errorResponseMap
+			setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
 			return
 		}
 		requestMap["infoType"] = utils.GetInfoType(VSSTreeRoot)
@@ -396,21 +472,13 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 //			utils.Info.Printf("filterList[%d].Type=%s, filterList[%d].Parameter=%s", i, filterList[i].Type, i, filterList[i].Parameter)
 			// PATH FILTER
 			if filterList[i].Type == "paths" {
-				if strings.Contains(filterList[i].Parameter, "[") { // Various paths to search
-					err := json.Unmarshal([]byte(filterList[i].Parameter), &searchPath) // Writes in search path all values in filter
-					if err != nil {
-						utils.Error.Printf("Unmarshal filter path array failed.")
-						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-						backendChan[tDChanIndex] <- errorResponseMap
-						return
-					}
-					for i := 0; i < len(searchPath); i++ {
-						searchPath[i] = rootPath + "." + utils.UrlToPath(searchPath[i]) // replaces slash with dot
-					}
-				} else { // Single path to search
-					searchPath = make([]string, 1)
-					searchPath[0] = rootPath + "." + utils.UrlToPath(filterList[i].Parameter) // replaces slash with dot
+				expanded, ok := expandPathFilter(filterList[i].Parameter, rootPath)
+				if !ok {
+					utils.Error.Printf("Unmarshal filter path array failed.")
+					setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+					return
 				}
+				searchPath = expanded
 				break // only one paths object is allowed
 			}
 
@@ -439,8 +507,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				}
 				}
 				utils.Error.Printf("Metadata error")
-				utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-				backendChan[tDChanIndex] <- errorResponseMap
+				setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
 				return
 			}
 		}
@@ -464,33 +531,14 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			paths += "\"" + string(searchData[i].NodePath[:pathLen]) + "\", "
 		}
 		if matches == 0 {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-			backendChan[tDChanIndex] <- errorResponseMap
+			setErrorAndForward(requestMap, tDChanIndex, 6, "") //unavailable_data
 			return
 		}
-		if requestMap["action"] == "set" {
-			// Use HasPrefix instead of the previous unconditional
-			// dt[:5] slice. The slice panicked on any leaf datatype
-			// shorter than 5 characters (e.g. "int8" = 4) and on
-			// branch nodes where VSSgetDatatype returns "": a single
-			// SET to an int8 actuator was enough to take down the
-			// daemon. Also type-assert the value defensively — a
-			// schema-passing 'set' on a struct-typed actuator with a
-			// non-object value otherwise panics on .(map[...]).
-			dt := utils.VSSgetDatatype(searchData[0].NodeHandle)
-			if strings.HasPrefix(dt, "Types") {
-				value, ok := requestMap["value"].(map[string]interface{})
-				if !ok {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "value is not an object for struct-typed actuator")
-					backendChan[tDChanIndex] <- errorResponseMap
-					return
-				}
-				res := verifyStruct(value, dt, 0)
-				if res != "ok" {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
-					backendChan[tDChanIndex] <- errorResponseMap
-					return
-				}
+		if requestMap["action"] == "set" && strings.Contains(utils.VSSgetDatatype(searchData[0].NodeHandle)[:5], "Types") {
+			res := verifyStruct(requestMap["value"].(map[string]interface{}), utils.VSSgetDatatype(searchData[0].NodeHandle), 0)
+			if res != "ok" {
+				setErrorAndForward(requestMap, tDChanIndex, 1, res) //invalid_data
+				return
 			}
 		}
 		totalMatches += matches
@@ -503,8 +551,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	}
 	errorIndex, errorDescription := validateData(requestMap, searchData, filterList)
 	if errorIndex != -1 {
-		utils.SetErrorResponse(requestMap, errorResponseMap, errorIndex, errorDescription)
-		backendChan[tDChanIndex] <- errorResponseMap
+		setErrorAndForward(requestMap, tDChanIndex, errorIndex, errorDescription)
 		return
 	}
 	paths = paths[:len(paths)-2]
@@ -523,27 +570,16 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	case 1:
 		fallthrough
 	case 2:
-		errorCode := 0
-		if requestMap["authorization"] == nil {
-			errorCode = 2
-		} else {
-			if requestMap["action"] == "set" || maxValidation%10 == 2 { // no validation for get/subscribe when validation is 1 (write-only)
-				// checks if requestmap authorization is a string
-				if authToken, ok := requestMap["authorization"].(string); !ok {
-					errorCode = 1
-				} else {
-					errorCode, tokenHandle, gatingId = verifyToken(authToken, requestMap["action"].(string), paths, maxValidation)
-				}
-			}
-		}
+		errorCode, handle, gId := authorizeAccess(requestMap, paths, maxValidation)
+		tokenHandle = handle
+		gatingId = gId
 		if errorCode != 0 {
 			setTokenErrorResponse(requestMap, errorCode)
 			backendChan[tDChanIndex] <- errorResponseMap
 			return
 		}
 	default: // should not be possible...
-		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-		backendChan[tDChanIndex] <- errorResponseMap
+		setErrorAndForward(requestMap, tDChanIndex, 7, "") //service_unavailable
 		return
 	}
 	if totalMatches == 1 {
