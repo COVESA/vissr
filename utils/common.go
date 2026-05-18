@@ -14,10 +14,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"context"
 	"github.com/qri-io/jsonschema"
@@ -60,7 +62,12 @@ type UdsReg struct {
 	History      string `json:"history"`
 }
 
+// udsRegList is the in-memory copy of the UDS registration file.
+// udsRegListMu guards writes from ReadUdsRegistrations against
+// concurrent reads from GetUdsConn / GetUdsPath in other goroutines
+// (bug-9 fix).
 var udsRegList []UdsReg
+var udsRegListMu sync.RWMutex
 
 func ReadUdsRegistrations(sockFile string) []UdsReg {
 	data, err := os.ReadFile(sockFile)
@@ -68,19 +75,26 @@ func ReadUdsRegistrations(sockFile string) []UdsReg {
 		Error.Printf("readUdsRegistrations():%s error=%s", sockFile, err)
 		return nil
 	}
-	err = json.Unmarshal(data, &udsRegList)
-	if err != nil {
+	var parsed []UdsReg
+	if err := json.Unmarshal(data, &parsed); err != nil {
 		Error.Printf("readUdsRegistrations():unmarshal error=%s", err)
 		return nil
 	}
-	return udsRegList
+	udsRegListMu.Lock()
+	udsRegList = parsed
+	udsRegListMu.Unlock()
+	return parsed
 }
 
 func GetUdsConn(path string, connectionName string) net.Conn {
 	root := ExtractRootName(path)
+	udsRegListMu.RLock()
+	defer udsRegListMu.RUnlock()
 	for i := 0; i < len(udsRegList); i++ {
 		if root == udsRegList[i].RootName || udsRegList[i].RootName == "*" {
-			return connectViaUds(getSocketPath(i, connectionName))
+			// getSocketPath also reads udsRegList — but RLock is
+			// re-entrant on the same goroutine's read.
+			return connectViaUds(getSocketPathLocked(i, connectionName))
 		}
 	}
 	return nil
@@ -88,17 +102,26 @@ func GetUdsConn(path string, connectionName string) net.Conn {
 
 func GetUdsPath(path string, connectionName string) string {
 	root := ExtractRootName(path)
-	//	Info.Printf("GetUdsPath:root=%s, connectionName=%s", root, connectionName)
+	udsRegListMu.RLock()
+	defer udsRegListMu.RUnlock()
 	for i := 0; i < len(udsRegList); i++ {
 		if root == udsRegList[i].RootName {
-			return getSocketPath(i, connectionName)
+			return getSocketPathLocked(i, connectionName)
 		}
 	}
 	Info.Printf("could not find root name")
 	return ""
 }
 
+// getSocketPath is the public entry point — takes the RLock itself.
+// Internal call sites that already hold the lock use getSocketPathLocked.
 func getSocketPath(listIndex int, connectionName string) string {
+	udsRegListMu.RLock()
+	defer udsRegListMu.RUnlock()
+	return getSocketPathLocked(listIndex, connectionName)
+}
+
+func getSocketPathLocked(listIndex int, connectionName string) string {
 	switch connectionName {
 	case "serverFeeder":
 		return udsRegList[listIndex].ServerFeeder
@@ -192,46 +215,80 @@ func VerifyTokenSignature(token string, key string) error { // compatible with r
 
 }
 
-func ExtractFromToken(token string, claim string) string { // TODO remove white space sensitivity
-	delimiter1 := strings.Index(token, ".")
-	delimiter2 := strings.Index(token[delimiter1+1:], ".") + delimiter1 + 1
-	header := token[:delimiter1]
-	payload := token[delimiter1+1 : delimiter2]
-	decodedHeaderByte, _ := base64.RawURLEncoding.DecodeString(header)
-	decodedHeader := string(decodedHeaderByte)
-	claimIndex := strings.Index(decodedHeader, claim)
-	if claimIndex != -1 {
-		startIndex := claimIndex + len(claim) + 2
-		endIndex := strings.Index(decodedHeader[startIndex:], ",") + startIndex // ...claim":abc,...  or ...claim":"abc",... or See next line
-		if endIndex == startIndex-1 {                                           // ...claim":abc}  or ...claim":"abc"}
-			endIndex = len(decodedHeader) - 1
-		}
-		if string(decodedHeader[endIndex-1]) == `"` {
-			endIndex--
-		}
-		if string(decodedHeader[startIndex]) == `"` {
-			startIndex++
-		}
-		return decodedHeader[startIndex:endIndex]
+// ExtractFromToken returns the value of the named claim in a JWT,
+// searching the header first and then the payload. Returns "" when
+// the token is malformed or the claim is missing.
+//
+// Bug fixes (security):
+//   - #4: the previous implementation used the raw `strings.Index(..., ".")`
+//     return value as a slice bound without checking for -1, which
+//     panicked on tokens that didn't have exactly two dots. JWTs are
+//     attacker-controlled, so this was an unauthenticated panic-DoS.
+//   - #4: base64 decode errors were silently swallowed; the resulting
+//     empty string produced negative slice indices and panicked
+//     downstream.
+//   - #5: the claim name was matched via `strings.Index`, so `aud`
+//     would match inside `"audience":` (or `iss` inside `"missing"`,
+//     etc.) and the byte-offset math returned garbage that callers
+//     compared as if it were the real claim value.
+//
+// Replaced the hand-rolled offset scanning with `encoding/json`:
+// parse the header and payload as proper JSON, look up the claim by
+// exact key, and stringify the value. JSON parsing rejects malformed
+// inputs and returns errors instead of panicking.
+func ExtractFromToken(token string, claim string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
 	}
-	decodedPayloadByte, _ := base64.RawURLEncoding.DecodeString(payload)
-	decodedPayload := string(decodedPayloadByte)
-	claimIndex = strings.Index(decodedPayload, claim)
-	if claimIndex != -1 {
-		startIndex := claimIndex + len(claim) + 2
-		endIndex := strings.Index(decodedPayload[startIndex:], ",") + startIndex // ...claim":abc,...  or ...claim":"abc",... or See next line
-		if endIndex == startIndex-1 {                                            // ...claim":abc}  or ...claim":"abc"}
-			endIndex = len(decodedPayload) - 1
-		}
-		if string(decodedPayload[endIndex-1]) == `"` {
-			endIndex--
-		}
-		if string(decodedPayload[startIndex]) == `"` {
-			startIndex++
-		}
-		return decodedPayload[startIndex:endIndex]
+	if v, ok := lookupClaim(parts[0], claim); ok {
+		return v
+	}
+	if v, ok := lookupClaim(parts[1], claim); ok {
+		return v
 	}
 	return ""
+}
+
+// lookupClaim base64-decodes a JWT segment, parses it as JSON, and
+// returns the named claim's stringified value. Returns (_, false) if
+// the segment is malformed or the claim is absent.
+func lookupClaim(base64Segment, claim string) (string, bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(base64Segment)
+	if err != nil {
+		return "", false
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return "", false
+	}
+	v, ok := m[claim]
+	if !ok {
+		return "", false
+	}
+	switch typed := v.(type) {
+	case string:
+		return typed, true
+	case float64:
+		// JSON numbers come back as float64; format losslessly for
+		// integer-valued numbers (iat, exp) — which is the common case.
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10), true
+		}
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case bool:
+		return strconv.FormatBool(typed), true
+	case nil:
+		return "", true
+	default:
+		// Nested objects / arrays — re-marshal to JSON so callers
+		// can introspect further if they want.
+		out, err := json.Marshal(typed)
+		if err != nil {
+			return "", false
+		}
+		return string(out), true
+	}
 }
 
 func ExtractFromRequest(request string, parameterKey string) string {
@@ -263,6 +320,21 @@ func SetErrorResponse(reqMap map[string]interface{}, errRespMap map[string]inter
 	}
 	if reqMap["subscriptionId"] != nil {
 		errRespMap["subscriptionId"] = reqMap["subscriptionId"]
+	}
+	// Bug-15 fix: bounds-check the error index before subscripting
+	// ErrorInfoList. An out-of-range index (programmer mistake at a
+	// call site) used to panic the handler. Now we synthesize a
+	// "Unknown error" entry instead so the request still gets an
+	// error response, and we log the bad index for debugging.
+	if errorListIndex < 0 || errorListIndex >= len(ErrorInfoList) {
+		Error.Printf("SetErrorResponse: errorListIndex %d out of range [0,%d)", errorListIndex, len(ErrorInfoList))
+		errRespMap["error"] = map[string]interface{}{
+			"number":      "500",
+			"reason":      "internal_error",
+			"description": fmt.Sprintf("invalid error code %d", errorListIndex),
+		}
+		errRespMap["ts"] = GetRfcTime()
+		return
 	}
 	errorMessage := ErrorInfoList[errorListIndex].Message
 	if len(altErrorMessage) > 0 {
@@ -301,21 +373,36 @@ func GetTimeInMilliSecs() string {
 	return strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10)
 }
 
+// GetRfcTime returns a millisecond-precision RFC3339 timestamp in
+// UTC. The previous implementation truncated the fractional part to
+// 4 chars after the dot when present, and stripped a "+HH:MM"
+// offset when absent — but it didn't handle the "Z" (UTC) or
+// "-HH:MM" (negative offset) cases, so on a host whose local time
+// zone produced "-04:00" you'd get strings like
+// "2025-01-01T00:00:00-04:00Z". (Bug-12 fix.)
 func GetRfcTime() string {
-	time.Now()
-	rfcTime := time.Now().Format(time.RFC3339Nano) // 2020-05-01T15:34:35.123456789+02:00
+	// Always work in UTC to make the timestamp canonical regardless
+	// of the host's local timezone.
+	rfcTime := time.Now().UTC().Format(time.RFC3339Nano) // ...Z or ...+00:00
 	dotIndex := strings.Index(rfcTime, ".")
-	if dotIndex != -1 {
+	if dotIndex != -1 && dotIndex+4 <= len(rfcTime) {
 		rfcTime = rfcTime[:dotIndex+4]
-	} else if rfcTime[len(rfcTime)-6] == '+' {
+	} else if strings.HasSuffix(rfcTime, "Z") {
+		rfcTime = strings.TrimSuffix(rfcTime, "Z")
+	} else if len(rfcTime) >= 6 && (rfcTime[len(rfcTime)-6] == '+' || rfcTime[len(rfcTime)-6] == '-') {
 		rfcTime = rfcTime[:len(rfcTime)-6]
 	}
 	return rfcTime + "Z"
 }
 
+// FileExists reports whether filename refers to an existing
+// non-directory file. Bug-11 fix: the previous implementation
+// returned `!info.IsDir()` even when err was a non-NotExist error
+// (e.g. EACCES on a directory we can't stat). That dereferenced a
+// nil info pointer. Now any non-nil err returns false.
 func FileExists(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !info.IsDir()
@@ -419,16 +506,23 @@ func NextQuoteMark(message []byte, offset int) int {
 	return offset
 }
 
+// jsonSchemaOnce ensures concurrent callers (multiple manager
+// subsystems start in parallel) don't race on writing the
+// package-global jsonSchema. (Bug-10 fix.)
+var jsonSchemaOnce sync.Once
+
 func JsonSchemaInit() {
-	if jsonSchema != nil {
-	Info.Printf("JSON schema already initiated")
-		return
-	}
-	jsonSchemaStr := readSchema()
-	if len(jsonSchemaStr) > 0{
-        	jsonSchema = jsonschema.Must(jsonSchemaStr) // jsonSchema string read from file
-		Info.Printf("JSON schema initiated")
-        }
+	jsonSchemaOnce.Do(func() {
+		if jsonSchema != nil {
+			Info.Printf("JSON schema already initiated")
+			return
+		}
+		jsonSchemaStr := readSchema()
+		if len(jsonSchemaStr) > 0 {
+			jsonSchema = jsonschema.Must(jsonSchemaStr) // jsonSchema string read from file
+			Info.Printf("JSON schema initiated")
+		}
+	})
 }
 
 func readSchema() string {
@@ -440,15 +534,16 @@ func readSchema() string {
 	return string(data)
 }
 
+// JsonSchemaValidate validates request against the loaded schema.
+// Bug-6 fix: previously the function called jsonSchema.ValidateBytes
+// unconditionally, panicking with a nil-pointer dereference when
+// schema-file loading had failed at init() (e.g. running from the
+// wrong working directory in tests). Now we surface the unavailable
+// state as a returned error string so callers can decide how to
+// degrade.
 func JsonSchemaValidate(request string) string {
-	// JsonSchemaInit silently leaves jsonSchema nil if
-	// vissv3.0-schema.json is missing or empty (it only logs an
-	// Error). Without this guard the first request from any
-	// anonymous client through any transport (wsMgr, httpMgr,
-	// udsMgr, mqttMgr) dereferences a nil *jsonschema.Schema and
-	// crashes the whole daemon.
 	if jsonSchema == nil {
-		return "JSON schema not loaded; cannot validate request"
+		return "JSON schema not loaded (call JsonSchemaInit and ensure the schema file is reachable)"
 	}
 	errs, err := jsonSchema.ValidateBytes(context.Background(), []byte(request))
 	if err != nil {

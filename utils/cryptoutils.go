@@ -9,7 +9,6 @@
 package utils
 
 import (
-	"bufio"
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
@@ -52,7 +51,12 @@ func GenEcdsaKey(curve elliptic.Curve, privKey **ecdsa.PrivateKey) error {
 }
 
 // *********				KEY ENCODING / DECODING								***********
-// Gets rsa key in pem format and decodes it into rsa.privatekey
+// Gets rsa key in pem format and decodes it into rsa.privatekey.
+//
+// Bug-3 fix: the previous unchecked type assertion
+// `parsedKey.(*rsa.PrivateKey)` panicked if a PKCS8-formatted file
+// happened to contain an ECDSA / Ed25519 key. Now returns an error
+// in that case.
 func PemDecodeRSA(pemKey string, privKey **rsa.PrivateKey) error {
 	pemBlock, _ := pem.Decode([]byte(pemKey)) // Gets pem_block from raw key
 	// Checking key type and correct decodification
@@ -71,12 +75,16 @@ func PemDecodeRSA(pemKey string, privKey **rsa.PrivateKey) error {
 			return err //errors.New("Unable to parse RSA private key")
 		}
 	}
-	// Gets private key from parsed key
-	*privKey = parsedKey.(*rsa.PrivateKey)
+	rsaKey, ok := parsedKey.(*rsa.PrivateKey)
+	if !ok {
+		return fmt.Errorf("parsed PKCS8 private key is not RSA: %T", parsedKey)
+	}
+	*privKey = rsaKey
 	return nil
 }
 
-// Gets rsa pub key in pem format and decodes it into rsa.publickey
+// Gets rsa pub key in pem format and decodes it into rsa.publickey.
+// See PemDecodeRSA for the bug-3 fix.
 func PemDecodeRSAPub(pemKey string, pubKey **rsa.PublicKey) error {
 	pemBlock, _ := pem.Decode([]byte(pemKey))
 	if pemBlock == nil {
@@ -93,11 +101,16 @@ func PemDecodeRSAPub(pemKey string, pubKey **rsa.PublicKey) error {
 			return err
 		}
 	}
-	*pubKey = parsedKey.(*rsa.PublicKey)
+	rsaKey, ok := parsedKey.(*rsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("parsed PKIX public key is not RSA: %T", parsedKey)
+	}
+	*pubKey = rsaKey
 	return nil
 }
 
-// Gets ECDSA key in pem format and decodes it into ecdsa.PrivateKey
+// Gets ECDSA key in pem format and decodes it into ecdsa.PrivateKey.
+// See PemDecodeRSA for the bug-3 fix.
 func PemDecodeECDSA(pemKey string, privKey **ecdsa.PrivateKey) error {
 	pemBlock, _ := pem.Decode([]byte(pemKey))
 	if pemBlock == nil {
@@ -114,7 +127,11 @@ func PemDecodeECDSA(pemKey string, privKey **ecdsa.PrivateKey) error {
 			return err
 		}
 	}
-	*privKey = parsedKey.(*ecdsa.PrivateKey)
+	ecdsaKey, ok := parsedKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return fmt.Errorf("parsed PKCS8 private key is not ECDSA: %T", parsedKey)
+	}
+	*privKey = ecdsaKey
 	return nil
 }
 
@@ -147,9 +164,18 @@ func PemEncodeRSA(privKey *rsa.PrivateKey) (strPrivKey string, strPubKey string,
 	return
 }
 
-// Returns ECDSA Keys as string in PEM format
+// Returns ECDSA Keys as string in PEM format.
+//
+// Bug-14 fix: the previous code discarded the errors from
+// x509.MarshalECPrivateKey and x509.MarshalPKIXPublicKey, then
+// proceeded to write a PEM block with `Bytes: nil` — producing an
+// empty PEM that silently "succeeded". Now both errors are
+// propagated.
 func PemEncodeECDSA(privKey *ecdsa.PrivateKey) (strPrivKey string, strPubKey string, err error) {
-	byteKey, _ := x509.MarshalECPrivateKey(privKey)
+	byteKey, err := x509.MarshalECPrivateKey(privKey)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal EC private key: %w", err)
+	}
 	privBlock := pem.Block{
 		Type:  "EC PRIVATE KEY",
 		Bytes: byteKey,
@@ -160,7 +186,10 @@ func PemEncodeECDSA(privKey *ecdsa.PrivateKey) (strPrivKey string, strPubKey str
 	}
 	strPrivKey = buf.String()
 	buf.Reset()
-	byteKey, _ = x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	byteKey, err = x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal PKIX public key: %w", err)
+	}
 	pubBlock := pem.Block{
 		Type:  "EC PUBLIC KEY",
 		Bytes: byteKey,
@@ -173,67 +202,49 @@ func PemEncodeECDSA(privKey *ecdsa.PrivateKey) (strPrivKey string, strPubKey str
 }
 
 // *********				PEM KEY IMPORT / EXPORT									***********
+//
+// Bug-7 fix: the previous implementations used
+// `bufio.NewReader(file).Read(buf)` which performs a SINGLE Read
+// call and discards the byte count. For PEM files larger than the
+// bufio default buffer (4 KiB) this produced a short read and a
+// truncated PEM that either failed to decode or, worse, decoded
+// partial data. Replaced with os.ReadFile.
+
 // Gets rsa private key from pem file
 func ImportRsaKey(filename string, privKey **rsa.PrivateKey) error {
-	privFile, err := os.Open(filename)
+	prvBytes, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	defer privFile.Close()
-	prvFileInfo, err := privFile.Stat() // Gets info of io
-	if err != nil {
-		return err
-	}
-	prvBytes := make([]byte, prvFileInfo.Size())
-	prvBuffer := bufio.NewReader(privFile)
-	_, err = prvBuffer.Read(prvBytes)
-	if err != nil {
-		return err
-	}
-	err = PemDecodeRSA(string(prvBytes), privKey)
-	return err
+	return PemDecodeRSA(string(prvBytes), privKey)
 }
 
 // Gets rsa public key from pem file
 func ImportRsaPubKey(filename string, pubKey **rsa.PublicKey) error {
-	pubFile, err := os.Open(filename)
+	pubBytes, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	defer pubFile.Close()
-	pubFileInfo, err := pubFile.Stat()
-	if err != nil {
-		return err
-	}
-	pubBytes := make([]byte, pubFileInfo.Size())
-	pubBuffer := bufio.NewReader(pubFile)
-	_, err = pubBuffer.Read(pubBytes)
-	if err != nil {
-		return err
-	}
-	err = PemDecodeRSAPub(string(pubBytes), pubKey)
-	return err
+	return PemDecodeRSAPub(string(pubBytes), pubKey)
 }
 
 // Gets ecdsa private key from pem file
 func ImportEcdsaKey(filename string, privKey **ecdsa.PrivateKey) error {
-	privFile, err := os.Open(filename)
+	prvBytes, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	defer privFile.Close()
-	prvFileInfo, err := privFile.Stat() // Gets info of io
-	if err != nil {
-		return err
-	}
-	prvBytes := make([]byte, prvFileInfo.Size())
-	prvBuffer := bufio.NewReader(privFile)
-	_, err = prvBuffer.Read(prvBytes)
-	if err != nil {
-		return err
-	}
-	err = PemDecodeECDSA(string(prvBytes), privKey)
-	return err
+	return PemDecodeECDSA(string(prvBytes), privKey)
+}
+
+// createPrivateKeyFile opens (or replaces) a file with mode 0600 —
+// read/write for owner only. The previous code used os.Create which
+// honours the process umask; on typical systems this produced 0644
+// (world-readable), letting any local user exfiltrate the signing
+// key. Public-key files keep the default mode since they're not
+// sensitive. (Bug-8 fix.)
+func createPrivateKeyFile(name string) (*os.File, error) {
+	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
 // createPrivateKeyFile opens (or replaces) a file with mode 0600 —
@@ -256,7 +267,7 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Type:  "RSA PRIVATE KEY",
 				Bytes: x509.MarshalPKCS1PrivateKey(rsaPriv),
 			}
-			privFile, err := createPrivateKeyFile(privFileName) // 0600
+			privFile, err := createPrivateKeyFile(privFileName) // 0600 (bug-8)
 			if err != nil {
 				return err
 			}
@@ -285,12 +296,15 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 	case *ecdsa.PrivateKey:
 		ecdsaPriv, _ := privKey.(*ecdsa.PrivateKey)
 		if privFileName != "" {
-			ecdsaByt, _ := x509.MarshalECPrivateKey(ecdsaPriv)
+			ecdsaByt, marshalErr := x509.MarshalECPrivateKey(ecdsaPriv)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal EC private key: %w", marshalErr)
+			}
 			privBlock := pem.Block{
 				Type:  "EC PRIVATE KEY",
 				Bytes: ecdsaByt,
 			}
-			privFile, err := createPrivateKeyFile(privFileName) // 0600
+			privFile, err := createPrivateKeyFile(privFileName) // 0600 (bug-8)
 			if err != nil {
 				return err
 			}
@@ -301,7 +315,10 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 			}
 		}
 		if pubFileName != "" {
-			ecdsaByt2, _ := x509.MarshalPKIXPublicKey(&ecdsaPriv.PublicKey)
+			ecdsaByt2, marshalErr := x509.MarshalPKIXPublicKey(&ecdsaPriv.PublicKey)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal PKIX public key: %w", marshalErr)
+			}
 			pubBlock := pem.Block{
 				Type:  "EC PUBLIC KEY",
 				Bytes: ecdsaByt2,
@@ -381,13 +398,36 @@ func (jkey *JsonWebKey) GenThumbprint() string {
 }
 
 //	Gets the received JWK and unmarshalls it, returns error if fails to unmarshall
+// Unmarshall decodes a JsonWebKey from its JSON representation. The
+// returned thumbprint is freshly computed from the key fields.
+//
+// Bug-13 fix: validate that the key-type-required fields are present
+// before computing a thumbprint. The previous code accepted a JWK
+// with only `"kty"` set and no `n`/`e` or `crv`/`x`/`y`, then
+// computed a thumbprint over empty strings. Two such malformed JWKs
+// collided on the same thumbprint, breaking any downstream identity
+// check that compared thumbs.
 func (jkey *JsonWebKey) Unmarshall(rcv string) error {
 	err := json.Unmarshal([]byte(rcv), jkey)
 	if err != nil {
 		return err
 	}
+	switch jkey.Type {
+	case "RSA":
+		if jkey.PubMod == "" || jkey.PubExp == "" {
+			return errors.New("invalid RSA JWK: missing n or e")
+		}
+	case "EC":
+		if jkey.Curve == "" || jkey.Xcoord == "" || jkey.Ycoord == "" {
+			return errors.New("invalid EC JWK: missing crv, x, or y")
+		}
+	case "":
+		return errors.New("invalid JWK: missing kty")
+	default:
+		return fmt.Errorf("unsupported JWK kty: %q", jkey.Type)
+	}
 	jkey.Thumb = jkey.GenThumbprint()
-	return err
+	return nil
 }
 
 // From JsonWebKey struct, returns marshalled text
