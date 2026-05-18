@@ -10,14 +10,43 @@ package wsMgrFT
 import (
 	utils "github.com/covesa/vissr/utils"
 	"bytes"
+	"fmt"
 	"os"
 	"io"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"net/http"
+	"path/filepath"
+	"strings"
+	"sync"
 	"github.com/gorilla/websocket"
 )
+
+// sessionListMu protects the sessionList read-modify-write in
+// getDataSessionIndex / returnDataSessionIndex from concurrent WS
+// upgrade goroutines.
+var sessionListMu sync.Mutex
+
+// validateTransferName rejects file-transfer names that contain path
+// separators or parent-directory references. Without this, a VISS
+// client that issues a `set` against a FileDescriptor actuator
+// controls the `name` field that initFtSession concatenates onto the
+// hardcoded "./" base path and passes to os.Create / os.Open — i.e.
+// arbitrary file write/read on the in-vehicle host with the daemon's
+// privileges (e.g. name = "../../etc/cron.d/owned").
+func validateTransferName(name string) error {
+	if name == "" {
+		return fmt.Errorf("empty filename")
+	}
+	if filepath.Base(name) != name {
+		return fmt.Errorf("filename %q contains path separators", name)
+	}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("filename %q contains parent-directory reference", name)
+	}
+	return nil
+}
 
 var MuxServer = []*http.ServeMux{
 	http.NewServeMux(),
@@ -249,6 +278,13 @@ func createUlResponse(uid []byte, messNo byte, lastMessage byte, chunkSize []byt
 
 func initFtSession(clientRequest utils.FileTransferCache) int {
 	status := 1  // assume error
+	// Reject client-controlled names that would escape the transfer
+	// directory before any os.Create / os.Open call. See
+	// validateTransferName for the underlying threat model.
+	if err := validateTransferName(clientRequest.Name); err != nil {
+		utils.Error.Printf("initFtSession: rejecting unsafe filename: %s", err)
+		return status
+	}
 	cacheIndex := getFileTransferCacheIndex(clientRequest.Uid)
 	if cacheIndex != -1 {
 		var fd *os.File
@@ -387,8 +423,18 @@ func dataSession(conn *websocket.Conn, clientChannel chan []byte, sessionIndex i
 }
 
 func getDataSessionIndex() int {
-	for i := 0; i< MAXSESSIONS; i++ {
+	sessionListMu.Lock()
+	defer sessionListMu.Unlock()
+	for i := 0; i < MAXSESSIONS; i++ {
 		if !sessionList[i] {
+			// Claim the slot before returning. The original code only
+			// scanned for a free slot and never marked it as taken, so
+			// the loop always returned 0 — every concurrent data
+			// session collided on the same clientChannel[0] and the
+			// MAXSESSIONS slots were never actually used. Combined
+			// with sessionListMu, this also prevents two concurrent
+			// upgrades from both claiming the same slot.
+			sessionList[i] = true
 			return i
 		}
 	}
@@ -396,5 +442,7 @@ func getDataSessionIndex() int {
 }
 
 func returnDataSessionIndex(index int) {
+	sessionListMu.Lock()
+	defer sessionListMu.Unlock()
 	sessionList[index] = false
 }

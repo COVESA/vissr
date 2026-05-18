@@ -18,6 +18,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var grpcCompression utils.Encoding
@@ -56,7 +57,21 @@ const MAXGRPCCLIENTS = 50
 
 var grpcClientIndexList []bool
 
+// grpcStateMu serialises access to grpcRoutingDataList and
+// grpcClientIndexList. Per-RPC SubscribeRequest goroutines call
+// resetGrpcRoutingData on stream.Context().Done() and on send errors,
+// while the manager loop concurrently calls getClientId,
+// setGrpcRoutingData, updateGrpcRoutingData, getGrpcRoutingData, and
+// getSubscribeRoutingData on the same slices. Without the lock, a
+// disconnecting subscriber concurrent with a new client produces slot
+// leaks, cross-talk to the wrong client, or a runtime panic on
+// concurrent slice mutation. Mirrors the WsClientIndexMu /
+// udsClientIndexMu / sessionListMu mutexes added in PR #119 / batch 3.
+var grpcStateMu sync.Mutex
+
 func getClientId() int {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcClientIndexList[i] == false {
 			grpcClientIndexList[i] = true
@@ -67,6 +82,8 @@ func getClientId() int {
 }
 
 func getGrpcRoutingData(clientId int) (chan string, bool) {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			return grpcRoutingDataList[i].GrpcRespChannel, grpcRoutingDataList[i].IsMultipleEvents
@@ -77,6 +94,8 @@ func getGrpcRoutingData(clientId int) (chan string, bool) {
 
 func updateGrpcRoutingData(clientId int, subscriptionId string) {
 	//utils.Info.Printf("updateGrpcRoutingData:clientId=%d, subscriptionId=%s", clientId, subscriptionId)
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			grpcRoutingDataList[i].SubscriptionId = subscriptionId
@@ -87,6 +106,8 @@ func updateGrpcRoutingData(clientId int, subscriptionId string) {
 
 func getSubscribeRoutingData(unsubResp string) (int, chan string) {
 	subscriptionId := getSubscriptionId(unsubResp)
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].SubscriptionId == subscriptionId {
 			return grpcRoutingDataList[i].ClientId, grpcRoutingDataList[i].GrpcRespChannel
@@ -95,11 +116,22 @@ func getSubscribeRoutingData(unsubResp string) (int, chan string) {
 	return -1, nil
 }
 
-func resetClientId(clientId int) {
+// resetClientIdLocked clears a client-id slot. Caller must hold
+// grpcStateMu. Used internally by resetGrpcRoutingData to avoid
+// double-locking.
+func resetClientIdLocked(clientId int) {
 	grpcClientIndexList[clientId] = false
 }
 
+func resetClientId(clientId int) {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
+	resetClientIdLocked(clientId)
+}
+
 func initClientIdList() {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		grpcClientIndexList[i] = false
 	}
@@ -107,6 +139,8 @@ func initClientIdList() {
 
 func setGrpcRoutingData(clientId int, grpcRespChan chan string, isMultipleEvent bool) bool {
 	//utils.Info.Printf("setGrpcRoutingData:clientId=%d, isMultipleEvent=%d", clientId, isMultipleEvent)
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == -1 {
 			grpcRoutingDataList[i].ClientId = clientId
@@ -120,16 +154,20 @@ func setGrpcRoutingData(clientId int, grpcRespChan chan string, isMultipleEvent 
 
 func resetGrpcRoutingData(clientId int) {
 	utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			grpcRoutingDataList[i].ClientId = -1
-			resetClientId(clientId)
+			resetClientIdLocked(clientId)
 			break
 		}
 	}
 }
 
 func iniGrpcRoutingDataList() {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		grpcRoutingDataList[i].ClientId = -1
 	}
