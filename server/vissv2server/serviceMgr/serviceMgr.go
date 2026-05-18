@@ -712,6 +712,12 @@ func historyServer(historyAccessChan chan string, vss_data []byte) {
 	}
 }
 
+// MAXHISTORYBUFSIZE caps the per-path history ring-buffer that a
+// 'create' history-control request can allocate. Without an upper
+// bound, an attacker-supplied buf-size of e.g. 2^31-1 makes
+// make([]string, bufSize) blow up the heap.
+const MAXHISTORYBUFSIZE = 10000
+
 func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists bool) string {
 	if listExists == false {
 		utils.Error.Printf("processHistoryCtrl:Path list not found")
@@ -723,16 +729,46 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 		utils.Error.Printf("processHistoryCtrl:Missing command param")
 		return "400 Bad Request"
 	}
-	index := getHistoryListIndex(requestMap["path"].(string))
-	switch requestMap["action"].(string) {
+	// Type-assert path and action defensively. The request comes
+	// over the local history-control UDS from a peer we treat as
+	// untrusted; an unchecked .(string) on a non-string JSON value
+	// would panic the entire serviceMgr.
+	pathStr, ok := requestMap["path"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryCtrl: path is not a string")
+		return "400 Bad Request"
+	}
+	actionStr, ok := requestMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryCtrl: action is not a string")
+		return "400 Bad Request"
+	}
+	index := getHistoryListIndex(pathStr)
+	if index == -1 {
+		// getHistoryListIndex returns -1 for unknown paths. Every
+		// switch arm below indexes historyList[index]; without this
+		// guard, an unknown path produces historyList[-1] and panics.
+		utils.Error.Printf("processHistoryCtrl: unknown path %q", pathStr)
+		return "404 Not Found"
+	}
+	switch actionStr {
 	case "create":
 		if requestMap["buf-size"] == nil {
 			utils.Error.Printf("processHistoryCtrl:Buffer size missing")
 			return "400 Bad Request"
 		}
-		bufSize, err := strconv.Atoi(requestMap["buf-size"].(string))
+		bufSizeStr, ok := requestMap["buf-size"].(string)
+		if !ok {
+			utils.Error.Printf("processHistoryCtrl: buf-size is not a string")
+			return "400 Bad Request"
+		}
+		bufSize, err := strconv.Atoi(bufSizeStr)
 		if err != nil {
-			utils.Error.Printf("processHistoryCtrl:Buffer size malformed=%s", requestMap["buf-size"].(string))
+			utils.Error.Printf("processHistoryCtrl:Buffer size malformed=%s", bufSizeStr)
+			return "400 Bad Request"
+		}
+		if bufSize < 0 || bufSize > MAXHISTORYBUFSIZE {
+			utils.Error.Printf("processHistoryCtrl:Buffer size out of range: %d (allowed 0..%d)", bufSize, MAXHISTORYBUFSIZE)
 			return "400 Bad Request"
 		}
 		historyList[index].BufSize = bufSize
@@ -742,9 +778,14 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 			utils.Error.Printf("processHistoryCtrl:Frequency missing")
 			return "400 Bad Request"
 		}
-		freq, err := strconv.Atoi(requestMap["frequency"].(string))
+		freqStr, ok := requestMap["frequency"].(string)
+		if !ok {
+			utils.Error.Printf("processHistoryCtrl: frequency is not a string")
+			return "400 Bad Request"
+		}
+		freq, err := strconv.Atoi(freqStr)
 		if err != nil {
-			utils.Error.Printf("processHistoryCtrl:Frequeny malformed=%s", requestMap["frequency"].(string))
+			utils.Error.Printf("processHistoryCtrl:Frequeny malformed=%s", freqStr)
 			return "400 Bad Request"
 		}
 		historyList[index].Frequency = freq
@@ -763,7 +804,7 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 		historyList[index].BufIndex = 0
 		historyList[index].Buffer = nil
 	default:
-		utils.Error.Printf("processHistoryCtrl:Unknown command:action=%s", requestMap["action"].(string))
+		utils.Error.Printf("processHistoryCtrl:Unknown command:action=%s", actionStr)
 		return "400 Bad Request"
 	}
 	return "200 OK"
@@ -790,9 +831,33 @@ func convertFromIsoTime(isoTime string) (time.Time, error) {
 func processHistoryGet(request string) string { // {"path":"X", "period":"Y"}
 	var requestMap = make(map[string]interface{})
 	utils.MapRequest(request, &requestMap)
-	index := getHistoryListIndex(requestMap["path"].(string))
+	// Sibling of processHistoryCtrl. Same defensive shape: type-
+	// assert path/period safely, reject unknown path before any
+	// historyList[index] read. The previous version would panic the
+	// entire serviceMgr on a malformed subscribe/history request,
+	// reachable from any anonymous network peer when --history is
+	// enabled.
+	pathStr, ok := requestMap["path"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: path is not a string")
+		return ""
+	}
+	periodStr, ok := requestMap["period"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: period is not a string")
+		return ""
+	}
+	index := getHistoryListIndex(pathStr)
+	if index == -1 {
+		utils.Error.Printf("processHistoryGet: unknown path %q", pathStr)
+		return ""
+	}
 	currentTs := getCurrentUtcTime()
-	periodTime, _ := convertFromIsoTime(requestMap["period"].(string))
+	periodTime, err := convertFromIsoTime(periodStr)
+	if err != nil {
+		utils.Error.Printf("processHistoryGet: period %q malformed: %s", periodStr, err)
+		return ""
+	}
 	oldTs := currentTs.Add(time.Hour*(time.Duration)((24*periodTime.Day()+periodTime.Hour())*(-1)) -
 		time.Minute*(time.Duration)(periodTime.Minute()) - time.Second*(time.Duration)(periodTime.Second())).UTC()
 	var matches int

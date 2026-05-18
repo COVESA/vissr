@@ -299,6 +299,59 @@ utils.Info.Printf("%s not in scope", testpath)
 	return false
 }
 
+// processFeederServerMessage handles a single decoded server message
+// (one JSON object received over the feeder's UDS connection).
+// Extracted from udsReader's inline action-switch so the per-action
+// behaviour (set / subscribe / unsubscribe / update) can be unit-
+// tested independently of the goroutine / socket machinery.
+//
+// Behaviour-preserving extraction: the function body below is a
+// straight move from the original udsReader for-loop. See
+// feederv4_dispatch_test.go for the regression / coverage tests.
+func processFeederServerMessage(serverMessageMap map[string]interface{}, inputChan chan DomainData, udsChan chan string, configData ConfigData) {
+	if serverMessageMap["action"] != nil {
+		switch serverMessageMap["action"].(string) {
+			case "set":
+				domainData, _ := splitToDomainDataAndTs(serverMessageMap["data"].(map[string]interface{}))
+				if inFeederScope(domainData.Name, configData.Scope) {
+					inputChan <- domainData
+				}
+			case "subscribe":
+				pathList := serverMessageMap["path"].([]interface{})
+				for i := 0; i < len(pathList); i++ {
+					if onNotificationList(pathList[i].(string)) == -1 {
+						notificationList = append(notificationList, pathList[i].(string))
+					}
+				}
+				response := `{"action": "subscribe", "status": "ok"}`
+				udsChan <- response
+			case "unsubscribe":
+				pathList := serverMessageMap["path"].([]interface{})
+				for i := 0; i < len(pathList); i++ {
+					if onNotificationList(pathList[i].(string)) != -1 {
+						notificationList = slices.Delete(notificationList, i, i+1)
+					}
+				}
+			case "update":
+				defaultArray := serverMessageMap["defaultList"].([]interface{})
+				var domainData DomainData
+				for i := 0; i < len(defaultArray); i++ {
+					for k, v := range defaultArray[i].(map[string]interface{}) {
+//						utils.Info.Printf("%d: key=%s, value=%s", i, k, v.(string))
+						if k == "path" {
+							domainData.Name = v.(string)
+						} else if k == "default" {
+							domainData.Value = v.(string)
+						}
+					}
+					statestorageSet(domainData.Name, domainData.Value, utils.GetRfcTime())
+				}
+			default:
+				utils.Error.Printf("udsReader:Message action unknown = %s", serverMessageMap["action"].(string))
+		}
+	}
+}
+
 func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string, configData ConfigData) {
 	defer conn.Close()
 	buf := make([]byte, 8192)
@@ -320,47 +373,7 @@ func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string, co
 			utils.Error.Printf("udsReader:Unmarshal error=%s", err)
 			continue
 		}
-		if serverMessageMap["action"] != nil {
-			switch serverMessageMap["action"].(string) {
-				case "set":
-					domainData, _ := splitToDomainDataAndTs(serverMessageMap["data"].(map[string]interface{}))
-					if inFeederScope(domainData.Name, configData.Scope) {
-						inputChan <- domainData
-					}
-				case "subscribe":
-					pathList := serverMessageMap["path"].([]interface{})
-					for i := 0; i < len(pathList); i++ {
-						if onNotificationList(pathList[i].(string)) == -1 {
-							notificationList = append(notificationList, pathList[i].(string))
-						}
-					}
-					response := `{"action": "subscribe", "status": "ok"}`
-					udsChan <- response
-				case "unsubscribe":
-					pathList := serverMessageMap["path"].([]interface{})
-					for i := 0; i < len(pathList); i++ {
-						if onNotificationList(pathList[i].(string)) != -1 {
-							notificationList = slices.Delete(notificationList, i, i+1)
-						}
-					}
-				case "update":
-					defaultArray := serverMessageMap["defaultList"].([]interface{})
-					var domainData DomainData
-					for i := 0; i < len(defaultArray); i++ {
-						for k, v := range defaultArray[i].(map[string]interface{}) {
-//							utils.Info.Printf("%d: key=%s, value=%s", i, k, v.(string))
-							if k == "path" {
-								domainData.Name = v.(string)
-							} else if k == "default" {
-								domainData.Value = v.(string)
-							}
-						}
-						statestorageSet(domainData.Name, domainData.Value, utils.GetRfcTime())
-					}
-				default:
-					utils.Error.Printf("udsReader:Message action unknown = %s", serverMessageMap["action"].(string))
-			}
-		}
+		processFeederServerMessage(serverMessageMap, inputChan, udsChan, configData)
 	}
 }
 
