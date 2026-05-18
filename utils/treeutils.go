@@ -15,13 +15,32 @@ import (
 	"os"
 	"bufio"
 	"encoding/json"
+	"errors"
+	"io"
 	"sort"
 	"strings"
 	"strconv"
+	"sync"
 	"fmt"
 )
 
+// MAX_TREE_DEPTH caps recursion in traverseAndReadNode so a crafted
+// VSS binary file can't blow the stack via deeply-nested branches.
+// Modern production VSS trees max out around 10-15 levels.
+const MAX_TREE_DEPTH = 64
+
+// MAX_TREE_NODES caps the total nodes read from a binary VSS file.
+// A pathological branching-factor-255 file could otherwise eat
+// gigabytes of memory before the parse finishes.
+const MAX_TREE_NODES = 200_000
+
+// treeFp is the file handle reused across VSSReadTree / VSSWriteTree
+// / CreatePathListFile / PopulateDefault. The mutex guards against
+// concurrent calls clobbering it. Long-term these helpers should
+// thread a *os.File through their call chains; the mutex is the
+// minimum-invasive fix.
 var treeFp *os.File
+var treeFpMu sync.Mutex
 
 type HimTree struct {
 	RootName string
@@ -293,70 +312,171 @@ func printReadMetadata() {
 	fmt.Printf("Max depth of VSS tree = %d\n", readTreeMetadata.MaxTreeDepth)
 }
 
-func countAllowedElements(allowedStr string) int {  // allowed string has format "XXallowed1XXallowed2...XXallowedx", where XX are hex values; X=[0-9,A-F]
-    nrOfAllowed := 0
-    index := 0
-    for  index < len(allowedStr) {
-        hexLen := allowedStr[index:index+2]
-        allowedLen := hexToInt(byte(hexLen[0])) * 16 + hexToInt(byte(hexLen[1]))
-        index += allowedLen + 2
-        nrOfAllowed++
-    }
-    return nrOfAllowed
+// allowed string has format "XXallowed1XXallowed2...XXallowedx",
+// where XX are hex values; X=[0-9,A-F]. Returns the count of
+// elements, or an error if the format is malformed.
+//
+// Bug-12 fix: the previous countAllowedElements / extractAllowedElement
+// blindly trusted the hex bytes from the file. A non-hex byte (e.g.
+// a space or lowercase letter) made hexToInt return a negative or
+// large number, which then made the index walk past the buffer end
+// and panic on the next slice. Both helpers now validate every hex
+// digit and bounds-check every slice operation.
+func countAllowedElements(allowedStr string) int {
+	n, _ := countAllowedElementsE(allowedStr)
+	return n
 }
 
+func countAllowedElementsE(allowedStr string) (int, error) {
+	nrOfAllowed := 0
+	index := 0
+	for index < len(allowedStr) {
+		if index+2 > len(allowedStr) {
+			return 0, fmt.Errorf("allowed buffer truncated at index %d (need 2 hex bytes for length prefix)", index)
+		}
+		allowedLen, err := decodeAllowedLen(allowedStr[index], allowedStr[index+1])
+		if err != nil {
+			return 0, fmt.Errorf("at index %d: %w", index, err)
+		}
+		next := index + allowedLen + 2
+		if next > len(allowedStr) {
+			return 0, fmt.Errorf("allowed element at index %d declares len=%d but buffer ends at %d", index, allowedLen, len(allowedStr))
+		}
+		index = next
+		nrOfAllowed++
+	}
+	return nrOfAllowed, nil
+}
+
+// decodeAllowedLen decodes two hex digits into the [0,255] length
+// they encode. Validates that each byte is a real hex digit and
+// returns an error otherwise.
+func decodeAllowedLen(hi, lo byte) (int, error) {
+	h, err := hexToIntStrict(hi)
+	if err != nil {
+		return 0, err
+	}
+	l, err := hexToIntStrict(lo)
+	if err != nil {
+		return 0, err
+	}
+	return h*16 + l, nil
+}
+
+// hexToInt remains the legacy (unchecked) variant — kept for
+// backward compat with any caller that wants the old behaviour.
+// New code should use hexToIntStrict.
 func hexToInt(hexDigit byte) int {
-    if (hexDigit <= '9') {
-        return (int)(hexDigit - '0')
-    }
-    return (int)(hexDigit - 'A' + 10)
+	if hexDigit <= '9' {
+		return int(hexDigit - '0')
+	}
+	return int(hexDigit - 'A' + 10)
+}
+
+// hexToIntStrict validates the input is one of [0-9A-F] before
+// decoding. Lowercase a-f is also accepted for robustness. Returns
+// an error on any other byte.
+func hexToIntStrict(hexDigit byte) (int, error) {
+	switch {
+	case hexDigit >= '0' && hexDigit <= '9':
+		return int(hexDigit - '0'), nil
+	case hexDigit >= 'A' && hexDigit <= 'F':
+		return int(hexDigit-'A') + 10, nil
+	case hexDigit >= 'a' && hexDigit <= 'f':
+		return int(hexDigit-'a') + 10, nil
+	default:
+		return 0, fmt.Errorf("invalid hex digit %q (0x%02x)", hexDigit, hexDigit)
+	}
 }
 
 func intToHex(intVal int) []byte {
-    if (intVal > 255) {
-        return nil
-    }
-    hexVal := make([]byte, 2)
-    hexVal[0] = hexDigit(intVal/16)
-    hexVal[1] = hexDigit(intVal%16)
-    return hexVal
+	if intVal < 0 || intVal > 255 {
+		// Bug note (related to but not part of #12): the original
+		// returned nil here, which the writer then passed straight
+		// to treeFp.Write(nil) — silently corrupting the output by
+		// dropping a length byte. Return two zero hex digits ("00")
+		// so the writer always produces a syntactically valid
+		// length, and log loudly. Callers that produce lengths
+		// >255 must change to a wider length field.
+		Error.Printf("intToHex: value %d out of [0,255] range; writing 00 instead", intVal)
+		return []byte{'0', '0'}
+	}
+	hexVal := make([]byte, 2)
+	hexVal[0] = hexDigit(intVal / 16)
+	hexVal[1] = hexDigit(intVal % 16)
+	return hexVal
 }
 
 func hexDigit(value int) byte {
-    if (value < 10) {
-        return byte(value + '0')
-    }
-    return byte(value - 10 + 'A')
+	if value < 10 {
+		return byte(value + '0')
+	}
+	return byte(value - 10 + 'A')
 }
 
 func extractAllowedElement(allowedBuf string, elemIndex int) string {
-    var allowedstart int
-    var allowedend int
-    bufIndex := 0
-    for alloweds := 0 ; alloweds <= elemIndex ; alloweds++ {
-        hexLen := allowedBuf[bufIndex:bufIndex+2]
-        allowedLen := hexToInt(byte(hexLen[0])) * 16 + hexToInt(byte(hexLen[1]))
-        allowedstart = bufIndex + 2
-        allowedend = allowedstart + allowedLen
-        bufIndex += allowedLen + 2
-    }
-    return allowedBuf[allowedstart:allowedend]
+	s, _ := extractAllowedElementE(allowedBuf, elemIndex)
+	return s
 }
 
-func traverseAndReadNode(parentNode *Node_t) *Node_t {
-	var thisNode Node_t
+func extractAllowedElementE(allowedBuf string, elemIndex int) (string, error) {
+	if elemIndex < 0 {
+		return "", fmt.Errorf("negative element index %d", elemIndex)
+	}
+	bufIndex := 0
+	for alloweds := 0; alloweds <= elemIndex; alloweds++ {
+		if bufIndex+2 > len(allowedBuf) {
+			return "", fmt.Errorf("element %d: buffer truncated at %d (need 2 hex bytes for length)", alloweds, bufIndex)
+		}
+		allowedLen, err := decodeAllowedLen(allowedBuf[bufIndex], allowedBuf[bufIndex+1])
+		if err != nil {
+			return "", fmt.Errorf("element %d: %w", alloweds, err)
+		}
+		allowedStart := bufIndex + 2
+		allowedEnd := allowedStart + allowedLen
+		if allowedEnd > len(allowedBuf) {
+			return "", fmt.Errorf("element %d declares len=%d but buffer ends at %d", alloweds, allowedLen, len(allowedBuf))
+		}
+		if alloweds == elemIndex {
+			return allowedBuf[allowedStart:allowedEnd], nil
+		}
+		bufIndex = allowedEnd
+	}
+	return "", fmt.Errorf("element %d not found", elemIndex)
+}
+
+// traverseAndReadNode recursively reads nodes from treeFp into an
+// in-memory tree. Returns an error on:
+//   - short read / EOF / I/O error (bug-1 fix: readBytesE)
+//   - depth exceeding MAX_TREE_DEPTH (bug-2 fix)
+//   - total node count exceeding MAX_TREE_NODES (bug-3 fix)
+// On error, the partially-built tree is discarded by the caller.
+func traverseAndReadNode(parentNode *Node_t) (*Node_t, error) {
 	updateReadMetadata(true)
-	populateNode(&thisNode)
+	defer updateReadMetadata(false)
+	if readTreeMetadata.CurrentDepth > MAX_TREE_DEPTH {
+		return nil, fmt.Errorf("VSS tree depth exceeds MAX_TREE_DEPTH=%d (refusing potentially malicious input)", MAX_TREE_DEPTH)
+	}
+	if readTreeMetadata.TotalNodes > MAX_TREE_NODES {
+		return nil, fmt.Errorf("VSS tree node count exceeds MAX_TREE_NODES=%d (refusing potentially malicious input)", MAX_TREE_NODES)
+	}
+	var thisNode Node_t
+	if err := populateNode(&thisNode); err != nil {
+		return nil, fmt.Errorf("populateNode at depth=%d node=%d: %w", readTreeMetadata.CurrentDepth, readTreeMetadata.TotalNodes, err)
+	}
 	thisNode.Parent = parentNode
-	if (thisNode.Children > 0) {
-               thisNode.Child = make([]*Node_t, thisNode.Children)
+	if thisNode.Children > 0 {
+		thisNode.Child = make([]*Node_t, thisNode.Children)
 	}
 	var childNo uint8
-	for childNo = 0 ; childNo < thisNode.Children ; childNo++ {
-		thisNode.Child[childNo] = traverseAndReadNode(&thisNode)
+	for childNo = 0; childNo < thisNode.Children; childNo++ {
+		child, err := traverseAndReadNode(&thisNode)
+		if err != nil {
+			return nil, err
+		}
+		thisNode.Child[childNo] = child
 	}
-	updateReadMetadata(false)
-	return &thisNode
+	return &thisNode, nil
 }
 
 func traverseAndWriteNode(node *Node_t) {
@@ -369,17 +489,24 @@ func traverseAndWriteNode(node *Node_t) {
 
 func traverseNode(thisNode *Node_t, context *SearchContext_t) int {
 	speculationSucceded := 0
+	if thisNode == nil { // bug-11 defensive guard
+		return 0
+	}
 	incDepth(thisNode, context)
 	// CurrentDepth=1 tested as rootNode name is already verified, and does not have to match
 	if context.CurrentDepth == 1 || compareNodeName(VSSgetName(thisNode), getPathSegment(0, context)) {
 		var done bool
 		speculationSucceded = saveMatchingNode(thisNode, context, &done)
-		if (done == false) {
+		if done == false {
 			numOfChildren := VSSgetNumOfChildren(thisNode)
 			childPathName := getPathSegment(1, context)
-			for i := 0 ; i < numOfChildren ; i++ {
-				if compareNodeName(VSSgetName(VSSgetChild(thisNode, i)), childPathName) {
-					speculationSucceded += traverseNode(VSSgetChild(thisNode, i), context)
+			for i := 0; i < numOfChildren; i++ {
+				child := VSSgetChild(thisNode, i)
+				if child == nil { // bug-11: skip nil children from a partially-populated tree
+					continue
+				}
+				if compareNodeName(VSSgetName(child), childPathName) {
+					speculationSucceded += traverseNode(child, context)
 				}
 			}
 		}
@@ -536,63 +663,154 @@ func decDepth(speculationSucceded int, context *SearchContext_t) {
 	context.CurrentDepth--
 }
 
+// readBytes is kept for callers that don't care about errors (legacy).
+// New code should use readBytesE which propagates short-read / EOF
+// errors. (Bug-1: the original silently ignored io errors.)
 func readBytes(numOfBytes uint32) []byte {
-	if (numOfBytes > 0) {
-	    buf := make([]byte, numOfBytes)
-	    treeFp.Read(buf)
-	    return buf
+	b, _ := readBytesE(numOfBytes)
+	return b
+}
+
+// readBytesE reads exactly numOfBytes from treeFp using io.ReadFull,
+// so a truncated file produces an error instead of zero-padded
+// silent corruption. (Bug-1 fix.)
+func readBytesE(numOfBytes uint32) ([]byte, error) {
+	if numOfBytes == 0 {
+		return nil, nil
 	}
-	return nil
+	if treeFp == nil {
+		return nil, errors.New("readBytesE: treeFp is nil (parser called without an open file)")
+	}
+	buf := make([]byte, numOfBytes)
+	if _, err := io.ReadFull(treeFp, buf); err != nil {
+		return nil, fmt.Errorf("readBytesE: %w", err)
+	}
+	return buf, nil
+}
+
+// readUint8 reads a single byte as uint8 with error propagation.
+func readUint8() (uint8, error) {
+	b, err := readBytesE(1)
+	if err != nil {
+		return 0, err
+	}
+	return deSerializeUInt(b).(uint8), nil
+}
+
+// readUint16 reads two bytes as uint16 with error propagation.
+func readUint16() (uint16, error) {
+	b, err := readBytesE(2)
+	if err != nil {
+		return 0, err
+	}
+	return deSerializeUInt(b).(uint16), nil
+}
+
+// readLenPrefixedString reads a uint8 length prefix and then that
+// many bytes, returning them as a string. Error propagated.
+func readLenPrefixedString8() (string, error) {
+	n, err := readUint8()
+	if err != nil {
+		return "", err
+	}
+	b, err := readBytesE(uint32(n))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // The reading order must be synchronized with the writing order in the binary tool
-func populateNode(thisNode *Node_t) {
-	NameLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.Name = string(readBytes((uint32)(NameLen)))
+func populateNode(thisNode *Node_t) error {
+	var err error
+	if thisNode.Name, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("name: %w", err)
+	}
+	if thisNode.NodeType, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("nodeType: %w", err)
+	}
+	if thisNode.Uuid, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("uuid: %w", err)
+	}
+	descrLen, err := readUint16()
+	if err != nil {
+		return fmt.Errorf("descrLen: %w", err)
+	}
+	descrBytes, err := readBytesE(uint32(descrLen))
+	if err != nil {
+		return fmt.Errorf("description: %w", err)
+	}
+	thisNode.Description = string(descrBytes)
 
-	NodeTypeLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.NodeType = string(readBytes((uint32)(NodeTypeLen)))
-
-	UuidLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.Uuid = string(readBytes((uint32)(UuidLen)))
-
-	DescrLen := deSerializeUInt(readBytes(2)).(uint16)
-	thisNode.Description = string(readBytes((uint32)(DescrLen)))
-
-	DatatypeLen := deSerializeUInt(readBytes(1)).(uint8)
+	// Bug-6 fix: read the datatype bytes UNCONDITIONALLY. The
+	// original code only consumed the bytes when NodeType != BRANCH,
+	// but the writer always writes them (just usually empty for
+	// BRANCH). A malformed/malicious tree where a BRANCH had a
+	// non-empty datatype length would desync the read stream and
+	// turn the rest of the file into garbage. Always consuming the
+	// declared bytes keeps reader/writer symmetric.
+	datatypeLen, err := readUint8()
+	if err != nil {
+		return fmt.Errorf("datatypeLen: %w", err)
+	}
+	datatypeBytes, err := readBytesE(uint32(datatypeLen))
+	if err != nil {
+		return fmt.Errorf("datatype: %w", err)
+	}
 	if thisNode.NodeType != BRANCH {
-	    thisNode.Datatype = string(readBytes((uint32)(DatatypeLen)))
+		thisNode.Datatype = string(datatypeBytes)
 	}
 
-	MinLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.Min = string(readBytes((uint32)(MinLen)))
-
-	MaxLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.Max = string(readBytes((uint32)(MaxLen)))
-
-	UnitLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.Unit = string(readBytes((uint32)(UnitLen)))
-
-	allowedStrLen := deSerializeUInt(readBytes(2)).(uint16)
-	allowedStr := string(readBytes((uint32)(allowedStrLen)))
-	thisNode.Allowed = (uint8)(countAllowedElements(allowedStr))
-	if (thisNode.Allowed > 0) {
-            thisNode.AllowedDef = make([]string, thisNode.Allowed)
-        }
-	for i := 0 ; i < (int)(thisNode.Allowed) ; i++ {
-	    thisNode.AllowedDef[i] = extractAllowedElement(allowedStr, i)
+	if thisNode.Min, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("min: %w", err)
+	}
+	if thisNode.Max, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("max: %w", err)
+	}
+	if thisNode.Unit, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("unit: %w", err)
 	}
 
-	DefaultLen := deSerializeUInt(readBytes(1)).(uint8)
-	thisNode.DefaultValue = string(readBytes((uint32)(DefaultLen)))
+	allowedStrLen, err := readUint16()
+	if err != nil {
+		return fmt.Errorf("allowedStrLen: %w", err)
+	}
+	allowedBytes, err := readBytesE(uint32(allowedStrLen))
+	if err != nil {
+		return fmt.Errorf("allowedStr: %w", err)
+	}
+	allowedStr := string(allowedBytes)
+	count, err := countAllowedElementsE(allowedStr)
+	if err != nil {
+		return fmt.Errorf("countAllowedElements: %w", err)
+	}
+	thisNode.Allowed = uint8(count)
+	if thisNode.Allowed > 0 {
+		thisNode.AllowedDef = make([]string, thisNode.Allowed)
+	}
+	for i := 0; i < int(thisNode.Allowed); i++ {
+		elem, err := extractAllowedElementE(allowedStr, i)
+		if err != nil {
+			return fmt.Errorf("extractAllowedElement[%d]: %w", i, err)
+		}
+		thisNode.AllowedDef[i] = elem
+	}
 
-	ValidateLen := deSerializeUInt(readBytes(1)).(uint8)
-	Validate := string(readBytes((uint32)(ValidateLen)))
-	thisNode.Validate = ValidateToInt(Validate)
+	if thisNode.DefaultValue, err = readLenPrefixedString8(); err != nil {
+		return fmt.Errorf("default: %w", err)
+	}
 
-	thisNode.Children = deSerializeUInt(readBytes(1)).(uint8)
+	validate, err := readLenPrefixedString8()
+	if err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+	thisNode.Validate = ValidateToInt(validate)
 
-//	fmt.Printf("populateNode: %s\n", thisNode.Name)
+	if thisNode.Children, err = readUint8(); err != nil {
+		return fmt.Errorf("children: %w", err)
+	}
+
+	return nil
 }
 
 // The reading order must be synchronized with the writing order in the binary tool
@@ -629,12 +847,15 @@ func writeNode(thisNode *Node_t) {
         treeFp.Write([]byte(thisNode.Unit))
     }
 
+    // Bug-8 fix: iterate len(AllowedDef) on both sides instead of
+    // mixing len(AllowedDef) for the length prefix and Allowed for
+    // the loop. If those two ever disagreed (manual node
+    // construction), the writer wrote the wrong number of bytes
+    // and the reader desynced.
     allowedStrLen := calculatAllowedStrLen(thisNode.AllowedDef)
     treeFp.Write(serializeUInt((uint16)(allowedStrLen)))
-    if (thisNode.Allowed > 0) {
-	for i := 0 ; i < (int)(thisNode.Allowed) ; i++ {
-	    allowedWrite(thisNode.AllowedDef[i])
-	}
+    for i := 0; i < len(thisNode.AllowedDef); i++ {
+        allowedWrite(thisNode.AllowedDef[i])
     }
 
     treeFp.Write(serializeUInt((uint8)(len(thisNode.DefaultValue))))
@@ -798,68 +1019,102 @@ func VSSsearchNodes(searchPath string, rootNode *Node_t, maxFound int, anyDepth 
 	return searchData, context.NumOfMatches
 }
 
+// Bug-9 + bug-10 fix: VSSGetLeafNodesList and VSSGetDefaultList both
+// take the treeFpMu mutex while they own the treeFp handle AND the
+// isGet* mode flags. Previously these globals were mutated without
+// any synchronisation; concurrent calls (or concurrent calls with
+// VSSReadTree) would clobber each other.
 func VSSGetLeafNodesList(rootNode *Node_t, rootNodeName string, listFname string) int {
-    var context SearchContext_t
-    isGetLeafNodeList = true
-    var err error
-    treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
-    if (err != nil) {
-	fmt.Printf("Could not open %s for writing tree data\n", listFname)
-	return 0
-    }
-    treeFp.Write([]byte("{\"leafpaths\":["))
-    initContext_LNL(&context, rootNodeName+".*", rootNode, true, true, 0, nil)  // anyDepth = true, leafNodesOnly = true
-    traverseNode(rootNode, &context)
-    treeFp.Write([]byte("]}"))
-    treeFp.Close()
-    isGetLeafNodeList = false
-    return context.NumOfMatches
+	treeFpMu.Lock()
+	defer treeFpMu.Unlock()
+	var context SearchContext_t
+	isGetLeafNodeList = true
+	defer func() { isGetLeafNodeList = false }()
+	var err error
+	treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		fmt.Printf("Could not open %s for writing tree data\n", listFname)
+		return 0
+	}
+	defer treeFp.Close()
+	treeFp.Write([]byte("{\"leafpaths\":["))
+	initContext_LNL(&context, rootNodeName+".*", rootNode, true, true, 0, nil) // anyDepth = true, leafNodesOnly = true
+	traverseNode(rootNode, &context)
+	treeFp.Write([]byte("]}"))
+	return context.NumOfMatches
 }
 
 func VSSGetDefaultList(rootNode *Node_t, rootNodeName string, listFname string) int {
-    var context SearchContext_t
-    isGetDefaultList = true
-    var err error
-    treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
-    if (err != nil) {
-	fmt.Printf("Could not open %s for writing tree data\n", listFname)
-	return 0
-    }
-    treeFp.Write([]byte("["))
-    initContext_LNL(&context, rootNodeName+".*", rootNode, true, true, 0, nil)  // anyDepth = true, leafNodesOnly = true
-    traverseNode(rootNode, &context)
-    treeFp.Write([]byte("]"))
-    treeFp.Close()
-    isGetDefaultList = false
-    return context.NumOfMatches
+	treeFpMu.Lock()
+	defer treeFpMu.Unlock()
+	var context SearchContext_t
+	isGetDefaultList = true
+	defer func() { isGetDefaultList = false }()
+	var err error
+	treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		fmt.Printf("Could not open %s for writing tree data\n", listFname)
+		return 0
+	}
+	defer treeFp.Close()
+	treeFp.Write([]byte("["))
+	initContext_LNL(&context, rootNodeName+".*", rootNode, true, true, 0, nil) // anyDepth = true, leafNodesOnly = true
+	traverseNode(rootNode, &context)
+	treeFp.Write([]byte("]"))
+	return context.NumOfMatches
 }
 
+// VSSReadTree opens a binary VSS tree file and returns the in-memory
+// root node, or nil on any I/O / parse error (logged before return).
+//
+// Bug-5 fix: the previous code returned a (possibly zero-initialized)
+// *Node_t even when the parse failed, because traverseAndReadNode
+// didn't propagate errors. With error propagation in place we now
+// return nil on parse failure so InitForest's nil-check actually
+// catches corrupt files.
+//
+// Bug-9 fix: serialize against the treeFp global with treeFpMu, so
+// a concurrent VSSWriteTree / CreatePathListFile call doesn't
+// clobber the file handle mid-parse.
 func VSSReadTree(fname string) *Node_t {
-    var err error
-    treeFp, err = os.OpenFile(fname, os.O_RDONLY, 0644)
-    if (err != nil) {
-        fmt.Printf("Could not open %s for writing of tree. Error= %s\n", fname, err)
-        return nil
-    }
-    initReadMetadata()
-    var root *Node_t = traverseAndReadNode(nil)
-    printReadMetadata()
-    treeFp.Close()
-    return root
+	treeFpMu.Lock()
+	defer treeFpMu.Unlock()
+	var err error
+	treeFp, err = os.OpenFile(fname, os.O_RDONLY, 0644)
+	if err != nil {
+		fmt.Printf("Could not open %s for reading tree. Error= %s\n", fname, err)
+		return nil
+	}
+	defer treeFp.Close()
+	initReadMetadata()
+	root, err := traverseAndReadNode(nil)
+	if err != nil {
+		fmt.Printf("VSSReadTree: parse failed: %s\n", err)
+		return nil
+	}
+	printReadMetadata()
+	return root
 }
 
+// VSSWriteTree writes root to a binary tree file. (Bug-9 fix: takes
+// the treeFp mutex.)
 func VSSWriteTree(fname string, root *Node_t) {
-    var err error
-    treeFp, err = os.OpenFile(fname, os.O_RDWR|os.O_CREATE, 0755)
-    if (err != nil) {
-	fmt.Printf("Could not open %s for writing tree data\n", fname)
-	return
-    }
-    traverseAndWriteNode(root)
-    treeFp.Close()
+	treeFpMu.Lock()
+	defer treeFpMu.Unlock()
+	var err error
+	treeFp, err = os.OpenFile(fname, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		fmt.Printf("Could not open %s for writing tree data\n", fname)
+		return
+	}
+	defer treeFp.Close()
+	traverseAndWriteNode(root)
 }
 
 func VSSgetName(nodeHandle *Node_t) string {
+	if nodeHandle == nil { // defensive (bug-11 family)
+		return ""
+	}
 	return nodeHandle.Name
 }
 
