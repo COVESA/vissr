@@ -236,6 +236,16 @@ func ImportEcdsaKey(filename string, privKey **ecdsa.PrivateKey) error {
 	return err
 }
 
+// createPrivateKeyFile opens (or replaces) a file with mode 0600 —
+// read/write for owner only. The previous code used os.Create which
+// honours the process umask; on typical systems this produced 0644
+// (world-readable), letting any local user exfiltrate the RSA / ECDSA
+// signing key. Public-key files keep the default mode since they're
+// not sensitive.
+func createPrivateKeyFile(name string) (*os.File, error) {
+	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+}
+
 // Export KeyPair to files named as given (ECDSA and RSA supported, pointers to privKey must be given)
 func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName string) error {
 	switch typ := privKey.(type) {
@@ -246,7 +256,7 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Type:  "RSA PRIVATE KEY",
 				Bytes: x509.MarshalPKCS1PrivateKey(rsaPriv),
 			}
-			privFile, err := os.Create(privFileName) //".rsa"
+			privFile, err := createPrivateKeyFile(privFileName) // 0600
 			if err != nil {
 				return err
 			}
@@ -261,7 +271,7 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Type:  "RSA PUBLIC KEY",
 				Bytes: x509.MarshalPKCS1PublicKey(&rsaPriv.PublicKey),
 			}
-			pubFile, err := os.Create(pubFileName) // + ".rsa.pub"
+			pubFile, err := os.Create(pubFileName) // public key — default mode is fine
 			if err != nil {
 				return err
 			}
@@ -280,7 +290,7 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Type:  "EC PRIVATE KEY",
 				Bytes: ecdsaByt,
 			}
-			privFile, err := os.Create(privFileName) //+ ".ec"
+			privFile, err := createPrivateKeyFile(privFileName) // 0600
 			if err != nil {
 				return err
 			}
@@ -296,7 +306,7 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Type:  "EC PUBLIC KEY",
 				Bytes: ecdsaByt2,
 			}
-			pubFile, err := os.Create(pubFileName) // + ".ec.pub"
+			pubFile, err := os.Create(pubFileName) // public key — default mode is fine
 			if err != nil {
 				return err
 			}
