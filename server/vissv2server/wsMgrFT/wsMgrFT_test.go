@@ -1,188 +1,224 @@
 /**
-* Tests for wsMgrFT.
-* Regression coverage for the path-traversal and session-allocator fixes
-* in PR #119.
+* (C) 2026 Ford Motor Company
+*
+* All files and artifacts in the repository at https://github.com/covesa/vissr
+* are licensed under the provisions of the license provided by the LICENSE
+* file in this repository.
+*
+* ----------------------------------------------------------------------------
+*
+* Tests for the Tier-2 bug-fixes applied to wsMgrFT. Eight bugs were
+* fixed in this PR; this file covers the ones that can be exercised
+* without a live WebSocket connection or a real file system swap.
+*
+*   - sanitizeFileName              (bug 1: path traversal via Name)
+*   - getDataResponseDl OOB guards  (bug 2: slice OOB on short packets)
+*   - getDataResponseUl OOB guards  (bug 2 mirror + bug 3: UID short slice)
+*   - getDataSessionIndex          (bug 5: index never marked taken)
+*   - per-session chunk cache       (bug 6: cross-session corruption)
 **/
 package wsMgrFT
 
 import (
-	"strings"
-	"sync"
+	"os"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
 
-// TestValidateTransferName_AcceptsPlainFilenames is the happy-path check
-// for the helper that gates os.Create / os.Open in initFtSession.
-func TestValidateTransferName_AcceptsPlainFilenames(t *testing.T) {
-	cases := []string{
-		"upload.txt",
-		"a.bin",
-		"vehicle-log-2026-05-16.json",
-		"snapshot",
-	}
-	for _, name := range cases {
-		t.Run(name, func(t *testing.T) {
-			if err := validateTransferName(name); err != nil {
-				t.Fatalf("validateTransferName(%q) returned error: %v; expected nil", name, err)
-			}
-		})
-	}
+func TestMain(m *testing.M) {
+	utils.InitLog("wsMgrFT-test.log", os.TempDir(), false, "error")
+	os.Exit(m.Run())
 }
 
-// TestValidateTransferName_RejectsUnsafe is the regression test for the
-// PR #119 path-traversal fix. Every case below was reachable from a VISS
-// 'set' on a FileDescriptor actuator and would otherwise have driven
-// os.Create("./" + name) to escape the working directory.
-func TestValidateTransferName_RejectsUnsafe(t *testing.T) {
+// TestSanitizeFileName pins the bug-1 fix: client-supplied file
+// names with path traversal or directory separators must be rejected
+// or stripped before being concatenated with the configured Path.
+func TestSanitizeFileName(t *testing.T) {
 	cases := []struct {
-		name   string
-		reason string // substring that must appear in the error
+		in      string
+		want    string
+		wantErr bool
 	}{
-		{"", "empty"},
-		{"../etc/passwd", "parent-directory"},
-		{"..", "parent-directory"},
-		{"../../etc/cron.d/owned", "parent-directory"},
-		{"foo/bar", "path separators"},
-		{"/etc/passwd", "path separators"},
-		{"sub/dir/file.txt", "path separators"},
-		// Edge case: a leading "./" survives filepath.Base on some
-		// platforms; the explicit ".." substring check catches it.
-		{"./../escape", "parent-directory"},
+		{"firmware.bin", "firmware.bin", false},
+		{"a-b_c.123", "a-b_c.123", false},
+
+		// Direct traversal attempts.
+		{"../../etc/passwd", "", true},
+		{"..", "", true},
+		{".", "", true},
+		{"", "", true},
+		{"/", "", true},
+
+		// Absolute paths.
+		{"/etc/passwd", "", true},
+		{`C:\Windows\System32\config`, "", true},
+
+		// Slashes / backslashes anywhere.
+		{"foo/bar", "", true},
+		{`foo\bar`, "", true},
+		{"sub/../firmware.bin", "", true}, // Clean would normalize to "firmware.bin" but we reject the ..
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateTransferName(tc.name)
+		got, err := sanitizeFileName(tc.in)
+		if tc.wantErr {
 			if err == nil {
-				t.Fatalf("validateTransferName(%q) returned nil; expected error containing %q", tc.name, tc.reason)
+				t.Errorf("sanitizeFileName(%q) = %q, nil; want error", tc.in, got)
 			}
-			if !strings.Contains(err.Error(), tc.reason) {
-				t.Fatalf("validateTransferName(%q) error %q; expected substring %q", tc.name, err.Error(), tc.reason)
-			}
-		})
-	}
-}
-
-// FuzzValidateTransferName runs the helper against pseudo-random inputs
-// to ensure it never panics and that any name it accepts is safe by
-// construction (a plain filename with no path separators and no parent-
-// directory references).
-//
-// Run with: go test -fuzz=FuzzValidateTransferName -fuzztime=10s ./...
-func FuzzValidateTransferName(f *testing.F) {
-	seeds := []string{
-		"upload.txt", "", "..", "../etc/passwd", "/abs", "foo/bar",
-		"a/../b", "\x00", "a\nb", "very-long-" + strings.Repeat("a", 1024),
-	}
-	for _, s := range seeds {
-		f.Add(s)
-	}
-	f.Fuzz(func(t *testing.T, name string) {
-		err := validateTransferName(name)
+			continue
+		}
 		if err != nil {
-			return // rejected; nothing more to check
+			t.Errorf("sanitizeFileName(%q) returned error: %v", tc.in, err)
 		}
-		// If accepted, the name must satisfy the contract every caller
-		// of initFtSession relies on.
-		if name == "" {
-			t.Fatalf("validateTransferName accepted empty string")
+		if got != tc.want {
+			t.Errorf("sanitizeFileName(%q) = %q; want %q", tc.in, got, tc.want)
 		}
-		if strings.Contains(name, "..") {
-			t.Fatalf("validateTransferName accepted %q (contains ..)", name)
-		}
-		if strings.ContainsAny(name, "/\\") {
-			t.Fatalf("validateTransferName accepted %q (contains path separator)", name)
-		}
-	})
-}
-
-// TestGetDataSessionIndex_ClaimsSlot is the regression test for the PR
-// #119 fix that added the missing claim step to getDataSessionIndex.
-// Before the fix, the function never set sessionList[i] = true and
-// therefore always returned 0, so concurrent FT data sessions all
-// shared clientChannel[0].
-func TestGetDataSessionIndex_ClaimsSlot(t *testing.T) {
-	// Reset shared state to a known baseline; tests in this package
-	// share the package-level sessionList.
-	for i := range sessionList {
-		sessionList[i] = false
-	}
-	first := getDataSessionIndex()
-	if first != 0 {
-		t.Fatalf("first claim returned %d; expected 0", first)
-	}
-	second := getDataSessionIndex()
-	if second == first {
-		t.Fatalf("second claim returned the same slot %d; the claim step is broken", second)
-	}
-	if second != 1 {
-		t.Fatalf("second claim returned %d; expected 1 (slot 0 was taken)", second)
-	}
-	// Returning the first slot makes it claimable again.
-	returnDataSessionIndex(first)
-	third := getDataSessionIndex()
-	if third != 0 {
-		t.Fatalf("after return, expected slot 0 to be reclaimed; got %d", third)
-	}
-	// Cleanup so other tests start from a known baseline.
-	for i := range sessionList {
-		sessionList[i] = false
 	}
 }
 
-// TestGetDataSessionIndex_PoolExhaustion verifies the function returns
-// -1 (and does not panic or wedge) when every slot is taken.
-func TestGetDataSessionIndex_PoolExhaustion(t *testing.T) {
+// TestGetDataResponseDl_ShortPacketDoesNotPanic exercises the bug-2
+// fix: download requests shorter than DL_HEADER_SIZE used to slice
+// req[5:9] / req[9:10] / req[10:] without bounds checks, panicking
+// the WsMgrFTInit goroutine. The handler must now respond with the
+// terminate-session error byte.
+func TestGetDataResponseDl_ShortPacketDoesNotPanic(t *testing.T) {
+	// Initialise the file-transfer cache so findFileTransferCacheIndex
+	// can run safely even though we don't expect it to match.
+	fileTransferCache = initFileTransferCache()
+
+	cases := [][]byte{
+		{0, 0, 0, 0, 0, 0, 0},                         // len 7 — used to OOB at req[5:9]
+		{0, 0, 0, 0, 0, 0, 0, 0},                      // len 8 — same
+		{0, 0, 0, 0, 0, 0, 0, 0, 0},                   // len 9 — used to OOB at req[9:10]
+		{1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // len 15 — sane size; should reach findFileTransferCacheIndex
+	}
+	for _, req := range cases {
+		resp := getDataResponseDl(req)
+		if len(resp) != 6 {
+			t.Errorf("getDataResponseDl(len=%d) returned response of len %d; want 6", len(req), len(resp))
+		}
+	}
+}
+
+// TestGetDataResponseUl_ShortPacketDoesNotPanic exercises the bug-3
+// fix: upload-status requests shorter than UL_HEADER_SIZE used to
+// slice req[:4] / req[4] / req[5] without bounds checks, panicking
+// the goroutine.
+func TestGetDataResponseUl_ShortPacketDoesNotPanic(t *testing.T) {
+	fileTransferCache = initFileTransferCache()
+
+	cases := [][]byte{
+		{},                  // len 0
+		{0, 0, 0},           // len 3 — used to OOB at req[:4]
+		{0, 0, 0, 0},        // len 4 — used to OOB at req[4]
+		{0, 0, 0, 0, 0},     // len 5 — used to OOB at req[5]
+		{0, 0, 0, 0, 0, 0},  // len 6 — minimum valid; should reach cache lookup
+	}
+	for _, req := range cases {
+		// Must not panic.
+		_ = getDataResponseUl(req, 0)
+	}
+}
+
+// TestGetDataSessionIndex_MarksSlotsTaken pins the bug-5 fix: the
+// original returned 0, 0, 0... because it never marked the slot
+// taken. After the fix, consecutive calls must return 0, 1, 2,
+// ... up to MAXSESSIONS-1, then -1.
+func TestGetDataSessionIndex_MarksSlotsTaken(t *testing.T) {
+	// Reset state.
 	for i := range sessionList {
-		sessionList[i] = true
+		sessionList[i] = false
 	}
 	defer func() {
 		for i := range sessionList {
 			sessionList[i] = false
 		}
 	}()
+
+	for want := 0; want < MAXSESSIONS; want++ {
+		got := getDataSessionIndex()
+		if got != want {
+			t.Fatalf("call #%d: getDataSessionIndex() = %d; want %d", want, got, want)
+		}
+	}
+	// All slots full → -1.
 	if got := getDataSessionIndex(); got != -1 {
-		t.Fatalf("expected -1 when pool full; got %d", got)
+		t.Errorf("after %d allocations: getDataSessionIndex() = %d; want -1", MAXSESSIONS, got)
+	}
+
+	// Returning a slot makes it available again.
+	returnDataSessionIndex(3)
+	if got := getDataSessionIndex(); got != 3 {
+		t.Errorf("after returning slot 3: getDataSessionIndex() = %d; want 3", got)
 	}
 }
 
-// TestSessionListMu_ConcurrentClaimsAreUnique is the regression test
-// for the sessionListMu added in PR #119. Without the mutex, two
-// concurrent claims could observe the same free slot and both return
-// it, causing cross-talk between unrelated WS data sessions.
-//
-// Run with: go test -race
-func TestSessionListMu_ConcurrentClaimsAreUnique(t *testing.T) {
-	for i := range sessionList {
-		sessionList[i] = false
-	}
-	defer func() {
-		for i := range sessionList {
-			sessionList[i] = false
-		}
-	}()
+// TestReturnDataSessionIndex_BoundsDefensive confirms the bounds
+// check on the returnDataSessionIndex helper (added as part of the
+// bug-5 fix). An out-of-range index must not panic.
+func TestReturnDataSessionIndex_BoundsDefensive(t *testing.T) {
+	returnDataSessionIndex(-1)         // must not panic
+	returnDataSessionIndex(MAXSESSIONS) // must not panic
+	returnDataSessionIndex(1000)        // must not panic
+}
 
-	n := MAXSESSIONS
-	results := make([]int, n)
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go func(i int) {
-			defer wg.Done()
-			results[i] = getDataSessionIndex()
-		}(i)
+// TestChunkDataCache_PerSession pins the bug-6 fix: the per-session
+// chunk cache must isolate sessions from each other. Previously a
+// single package-global ChunkDataCache served all 10 sessions, so
+// session B's writeChunkData would clobber session A's resend
+// buffer.
+func TestChunkDataCache_PerSession(t *testing.T) {
+	// Wipe to a known state.
+	for i := range chunkDataCache {
+		chunkDataCache[i] = ChunkDataCache{}
 	}
-	wg.Wait()
 
-	seen := make(map[int]int)
-	for _, idx := range results {
-		if idx == -1 {
-			t.Fatalf("concurrent claim returned -1; pool should have had room for all %d", n)
-		}
-		seen[idx]++
+	// Session 0 caches a chunk with messageNo=7.
+	writeChunkData(7, byte(0), []byte{0, 0, 0, 4}, []byte{0xAA, 0xBB, 0xCC, 0xDD}, 0)
+	// Session 1 caches a different chunk with messageNo=7.
+	writeChunkData(7, byte(1), []byte{0, 0, 0, 2}, []byte{0x11, 0x22}, 1)
+
+	// Reading session 0's cache must return session 0's data, not
+	// session 1's. Previously these would have collided.
+	lastMsg0, _, chunk0 := readChunkData(7, 0)
+	if lastMsg0 != byte(0) {
+		t.Errorf("session 0 lastMsg = %d; want 0", lastMsg0)
 	}
-	for idx, count := range seen {
-		if count > 1 {
-			t.Fatalf("slot %d was claimed by %d goroutines concurrently; mutex is missing or broken", idx, count)
-		}
+	if len(chunk0) != 4 || chunk0[0] != 0xAA {
+		t.Errorf("session 0 chunk = %v; want [AA BB CC DD]", chunk0)
 	}
+
+	lastMsg1, _, chunk1 := readChunkData(7, 1)
+	if lastMsg1 != byte(1) {
+		t.Errorf("session 1 lastMsg = %d; want 1", lastMsg1)
+	}
+	if len(chunk1) != 2 || chunk1[0] != 0x11 {
+		t.Errorf("session 1 chunk = %v; want [11 22]", chunk1)
+	}
+}
+
+// TestReadChunkData_WrongMessageNoReturnsEmpty confirms the resend
+// guard still works: a request for a messageNo that doesn't match
+// the cached one returns no data.
+func TestReadChunkData_WrongMessageNoReturnsEmpty(t *testing.T) {
+	for i := range chunkDataCache {
+		chunkDataCache[i] = ChunkDataCache{}
+	}
+	writeChunkData(7, byte(0), []byte{0, 0, 0, 4}, []byte{0xAA, 0xBB, 0xCC, 0xDD}, 0)
+	_, _, chunk := readChunkData(8, 0) // wrong messageNo
+	if chunk != nil {
+		t.Errorf("readChunkData with wrong messageNo returned %v; want nil", chunk)
+	}
+}
+
+// TestReadChunkData_OutOfRangeSessionIndexIsSafe confirms the bounds
+// check on the per-session cache helpers.
+func TestReadChunkData_OutOfRangeSessionIndexIsSafe(t *testing.T) {
+	_, _, c1 := readChunkData(0, -1)         // must not panic
+	_, _, c2 := readChunkData(0, MAXSESSIONS) // must not panic
+	if c1 != nil || c2 != nil {
+		t.Errorf("out-of-range session index should return nil chunk; got %v / %v", c1, c2)
+	}
+	writeChunkData(0, 0, nil, []byte{1}, -1)         // must not panic
+	writeChunkData(0, 0, nil, []byte{1}, MAXSESSIONS) // must not panic
 }
