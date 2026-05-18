@@ -15,7 +15,6 @@ package serviceMgr
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"github.com/apache/iotdb-client-go/client"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/covesa/vissr/utils"
@@ -98,15 +97,19 @@ const FEEDER_REG_SOCKFILE = FEEDER_REG_DIR + "feederReg.sock"
 
 var errorResponseMap = map[string]interface{}{}
 
-var dbHandle *sql.DB
-var dbErr error
-var redisClient *redis.Client
-var memcacheClient *memcache.Client
+// stateBackend is the storage adapter wired up by ServiceMgrInit.
+// It defaults to noneBackend{} so that any getVehicleData /
+// setVehicleData call before ServiceMgrInit finishes (e.g. inside
+// tests that exercise the dispatch helpers directly) does not
+// nil-deref. Replaced at init time with the adapter matching
+// stateDbType. See storage_backend.go for the interface contract and
+// the five adapter implementations.
+var stateBackend StorageBackend = &noneBackend{}
+
 var stateDbType string
 var historySupport bool
 
 // Apache IoTDB
-var IoTDBsession client.Session
 var IoTDBClientConfig = &client.Config{
 	Host:     "127.0.0.1",
 	Port:     "6667",
@@ -458,7 +461,7 @@ func getIntervalPeriod(opValue string) int { // {"period":"X"}
 	}
 	period, err := strconv.Atoi(intervalData.Period)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: Invalid period=%s", period)
+		utils.Error.Printf("getIntervalPeriod: Invalid period=%q, err=%v", intervalData.Period, err)
 		return -1
 	}
 	return period
@@ -526,127 +529,21 @@ func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan ch
 	return subscriptionList
 }
 
+// getVehicleData reads the data point at path through the configured
+// state-storage backend and returns the canonical
+// {"value":"...","ts":"..."} JSON string. The long backend-specific
+// switch that used to live here has been moved into the adapter
+// implementations in storage_backend.go.
 func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
-	switch stateDbType {
-	case "sqlite":
-
-		rows, err := dbHandle.Query("SELECT `c_value`, `c_ts` FROM VSS_MAP WHERE `path`=?", path)
-		if err != nil {
-			return `{"value":"Data-error", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		defer rows.Close()
-		value := ""
-		timestamp := ""
-
-		rows.Next()
-		err = rows.Scan(&value, &timestamp)
-		if err != nil {
-			utils.Warning.Printf("Data not found: %s for path=%s", err, path)
-			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
-	case "redis":
-//		utils.Info.Printf(path)
-		dp, err := redisClient.Get(path).Result()
-		if err != nil {
-			if err.Error() != "redis: nil" {
-				utils.Error.Printf("Job failed. Error()=%s", err.Error())
-				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
-			} else {
-//				utils.Warning.Printf("Data not found.")
-				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-			}
-		} else {
-			return dp
-		}
-	case "apache-iotdb":
-		var (
-			// Back-quote the VSS node for the DB query, e.g. `Vehicle.CurrentLocation.Longitude`
-			selectLastSQL = fmt.Sprintf("select last `%v` from %v", path, IoTDBConfig.PrefixPath)
-			value         = ""
-			ts            = ""
-		)
-		//		utils.Info.Printf("IoTDB: query using: %v", selectLastSQL)
-		sessionDataSet, err := IoTDBsession.ExecuteQueryStatement(selectLastSQL, &IoTDBConfig.Timeout)
-		if err == nil {
-			var success bool
-			success, err = sessionDataSet.Next()
-			if err == nil && success {
-				value = sessionDataSet.GetText("Value")
-				ts = sessionDataSet.GetText(client.TimestampColumnName)
-				//				utils.Info.Printf("IoTDB: get returned: ts=%v, Value=%v", ts, value)
-				//				resultStr := `{"value":"` + value + `", "ts":"` + ts + `"}`
-				//				utils.Info.Printf("IoTDB: returning get result=%v", resultStr)
-			}
-			sessionDataSet.Close()
-		} else {
-			utils.Error.Printf("IoTDB: Query failed with error=%s", err)
-			return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-		}
-		return `{"value":"` + value + `", "ts":"` + ts + `"}`
-	case "memcache":
-		mcItem, err := memcacheClient.Get(path)
-		if err != nil {
-			if err.Error() != "memcache: cache miss" {
-				utils.Error.Printf("Job failed. Error()=%s", err.Error())
-				return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
-			} else {
-				utils.Warning.Printf("Data not found.")
-				return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
-			}
-		} else {
-			return string(mcItem.Value)
-		}
-	case "none":
-		return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
-	}
-	return ""
+	return stateBackend.Get(path)
 }
 
+// setVehicleData writes value at path through the configured
+// state-storage backend and returns the timestamp used for the write
+// (or "" on failure). The backend-specific switch is now in the
+// adapter implementations -- see storage_backend.go.
 func setVehicleData(path string, value string) string {
-	ts := utils.GetRfcTime()
-	switch stateDbType {
-	case "sqlite":
-		stmt, err := dbHandle.Prepare("UPDATE VSS_MAP SET d_value=?, d_ts=? WHERE `path`=?")
-		if err != nil {
-			utils.Error.Printf("Could not prepare for statestorage updating, err = %s", err)
-			return ""
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(value, ts, path[1:len(path)-1]) // remove quotes surrounding path
-		if err != nil {
-			utils.Error.Printf("Could not update statestorage, err = %s", err)
-			return ""
-		}
-		return ts
-	case "memcache":
-		fallthrough
-	case "redis":
-		message := `{"action": "set", "data": {"path":"` + path + `", "dp":{"value":"` + value + `", "ts":"` + ts + `"}}}`
-		toFeeder <- message
-		return ts
-	case "apache-iotdb":
-		vssKey := []string{"`" + path + "`"} // Back-quote the VSS node for the DB insert, e.g. `Vehicle.CurrentLocation.Longitude`
-		vssValue := []string{value}
-		IoTDBts := time.Now().UTC().UnixNano() / 1000000
-
-		// IoTDB will automatically convert the value string to the native data type in the timeseries schema for basic types
-		//		utils.Info.Printf("IoTDB: DB insert with prefixPath: %v vssKey: %v, vssValue: %v, ts: %v", IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts)
-		if status, err := IoTDBsession.InsertStringRecord(IoTDBConfig.PrefixPath, vssKey, vssValue, IoTDBts); err != nil {
-			utils.Error.Printf("IoTDB: DB insert using InsertStringRecord failed with: %v", err)
-			return ""
-		} else {
-			if status != nil {
-				if err = client.VerifySuccess(status); err != nil {
-					utils.Error.Printf("IoTDB: DB insert Verify failed with: %v", err)
-					return ""
-				}
-			}
-		}
-		return ts
-	}
-	return ""
+	return stateBackend.Set(path, value)
 }
 
 func unpackPaths(paths string) []string {
@@ -712,6 +609,12 @@ func historyServer(historyAccessChan chan string, vss_data []byte) {
 	}
 }
 
+// MAXHISTORYBUFSIZE caps the per-path history ring-buffer that a
+// 'create' history-control request can allocate. Without an upper
+// bound, an attacker-supplied buf-size of e.g. 2^31-1 makes
+// make([]string, bufSize) blow up the heap.
+const MAXHISTORYBUFSIZE = 10000
+
 func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists bool) string {
 	if listExists == false {
 		utils.Error.Printf("processHistoryCtrl:Path list not found")
@@ -723,16 +626,46 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 		utils.Error.Printf("processHistoryCtrl:Missing command param")
 		return "400 Bad Request"
 	}
-	index := getHistoryListIndex(requestMap["path"].(string))
-	switch requestMap["action"].(string) {
+	// Type-assert path and action defensively. The request comes
+	// over the local history-control UDS from a peer we treat as
+	// untrusted; an unchecked .(string) on a non-string JSON value
+	// would panic the entire serviceMgr.
+	pathStr, ok := requestMap["path"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryCtrl: path is not a string")
+		return "400 Bad Request"
+	}
+	actionStr, ok := requestMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryCtrl: action is not a string")
+		return "400 Bad Request"
+	}
+	index := getHistoryListIndex(pathStr)
+	if index == -1 {
+		// getHistoryListIndex returns -1 for unknown paths. Every
+		// switch arm below indexes historyList[index]; without this
+		// guard, an unknown path produces historyList[-1] and panics.
+		utils.Error.Printf("processHistoryCtrl: unknown path %q", pathStr)
+		return "404 Not Found"
+	}
+	switch actionStr {
 	case "create":
 		if requestMap["buf-size"] == nil {
 			utils.Error.Printf("processHistoryCtrl:Buffer size missing")
 			return "400 Bad Request"
 		}
-		bufSize, err := strconv.Atoi(requestMap["buf-size"].(string))
+		bufSizeStr, ok := requestMap["buf-size"].(string)
+		if !ok {
+			utils.Error.Printf("processHistoryCtrl: buf-size is not a string")
+			return "400 Bad Request"
+		}
+		bufSize, err := strconv.Atoi(bufSizeStr)
 		if err != nil {
-			utils.Error.Printf("processHistoryCtrl:Buffer size malformed=%s", requestMap["buf-size"].(string))
+			utils.Error.Printf("processHistoryCtrl:Buffer size malformed=%s", bufSizeStr)
+			return "400 Bad Request"
+		}
+		if bufSize < 0 || bufSize > MAXHISTORYBUFSIZE {
+			utils.Error.Printf("processHistoryCtrl:Buffer size out of range: %d (allowed 0..%d)", bufSize, MAXHISTORYBUFSIZE)
 			return "400 Bad Request"
 		}
 		historyList[index].BufSize = bufSize
@@ -742,9 +675,14 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 			utils.Error.Printf("processHistoryCtrl:Frequency missing")
 			return "400 Bad Request"
 		}
-		freq, err := strconv.Atoi(requestMap["frequency"].(string))
+		freqStr, ok := requestMap["frequency"].(string)
+		if !ok {
+			utils.Error.Printf("processHistoryCtrl: frequency is not a string")
+			return "400 Bad Request"
+		}
+		freq, err := strconv.Atoi(freqStr)
 		if err != nil {
-			utils.Error.Printf("processHistoryCtrl:Frequeny malformed=%s", requestMap["frequency"].(string))
+			utils.Error.Printf("processHistoryCtrl:Frequeny malformed=%s", freqStr)
 			return "400 Bad Request"
 		}
 		historyList[index].Frequency = freq
@@ -763,7 +701,7 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 		historyList[index].BufIndex = 0
 		historyList[index].Buffer = nil
 	default:
-		utils.Error.Printf("processHistoryCtrl:Unknown command:action=%s", requestMap["action"].(string))
+		utils.Error.Printf("processHistoryCtrl:Unknown command:action=%s", actionStr)
 		return "400 Bad Request"
 	}
 	return "200 OK"
@@ -790,9 +728,33 @@ func convertFromIsoTime(isoTime string) (time.Time, error) {
 func processHistoryGet(request string) string { // {"path":"X", "period":"Y"}
 	var requestMap = make(map[string]interface{})
 	utils.MapRequest(request, &requestMap)
-	index := getHistoryListIndex(requestMap["path"].(string))
+	// Sibling of processHistoryCtrl. Same defensive shape: type-
+	// assert path/period safely, reject unknown path before any
+	// historyList[index] read. The previous version would panic the
+	// entire serviceMgr on a malformed subscribe/history request,
+	// reachable from any anonymous network peer when --history is
+	// enabled.
+	pathStr, ok := requestMap["path"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: path is not a string")
+		return ""
+	}
+	periodStr, ok := requestMap["period"].(string)
+	if !ok {
+		utils.Error.Printf("processHistoryGet: period is not a string")
+		return ""
+	}
+	index := getHistoryListIndex(pathStr)
+	if index == -1 {
+		utils.Error.Printf("processHistoryGet: unknown path %q", pathStr)
+		return ""
+	}
 	currentTs := getCurrentUtcTime()
-	periodTime, _ := convertFromIsoTime(requestMap["period"].(string))
+	periodTime, err := convertFromIsoTime(periodStr)
+	if err != nil {
+		utils.Error.Printf("processHistoryGet: period %q malformed: %s", periodStr, err)
+		return ""
+	}
 	oldTs := currentTs.Add(time.Hour*(time.Duration)((24*periodTime.Day()+periodTime.Hour())*(-1)) -
 		time.Minute*(time.Duration)(periodTime.Minute()) - time.Second*(time.Duration)(periodTime.Second())).UTC()
 	var matches int
@@ -1430,22 +1392,346 @@ func feederReader(udsConn net.Conn, feederName string, feederChannelIndex int) {
 	}
 }
 
+// buildServiceResponseMap returns the standard response skeleton used
+// for replies to dataChan requests inside ServiceMgrInit. Extracted in
+// PR #129 (this PR) so the per-action handlers below can share the
+// setup without duplicating the six-line dance. See
+// serviceMgr_dispatch_test.go.
+func buildServiceResponseMap(requestMap map[string]interface{}) map[string]interface{} {
+	responseMap := make(map[string]interface{})
+	responseMap["RouterId"] = requestMap["RouterId"]
+	responseMap["action"] = requestMap["action"]
+	responseMap["requestId"] = requestMap["requestId"]
+	responseMap["ts"] = utils.GetRfcTime()
+	if requestMap["handle"] != nil {
+		responseMap["authorization"] = requestMap["handle"]
+	}
+	return responseMap
+}
+
+// handleServiceSet processes a "set" action: writes the value via the
+// state-storage backend (setVehicleData) and pushes a success or
+// service_unavailable response back on dataChan. Extracted from
+// ServiceMgrInit's dataChan switch in PR #129.
+func handleServiceSet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	var ts string
+	switch requestMap["value"].(type) {
+	case string:
+		ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
+	case map[string]interface{}:
+		data, _ := json.Marshal(requestMap["value"])
+		ts = setVehicleData(requestMap["path"].(string), string(data))
+	}
+	if len(ts) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
+		dataChan <- errorResponseMap
+		return
+	}
+	responseMap["ts"] = ts
+	dataChan <- responseMap
+}
+
+// handleServiceGet processes a "get" action: unpacks the path array,
+// validates an optional filter, fetches the data pack via
+// getDataPackMap, and pushes the response on dataChan. Extracted from
+// ServiceMgrInit in PR #129. Error paths emit invalid_data or
+// bad_request as appropriate.
+func handleServiceGet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	pathArray := unpackPaths(requestMap["path"].(string))
+	if pathArray == nil {
+		utils.Error.Printf("Unmarshal of path array failed.")
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		dataChan <- errorResponseMap
+		return
+	}
+	var filterList []utils.FilterObject
+	if requestMap["filter"] != nil && requestMap["filter"] != "" {
+		utils.UnpackFilter(requestMap["filter"], &filterList)
+		if len(filterList) == 0 {
+			utils.Error.Printf("Request filter malformed.")
+			utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+			dataChan <- errorResponseMap
+			return
+		}
+	}
+	dataPack := getDataPackMap(pathArray)
+	responseMap["data"] = dataPack["dpack"]
+	dataChan <- responseMap
+}
+
+// handleServiceSubscribe processes a "subscribe" action: builds a
+// SubscriptionState from the request, validates the path and filter,
+// appends it to the subscription list, activates interval/curve-log
+// timers when needed via activateIfIntervalOrCL, and notifies the
+// feeder for curvelog/range/change variants. Returns the updated
+// subscription list and the next subscriptionId. Extracted from
+// ServiceMgrInit's dataChan switch as a follow-up to PR #129.
+//
+// This is the post-fix version: the two pre-existing bugs documented
+// when the function was extracted are now fixed.
+//   1. The empty-FilterList error path now `return`s instead of
+//      falling through to append the empty-filter subscription. The
+//      original (and prior extracted) code sent the invalid_data
+//      error then kept going, producing a second message on dataChan
+//      and growing the subscription list with garbage.
+//   2. subscriptionState.Path is now nil-checked after unpackPaths
+//      before any Path[0] access. A malformed JSON path array
+//      (`["Vehicle.Speed`) would previously panic here.
+func handleServiceSubscribe(
+	requestMap map[string]interface{},
+	responseMap map[string]interface{},
+	dataChan chan map[string]interface{},
+	subscriptionList []SubscriptionState,
+	subscriptionId int,
+	subscriptionChan chan int,
+	clChannel chan CLPack,
+	toFeederChan chan string,
+) ([]SubscriptionState, int) {
+	var subscriptionState SubscriptionState
+	subscriptionState.SubscriptionId = subscriptionId
+	subscriptionState.RouterId = requestMap["RouterId"].(string)
+	subscriptionState.Path = unpackPaths(requestMap["path"].(string))
+	if len(subscriptionState.Path) == 0 { // Fix bug 2: unpackPaths returned nil for malformed JSON
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId
+	}
+	if requestMap["filter"] == nil || requestMap["filter"] == "" {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId
+	}
+	utils.UnpackFilter(requestMap["filter"], &(subscriptionState.FilterList))
+	if len(subscriptionState.FilterList) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId // Fix bug 1: return instead of falling through
+	}
+	if requestMap["gatingId"] != nil {
+		subscriptionState.GatingId = requestMap["gatingId"].(string)
+	}
+	subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
+	subscriptionList = append(subscriptionList, subscriptionState)
+	responseMap["subscriptionId"] = strconv.Itoa(subscriptionId)
+	subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, clChannel, subscriptionId, subscriptionState.Path, subscriptionList)
+	variant := getFeederNotifyType(subscriptionState.FilterList)
+	if variant == "curvelog" || variant == "range" || variant == "change" {
+		toFeederChan <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
+	}
+	subscriptionId++ // not to be incremented elsewhere
+	dataChan <- responseMap
+	return subscriptionList, subscriptionId
+}
+
+// handleServiceUnsubscribe processes a client-driven "unsubscribe"
+// action: deactivates the subscription identified by subscriptionId,
+// forwards the request to the feeder so it can drop its end of the
+// stream, and replies to the client. Returns the updated
+// subscriptionList. On missing or invalid subscriptionId an
+// invalid_data error is sent back. Extracted from ServiceMgrInit in
+// PR #129.
+func handleServiceUnsubscribe(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}, subscriptionList []SubscriptionState, toFeederChan chan string) []SubscriptionState {
+	if requestMap["subscriptionId"] != nil {
+		status := -1
+		subscriptId, ok := requestMap["subscriptionId"].(string)
+		if ok == true {
+			status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
+			if status != -1 {
+				dataChan <- responseMap
+				toFeederChan <- utils.FinalizeMessage(requestMap)
+				return subscriptionList
+			}
+			delete(requestMap, "subscriptionId")
+		}
+	}
+	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+	dataChan <- errorResponseMap
+	return subscriptionList
+}
+
+// handleInternalKillSubscriptions processes the
+// "internal-killsubscriptions" action: scans the subscription list and
+// removes every entry whose RouterId matches the request. No response
+// is emitted — this is an internal cleanup message. Returns the
+// updated subscriptionList. Extracted from ServiceMgrInit in PR #129.
+func handleInternalKillSubscriptions(requestMap map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
+	isRemoved := true
+	for isRemoved == true {
+		isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
+		utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
+	}
+	return subscriptionList
+}
+
+// handleInternalCancelSubscription processes the
+// "internal-cancelsubscription" action used when the AGT cancels a
+// token or consent: looks up the subscription by gatingId, rewrites the
+// request as a synthetic "subscription" error event, pushes it to the
+// client, and removes the subscription from the list. Returns the
+// updated subscriptionList. If the gatingId is not found, the list is
+// returned unchanged. Extracted from ServiceMgrInit in PR #129.
+func handleInternalCancelSubscription(requestMap map[string]interface{}, dataChan chan map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
+	routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))
+	if routerId != "" {
+		requestMap["RouterId"] = routerId
+		requestMap["action"] = "subscription"
+		requestMap["requestId"] = nil
+		requestMap["subscriptionId"] = subscriptionId
+		utils.SetErrorResponse(requestMap, errorResponseMap, 2, "Token expired or consent cancelled.")
+		dataChan <- errorResponseMap
+		_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
+	}
+	return subscriptionList
+}
+
+// handleUnknownAction handles the default arm of the dataChan switch:
+// emits an invalid_data response with "Unknown action" as the message.
+// Extracted from ServiceMgrInit in PR #129 so the default arm is just
+// one line at the call site.
+func handleUnknownAction(requestMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
+	dataChan <- errorResponseMap
+}
+
+// handleIntervalNotification handles a fire on subscriptionChan (an
+// interval-based subscription's timer ticked). Looks up the
+// subscription, builds a notification event with the current data
+// pack, and pushes it to backendChan with a non-blocking select — the
+// original arm drops the event rather than block when backendChan is
+// full. Extracted from ServiceMgrInit in follow-up PR B to #129.
+func handleIntervalNotification(subscriptionId int, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) {
+	subIndex := getSubcriptionStateIndex(subscriptionId, subscriptionList)
+	if subIndex == -1 {
+		utils.Error.Printf("Subscription not found for id=%d", subscriptionId)
+		return
+	}
+	subscriptionState := subscriptionList[subIndex]
+	var subscriptionMap = make(map[string]interface{})
+	subscriptionMap["action"] = "subscription"
+	subscriptionMap["ts"] = utils.GetRfcTime()
+	subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
+	subscriptionMap["RouterId"] = subscriptionState.RouterId
+	subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
+	select {
+	case backendChan <- subscriptionMap:
+	default:
+		utils.Error.Printf("serviceMgr: Event dropped")
+	}
+}
+
+// handleCurveLogNotification handles a fire on CLChannel (a
+// curve-logging worker has produced a data point or is signalling
+// shutdown). Decrements the SubscriptionThreads counter for the
+// subscription, removes it from the list when this was the
+// close-signal for the requested subscription, and forwards the data
+// pack to backendChan. Reads and clears the package global
+// closeClSubId under mcloseClSubId so the close-signal observation is
+// race-safe relative to deactivateSubscription. Returns the updated
+// subscriptionList.
+//
+// This is the post-fix version: two pre-existing bugs documented when
+// the function was extracted are now fixed.
+//   3. After removeFromsubscriptionList, `index` may point past the
+//      end of the slice (the helper does a swap-with-last + truncate).
+//      The post-remove code path now returns early instead of touching
+//      subscriptionList[index] again. There is no notification to
+//      forward for a subscription that just got removed.
+//   4. closeClSubId is read and written here without holding
+//      mcloseClSubId, while deactivateSubscription writes it under the
+//      mutex. We now lock around the entire read-modify-write so
+//      observation and clearing happen atomically with deactivate.
+func handleCurveLogNotification(clPack CLPack, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
+	index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
+	if index == -1 {
+		mcloseClSubId.Lock()
+		closeClSubId = -1
+		mcloseClSubId.Unlock()
+		return subscriptionList
+	}
+	subscriptionList[index].SubscriptionThreads--
+
+	mcloseClSubId.Lock()
+	shouldRemove := clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0
+	if shouldRemove {
+		closeClSubId = -1
+	}
+	mcloseClSubId.Unlock()
+
+	if shouldRemove {
+		// Fix bug 3: do not attempt to index into the slice after the
+		// remove. The subscription is gone; there is no notification
+		// event to forward for it.
+		return removeFromsubscriptionList(subscriptionList, index)
+	}
+
+	var subscriptionMap = make(map[string]interface{})
+	subscriptionMap["action"] = "subscription"
+	subscriptionMap["ts"] = utils.GetRfcTime()
+	subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
+	subscriptionMap["RouterId"] = subscriptionList[index].RouterId
+	subscriptionMap["data"] = string2Map(clPack.DataPack)["s2m"]
+	backendChan <- subscriptionMap
+	return subscriptionList
+}
+
+// handleRCTick handles a fire on the subscription ticker, which polls
+// range/change filters periodically when the feeder is not providing
+// its own notifications. If the feeder is providing notifications,
+// the ticker is stopped to save the wakeups. Returns the updated
+// subscriptionList. Extracted from ServiceMgrInit in follow-up PR B
+// to #129.
+func handleRCTick(feederNotificationActive bool, subscriptTicker *time.Ticker, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
+	if !feederNotificationActive { // feeder does not issue notifications
+		return checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
+	}
+	subscriptTicker.Stop()
+	return subscriptionList
+}
+
+// handleFeederNotificationMessage handles a fire on fromFeederRorC.
+// Decodes the feeder's message, updates the feederNotification flag
+// returned by decodeFeederMessage, and re-evaluates the subscription
+// list's range/change filters for the triggered path. Returns the
+// updated feederNotification flag and subscriptionList. Extracted
+// from ServiceMgrInit in follow-up PR B to #129.
+func handleFeederNotificationMessage(feederMessage string, feederNotification bool, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) (bool, []SubscriptionState) {
+	triggeredPath, updatedNotification := decodeFeederMessage(feederMessage, feederNotification)
+	subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
+	return updatedNotification, subscriptionList
+}
+
+// handleFeederRegistration handles a fire on feederRegChan. Connects
+// to the registering feeder, updates the registry list, and sends the
+// current list of feeder names back on feederRegChan as the
+// registration acknowledgement. Extracted from ServiceMgrInit in
+// follow-up PR B to #129.
+func handleFeederRegistration(feederReq FeederRegElem, feederRegChan chan FeederRegElem) {
+	connectToFeeder(&feederReq)
+	updateFeederRegList(feederReq)
+	feederRegChan <- createFeederNameList()
+}
+
 func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
 
 	utils.ReadUdsRegistrations("uds-registration.json")
 
+	// toFeeder is created here (moved up from its old slot further
+	// below) so the redis and memcache adapters can capture it at
+	// construction time rather than referencing a package global.
+	toFeeder = make(chan string)
+
 	switch stateDbType {
 	case "sqlite":
 		if utils.FileExists(dbFile) {
-			dbHandle, dbErr = sql.Open("sqlite3", dbFile)
-			if dbErr != nil {
-				utils.Error.Printf("Could not open state storage file = %s, err = %s", dbFile, dbErr)
+			db, openErr := sql.Open("sqlite3", dbFile)
+			if openErr != nil {
+				utils.Error.Printf("Could not open state storage file = %s, err = %s", dbFile, openErr)
 				os.Exit(1)
-			} else {
-				utils.Info.Printf("SQLite state storage initialised.")
 			}
+			stateBackend = newSqliteBackend(db)
+			utils.Info.Printf("SQLite state storage initialised.")
 		} else {
 			utils.Error.Printf("Could not find state storage file = %s", dbFile)
 		}
@@ -1457,28 +1743,27 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			return
 		}
 		utils.Info.Printf(addr)
-		redisClient = redis.NewClient(&redis.Options{
+		redisCli := redis.NewClient(&redis.Options{
 			Network:  "unix",
 			Addr:     addr,
 			Password: "",
 			DB:       1,
 		})
-		err := redisClient.Ping().Err()
-		if err != nil {
+		if err := redisCli.Ping().Err(); err != nil {
 			utils.Info.Printf("Redis-server not started. Trying to start it.")
 			if utils.FileExists("redis.log") {
 				os.Remove("redis.log")
 			}
 			cmd := exec.Command("/usr/bin/bash", "redisNativeInit.sh")
-			err := cmd.Run()
-			if err != nil {
-				utils.Error.Printf("redis-server startup failed, err=%s", err)
+			if runErr := cmd.Run(); runErr != nil {
+				utils.Error.Printf("redis-server startup failed, err=%s", runErr)
 				// os.Exit(1) should terminate the process
 				return
 			}
 		} else {
 			utils.Info.Printf("Redis state ping is ok")
 		}
+		stateBackend = newRedisBackend(redisCli, toFeeder)
 		utils.Info.Printf("Redis state storage initialised.")
 	case "apache-iotdb":
 		// Read configuration from file if present else use defaults
@@ -1506,12 +1791,13 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 
 		// Create new client session with IoTDB server
 		utils.Info.Printf("IoTDB: Creating new session with client config = %+v", *IoTDBClientConfig)
-		IoTDBsession = client.NewSession(IoTDBClientConfig)
-		if err := IoTDBsession.Open(false, 0); err != nil {
+		session := client.NewSession(IoTDBClientConfig)
+		if err := session.Open(false, 0); err != nil {
 			utils.Error.Printf("IoTDB: Failed to open server session with error=%s", err)
 			os.Exit(1)
 		}
-		defer IoTDBsession.Close()
+		defer session.Close()
+		stateBackend = newIoTDBBackend(session, IoTDBConfig)
 	case "memcache":
 		addr := utils.GetUdsPath("Vehicle", "memcache")
 		if len(addr) == 0 {
@@ -1519,19 +1805,24 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			// os.Exit(1) should terminate the process
 			return
 		}
-		memcacheClient = memcache.New(addr)
-		err := memcacheClient.Ping()
-		if err != nil {
+		mcCli := memcache.New(addr)
+		if err := mcCli.Ping(); err != nil {
 			utils.Info.Printf("Memcache daemon not alive. Trying to start it")
 			cmd := exec.Command("/usr/bin/bash", "memcacheNativeInit.sh")
-			err := cmd.Run()
-			if err != nil {
-				utils.Error.Printf("Memcache daemon startup failed, err=%s", err)
+			if runErr := cmd.Run(); runErr != nil {
+				utils.Error.Printf("Memcache daemon startup failed, err=%s", runErr)
 				// os.Exit(1) should terminate the process
 				return
 			}
 		}
+		stateBackend = newMemcacheBackend(mcCli, toFeeder)
 		utils.Info.Printf("Memcache daemon alive.")
+	case "none":
+		// noneBackend is also the package-level default for
+		// stateBackend, so this case is a no-op (kept explicit so the
+		// init log lines line up with the documented set of backends).
+		stateBackend = newNoneBackend()
+		utils.Info.Printf("State storage type = none (dummyValue counter backend).")
 	default:
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 	}
@@ -1553,7 +1844,8 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	go initDataServer(serviceMgrChan, dataChan, backendChan)
 	feederRegChan := make(chan FeederRegElem)
 	go initFeederRegServer(feederRegChan)
-	toFeeder = make(chan string)
+	// toFeeder was moved up to before the storage init switch so the
+	// redis/memcache adapters can capture it at construction time.
 	fromFeederRorC = make(chan string)
 	fromFeederCl = make(chan string)
 	go feederFrontend(toFeeder, fromFeederRorC, fromFeederCl)
@@ -1567,129 +1859,32 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	subscriptTicker := time.NewTicker(23 * time.Millisecond) //range/change subscription ticker when no feeder notifications
 	feederReconnectTicker := time.NewTicker(2 * time.Second)
 	feederNotification := false
-	triggeredPath := ""
 
 	for {
 		select {
 		case requestMap := <-dataChan: // request from server core
 //			utils.Info.Printf("Service manager: Request from Server core:%s\n", requestMap["action"].(string))
-			var responseMap = make(map[string]interface{})
-			responseMap["RouterId"] = requestMap["RouterId"]
-			responseMap["action"] = requestMap["action"]
-			responseMap["requestId"] = requestMap["requestId"]
-			responseMap["ts"] = utils.GetRfcTime()
-			if requestMap["handle"] != nil {
-				responseMap["authorization"] = requestMap["handle"]
-			}
+			responseMap := buildServiceResponseMap(requestMap)
 			switch requestMap["action"] {
 			case "invoke": // invokeVehicleService(...
 			case "set":
-				var ts string
-				switch requestMap["value"].(type) {
-					case string:
-						ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
-					case map[string]interface{}:
-						data, _ := json.Marshal(requestMap["value"])
-						ts = setVehicleData(requestMap["path"].(string), string(data))
-				}
-				if len(ts) == 0 {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-					dataChan <- errorResponseMap
-					break
-				}
-				responseMap["ts"] = ts
-				dataChan <- responseMap
+				handleServiceSet(requestMap, responseMap, dataChan)
 			case "get":
-				pathArray := unpackPaths(requestMap["path"].(string))
-				if pathArray == nil {
-					utils.Error.Printf("Unmarshal of path array failed.")
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- errorResponseMap
-					break
-				}
-				var filterList []utils.FilterObject
-				if requestMap["filter"] != nil && requestMap["filter"] != "" {
-					utils.UnpackFilter(requestMap["filter"], &filterList)
-					if len(filterList) == 0 {
-						utils.Error.Printf("Request filter malformed.")
-						utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-						dataChan <- errorResponseMap
-						break
-					}
-				}
-				dataPack := getDataPackMap(pathArray)
-/*				if len(dataPack) == 0 {
-					utils.Info.Printf("No historic data available")
-					utils.SetErrorResponse(requestMap, errorResponseMap, 6, "") //unavailable_data
-					dataChan <- errorResponseMap
-					break
-				}*/
-				responseMap["data"] = dataPack["dpack"]
-				dataChan <- responseMap
+				handleServiceGet(requestMap, responseMap, dataChan)
 			case "subscribe":
-				var subscriptionState SubscriptionState
-				subscriptionState.SubscriptionId = subscriptionId
-				subscriptionState.RouterId = requestMap["RouterId"].(string)
-				subscriptionState.Path = unpackPaths(requestMap["path"].(string))
-				if requestMap["filter"] == nil || requestMap["filter"] == "" {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
-					dataChan <- errorResponseMap
-					break
-				}
-				utils.UnpackFilter(requestMap["filter"], &(subscriptionState.FilterList))
-				if len(subscriptionState.FilterList) == 0 {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-					dataChan <- errorResponseMap
-				}
-				if requestMap["gatingId"] != nil {
-					subscriptionState.GatingId = requestMap["gatingId"].(string)
-				}
-				subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
-				subscriptionList = append(subscriptionList, subscriptionState)
-				responseMap["subscriptionId"] = strconv.Itoa(subscriptionId)
-				subscriptionList = activateIfIntervalOrCL(subscriptionState.FilterList, subscriptionChan, CLChannel, subscriptionId, subscriptionState.Path, subscriptionList)
-				variant := getFeederNotifyType(subscriptionState.FilterList)
-				if variant == "curvelog" || variant == "range" || variant == "change" {
-					toFeeder <- createFeederNotifyMessage(variant, subscriptionState.Path, subscriptionId)
-				}
-				subscriptionId++ // not to be incremented elsewhere
-				dataChan <- responseMap
+				subscriptionList, subscriptionId = handleServiceSubscribe(
+					requestMap, responseMap, dataChan,
+					subscriptionList, subscriptionId,
+					subscriptionChan, CLChannel, toFeeder,
+				)
 			case "unsubscribe":
-				if requestMap["subscriptionId"] != nil {
-					status := -1
-					subscriptId, ok := requestMap["subscriptionId"].(string)
-					if ok == true {
-						status, subscriptionList = deactivateSubscription(subscriptionList, subscriptId)
-						if status != -1 {
-							dataChan <- responseMap
-							toFeeder <- utils.FinalizeMessage(requestMap)
-							break
-						}
-						delete(requestMap, "subscriptionId")
-					}
-				}
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-				dataChan <- errorResponseMap
+				subscriptionList = handleServiceUnsubscribe(requestMap, responseMap, dataChan, subscriptionList, toFeeder)
 			case "internal-killsubscriptions":
-				isRemoved := true
-				for isRemoved == true {
-					isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
-					utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
-				}
+				subscriptionList = handleInternalKillSubscriptions(requestMap, subscriptionList)
 			case "internal-cancelsubscription":
-				routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))
-				if routerId != "" {
-					requestMap["RouterId"] = routerId
-					requestMap["action"] = "subscription"
-					requestMap["requestId"] = nil
-					requestMap["subscriptionId"] = subscriptionId
-					utils.SetErrorResponse(requestMap, errorResponseMap, 2, "Token expired or consent cancelled.")
-					dataChan <- errorResponseMap
-					_, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
-				}
+				subscriptionList = handleInternalCancelSubscription(requestMap, dataChan, subscriptionList)
 			default:
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Unknown action") //invalid_data
-					dataChan <- errorResponseMap
+				handleUnknownAction(requestMap, dataChan)
 			} // switch
 		case <-dummyTickerC:
 			dummyValue++
@@ -1697,58 +1892,18 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 				dummyValue = 0
 			}
 		case subscriptionId := <-subscriptionChan: // interval notification triggered
-			subIndex := getSubcriptionStateIndex(subscriptionId, subscriptionList)
-			if subIndex == -1 {
-				utils.Error.Printf("Subscription not found for id=%d", subscriptionId)
-				continue
-			}
-			subscriptionState := subscriptionList[subIndex]
-			var subscriptionMap = make(map[string]interface{})
-			subscriptionMap["action"] = "subscription"
-			subscriptionMap["ts"] = utils.GetRfcTime()
-			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
-			subscriptionMap["RouterId"] = subscriptionState.RouterId
-			subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
-			select {
-			case backendChan <- subscriptionMap:
-			default: 
-				utils.Error.Printf("serviceMgr: Event dropped")
-			}
+			handleIntervalNotification(subscriptionId, subscriptionList, backendChan)
 		case clPack := <-CLChannel: // curve logging notification
-			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
-			if index == -1 {
-				closeClSubId = -1
-				continue
-			}
-			//subscriptionState := subscriptionList[index]
-			subscriptionList[index].SubscriptionThreads--
-			if clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0 {
-				subscriptionList = removeFromsubscriptionList(subscriptionList, index)
-				closeClSubId = -1
-			}
-			var subscriptionMap = make(map[string]interface{})
-			subscriptionMap["action"] = "subscription"
-			subscriptionMap["ts"] = utils.GetRfcTime()
-			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
-			subscriptionMap["RouterId"] = subscriptionList[index].RouterId
-			subscriptionMap["data"] = string2Map(clPack.DataPack)["s2m"]
-			backendChan <- subscriptionMap
+			subscriptionList = handleCurveLogNotification(clPack, subscriptionList, backendChan)
 		case <-subscriptTicker.C:
-			if feederNotification == false { // feeder does not issue notifications
-				subscriptionList = checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
-			} else {
-				subscriptTicker.Stop()
-			}
+			subscriptionList = handleRCTick(feederNotification, subscriptTicker, subscriptionList, backendChan)
 		case <-feederReconnectTicker.C:
 			feederConnectRetry()
 		case feederMessage := <-fromFeederRorC:
 //utils.Info.Printf("Feeder message=%s", feederMessage)
-			triggeredPath, feederNotification = decodeFeederMessage(feederMessage, feederNotification)
-			subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
+			feederNotification, subscriptionList = handleFeederNotificationMessage(feederMessage, feederNotification, subscriptionList, backendChan)
 		case feederReq := <- feederRegChan:
-			connectToFeeder(&feederReq)
-			updateFeederRegList(feederReq)
-			feederRegChan <- createFeederNameList()
+			handleFeederRegistration(feederReq, feederRegChan)
 		} // select
 	} // for
 utils.Info.Printf("Service manager exit")

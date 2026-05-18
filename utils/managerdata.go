@@ -11,9 +11,17 @@ package utils
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
+
+// WsClientIndexMu protects the WsClientIndexList read-modify-write in
+// getWsClientIndex / ReturnWsClientIndex from concurrent WS upgrade
+// goroutines. Without it, two simultaneous upgrades could both observe
+// the same slot as free and both claim it, causing request/response
+// cross-talk between unrelated clients.
+var WsClientIndexMu sync.Mutex
 
 var requestTag int
 
