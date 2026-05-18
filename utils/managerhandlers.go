@@ -172,6 +172,31 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 }
 
 // Receives the message from client, sends it to the manager hub, and waits for the response
+// decodeWsRequestPayload converts a raw inbound WS message into the
+// JSON string the manager hub expects. Extracted from
+// frontendWSAppSession so the encoding-dispatch (Protobuf vs JSON
+// passthrough) can be unit-tested without a live WebSocket. See
+// managerhandlers_dispatch_test.go.
+func decodeWsRequestPayload(msg []byte, encoding Encoding) string {
+	if encoding == PROTOBUF {
+		return ProtobufToJson(msg)
+	}
+	return string(msg)
+}
+
+// forwardWsRequest takes a decoded payload from a WS client, forwards
+// it to the manager hub via clientChannel, waits for the hub's
+// response, and pushes the response on to the backend channel for
+// backendWSAppSession to write back to the WS. Extracted from
+// frontendWSAppSession so the per-message request/response handshake
+// can be unit-tested independently of the goroutine machinery — see
+// managerhandlers_dispatch_test.go.
+func forwardWsRequest(payload string, clientChannel chan string, clientBackendChannel chan string) {
+	clientChannel <- payload
+	response := <-clientChannel
+	clientBackendChannel <- response
+}
+
 func frontendWSAppSession(conn *websocket.Conn, clientChannel chan string, clientBackendChannel chan string, clientId int, encoding Encoding) {
 	for {
 		_, msg, err := conn.ReadMessage() // Reads message from websocket
@@ -182,20 +207,22 @@ func frontendWSAppSession(conn *websocket.Conn, clientChannel chan string, clien
 			ReturnWsClientIndex(clientId)
 			return
 		}
-		// Generates payload from encoding
-		var payload string
-		if encoding == PROTOBUF {
-			payload = ProtobufToJson(msg)
-		} else {
-			payload = string(msg)
-		}
+		payload := decodeWsRequestPayload(msg, encoding)
 		Info.Printf("%s request: %s, len=%d", conn.RemoteAddr(), payload, len(payload))
-
-		clientChannel <- payload    // forward to mgr hub,
-		response := <-clientChannel //  and wait for response
-
-		clientBackendChannel <- response // Forwards the response to the backendWSAppSession
+		forwardWsRequest(payload, clientChannel, clientBackendChannel)
 	}
+}
+
+// encodeWsResponsePayload converts a JSON response message into the
+// raw bytes + WebSocket message type expected by gorilla/websocket's
+// WriteMessage. Extracted from backendWSAppSession so the encoding
+// dispatch (Protobuf binary vs JSON text) can be unit-tested without
+// a live WebSocket.
+func encodeWsResponsePayload(message string, encoding Encoding) (messageType int, response []byte) {
+	if encoding == PROTOBUF {
+		return websocket.BinaryMessage, []byte(JsonToProtobuf(message))
+	}
+	return websocket.TextMessage, []byte(message)
 }
 
 // Receives a response for the client through the channel. Then writes the response back to the client.
@@ -209,16 +236,7 @@ func backendWSAppSession(conn *websocket.Conn, clientBackendChannel chan string,
 			break
 		}
 		// Write response/notification back to app client
-		var response []byte
-		var messageType int
-
-		if encoding == PROTOBUF {
-			response = []byte(JsonToProtobuf(message))
-			messageType = websocket.BinaryMessage
-		} else {
-			response = []byte(message)
-			messageType = websocket.TextMessage
-		}
+		messageType, response := encodeWsResponsePayload(message, encoding)
 		err := conn.WriteMessage(messageType, response)
 		if err != nil {
 			Error.Print("App client write error:", err)
@@ -346,7 +364,7 @@ func GetTLSConfig(host string, caCertFile string, certOpt tls.ClientAuthType, se
 	if certOpt > tls.RequestClientCert { // If a client certificate is required, then the CA certificate is needed
 		caCert, err = os.ReadFile(caCertFile)
 		if err != nil {
-			Error.Printf("Error opening cert file", caCertFile, ", error ", err)
+			Error.Printf("Error opening cert file %s, error %v", caCertFile, err)
 			return nil
 		}
 		caCertPool = x509.NewCertPool()
