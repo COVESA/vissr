@@ -288,6 +288,28 @@ type PopToken struct {
 	Jwt           JsonWebToken
 }
 
+// stripJsonQuotes returns the contents of a RawMessage with the
+// surrounding double-quotes removed when the value looks like a
+// JSON string. If the value is shorter than 2 bytes or doesn't
+// start+end with a double-quote, the original bytes are returned
+// as a string.
+//
+// Bug fix: the previous inline expression `string(value[1:len(value)-1])`
+// panicked with "slice bounds out of range" when the JSON value
+// had fewer than 2 raw bytes — easily reachable via a PoP claim
+// like {"foo": 0} (a numeric literal). Since PoP token contents
+// are attacker-controlled, this was an unauthenticated DoS panic
+// in the AGT server.
+func stripJsonQuotes(value json.RawMessage) string {
+	if len(value) < 2 {
+		return string(value)
+	}
+	if value[0] == '"' && value[len(value)-1] == '"' {
+		return string(value[1 : len(value)-1])
+	}
+	return string(value)
+}
+
 // Gets the received PoP token as string, and unmarshalls it. JWK, JWT and claims fields are all filled
 func (popToken *PopToken) Unmarshal(token string) error {
 	popToken.HeaderClaims = make(map[string]string)
@@ -301,20 +323,26 @@ func (popToken *PopToken) Unmarshal(token string) error {
 		return err
 	}
 	for key, value := range headerMap {
-		popToken.HeaderClaims[key] = string(value[1 : len(value)-1])
+		popToken.HeaderClaims[key] = stripJsonQuotes(value)
 	}
 	popToken.HeaderClaims["jwk"] = string(headerMap["jwk"]) // Key must be unmarshalled
 	// Then we decode the key
 	if err := popToken.Jwk.Unmarshall(popToken.HeaderClaims["jwk"]); err != nil {
 		return errors.New("can not decode key in poptoken")
 	}
-	// Continue with payload
+	// Continue with payload. Bug fix: check the Unmarshal error
+	// BEFORE iterating payloadMap. The previous code ignored the
+	// error and continued, which could leave callers thinking a
+	// PoP was well-formed when it wasn't (e.g. AGT server cached
+	// the JTI before signature check — bug 4 in agt_server.go).
 	var payloadMap map[string]json.RawMessage
-	err = json.Unmarshal([]byte(popToken.Jwt.Payload), &payloadMap)
-	for key, value := range payloadMap {
-		popToken.PayloadClaims[key] = string(value[1 : len(value)-1])
+	if err = json.Unmarshal([]byte(popToken.Jwt.Payload), &payloadMap); err != nil {
+		return err
 	}
-	return err
+	for key, value := range payloadMap {
+		popToken.PayloadClaims[key] = stripJsonQuotes(value)
+	}
+	return nil
 }
 
 // Initializes popToken from claims and public key. Make sure the private key used to sign is the same used to initialize

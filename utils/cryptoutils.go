@@ -247,6 +247,16 @@ func createPrivateKeyFile(name string) (*os.File, error) {
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
+// createPrivateKeyFile opens (or replaces) a file with mode 0600 —
+// read/write for owner only. The previous code used os.Create which
+// honours the process umask; on typical systems this produced 0644
+// (world-readable), letting any local user exfiltrate the RSA / ECDSA
+// signing key. Public-key files keep the default mode since they're
+// not sensitive.
+func createPrivateKeyFile(name string) (*os.File, error) {
+	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+}
+
 // Export KeyPair to files named as given (ECDSA and RSA supported, pointers to privKey must be given)
 func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName string) error {
 	switch typ := privKey.(type) {

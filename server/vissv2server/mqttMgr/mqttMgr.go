@@ -12,11 +12,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/covesa/vissr/utils"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
-	//	"github.com/gorilla/websocket"
 )
 
 var mqttChannel chan string
@@ -39,6 +38,32 @@ type TopicList struct {
 }
 
 var topicList TopicList
+
+// topicListMu guards topicList. pushTopic / getTopic / popTopic are
+// all called from the main MqttMgrInit select loop today, so the
+// mutex is largely defensive — but popTopic is documented as
+// "TODO: to be used at unsubscribe..." which suggests it will
+// eventually be invoked from another goroutine.
+var topicListMu sync.Mutex
+
+// isValidVin guards against MQTT topic-name injection. The VIN
+// returned by the server core ultimately becomes part of the
+// subscribed topic ("/<VIN>/Vehicle"); if a VIN contained MQTT
+// wildcards ('+', '#') or path separators ('/'), the manager would
+// end up subscribing to topics it shouldn't. VINs are alphanumeric
+// per ISO 3779 but we allow '-' and '_' as well for legacy/test
+// values.
+func isValidVin(vin string) bool {
+	if vin == "" || len(vin) > 64 {
+		return false
+	}
+	for _, c := range vin {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
 
 func vissV2Receiver(transportMgrChan chan string, vissv2Channel chan string) {
 	//	defer dataConn.Close()
@@ -85,130 +110,171 @@ func mqttSubscribe(brokerSocket string, topic string) MQTT.Client {
 		return nil
 	}
 	if token := c.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		utils.Error.Println(token.Error())
-		os.Exit(1)
+		// Previously this called os.Exit(1), tearing down the entire
+		// vissv2server process on any transient broker subscribe
+		// failure. Return nil instead and let the caller decide.
+		utils.Error.Println("mqttSubscribe: subscribe failed:", token.Error())
+		c.Disconnect(250)
+		return nil
 	}
 	return c
 }
 
 func getTopic(topicId int) string {
-	iterator := topicList.head
-	for i := 0; i < topicList.nodes; i++ {
-		if iterator.value.topicId == topicId {
-			return iterator.value.topic
+	topicListMu.Lock()
+	defer topicListMu.Unlock()
+	for n := topicList.head; n != nil; n = n.next {
+		if n.value.topicId == topicId {
+			return n.value.topic
 		}
-		iterator = iterator.next
 	}
 	return ""
 }
 
 func pushTopic(topic string, topicId int) {
-	var newNode Node
-	newNode.value.topic = topic
-	newNode.value.topicId = topicId
-	newNode.next = nil
-
-	if topicList.nodes == 0 {
-		topicList.head = &newNode
+	topicListMu.Lock()
+	defer topicListMu.Unlock()
+	newNode := &Node{value: NodeValue{topicId: topicId, topic: topic}}
+	if topicList.head == nil {
+		topicList.head = newNode
 		topicList.nodes++
 		return
 	}
-	iterator := topicList.head
-	for i := 0; i < topicList.nodes; i++ {
-		if iterator.next == nil {
-			iterator.next = &newNode
-			break
-		}
-		iterator = iterator.next
+	// Walk to the tail and append. The old code mixed a counter-based
+	// loop with `iterator.next == nil` and could leave the node count
+	// inconsistent if the structure was ever modified concurrently.
+	tail := topicList.head
+	for tail.next != nil {
+		tail = tail.next
 	}
+	tail.next = newNode
 	topicList.nodes++
 }
 
-func popTopic(topicId int) { //TODO: to be used at unsubscribe, get, set responses from VISSv2
-	if topicList.nodes > 0 && topicList.head.value.topicId == topicId {
-		if topicList.nodes > 1 {
-			topicList.head = topicList.head.next
-		} else {
-			topicList.head = nil
-		}
-		topicList.nodes--
-	}
-	iterator := topicList.head
-	var previousNode *Node
-	i := 0
-	for i = 0; i < topicList.nodes; i++ {
-		if iterator.value.topicId == topicId {
-			break
-		}
-		previousNode = iterator
-		iterator = iterator.next
-	}
-	if i == topicList.nodes {
+// popTopic removes the first node whose topicId matches and returns.
+// The original implementation had three structural bugs (nil-deref on
+// empty list, nil-deref after head removal, broken splice that could
+// drop nodes). This is a clean single-pass rewrite.
+func popTopic(topicId int) {
+	topicListMu.Lock()
+	defer topicListMu.Unlock()
+	if topicList.head == nil {
 		return
 	}
-	previousNode.next = iterator.next
-	topicList.nodes--
+	// Head case.
+	if topicList.head.value.topicId == topicId {
+		topicList.head = topicList.head.next
+		topicList.nodes--
+		return
+	}
+	// Walk with prev pointer; splice when found.
+	for prev := topicList.head; prev.next != nil; prev = prev.next {
+		if prev.next.value.topicId == topicId {
+			prev.next = prev.next.next
+			topicList.nodes--
+			return
+		}
+	}
 }
 
-func publishMessage(brokerSocket string, topic string, payload string) {
+// publishMessage publishes payload on the given MQTT topic via the
+// supplied already-connected client. The original implementation
+// created a fresh MQTT.NewClient and connected on every call —
+// generating a TCP storm against the broker under load — and called
+// os.Exit(1) on any Connect failure, killing the entire vissv2server
+// process for transient broker hiccups. Both problems are fixed by
+// reusing the long-lived subscription client (which can also publish).
+func publishMessage(client MQTT.Client, topic, payload string) {
 	utils.Info.Printf("publishMessage:Topic=%s, Payload=%s", topic, payload)
-	opts := MQTT.NewClientOptions().AddBroker(brokerSocket)
-	//    opts.SetClientID("VIN001")
-
-	c := MQTT.NewClient(opts)
-	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		utils.Error.Println(token.Error())
-		os.Exit(1)
+	if client == nil {
+		utils.Error.Printf("publishMessage: nil client, dropping message for topic=%s", topic)
+		return
 	}
-	token := c.Publish(topic, 0, false, payload)
+	if topic == "" {
+		utils.Error.Printf("publishMessage: empty topic, dropping payload=%s", payload)
+		return
+	}
+	token := client.Publish(topic, 0, false, payload)
 	token.Wait()
-	c.Disconnect(250)
+	if err := token.Error(); err != nil {
+		utils.Error.Printf("publishMessage: publish failed for topic=%s: %s", topic, err)
+	}
 }
 
 func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
-	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get", 
+	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get",
 	"path":"Vehicle.VehicleIdentification.VIN", "requestId":"570415", "origin":"internal"}`
-	/*	err := dataConn.WriteMessage(websocket.TextMessage, []byte(vinRequest))
-		if err != nil {
-			utils.Error.Println("Datachannel write error:" + err.Error())
-		}
-		_, response, err := dataConn.ReadMessage() // receive message from server core
-		if err != nil {
-			utils.Error.Println("Datachannel read error:" + err.Error())
-			os.Exit(1)
-		}*/
 	transportMgrChan <- vinRequest
 	response := <-transportMgrChan
 	vin := extractVin(string(response))
 	utils.Info.Printf("VIN=%s", vin)
+	if !isValidVin(vin) {
+		// MQTT topic-name injection guard: a VIN containing '+', '#',
+		// or '/' would let the manager subscribe to wildcard topics
+		// outside this vehicle's scope. Refuse to build a topic from
+		// an invalid VIN.
+		utils.Error.Printf("getVissV2Topic: refusing to build topic from invalid VIN=%q", vin)
+		return ""
+	}
 	return "/" + vin + "/Vehicle"
 }
 
+// extractVin parses the VIN out of a server-core get response. The
+// original implementation used strings.Index(response, "value") + 8
+// and trusted that the literal sequence `value":"<VIN>"` appeared
+// exactly that way — any pretty-printed JSON or whitespace shifted
+// the +8 offset onto the wrong characters, and a malformed response
+// caused either a wrong VIN or an OOB slice. Now we parse the
+// response as JSON and look for the value field at the well-known
+// nested location (data.dp.value) with a top-level fallback.
 func extractVin(response string) string {
-	vinStartIndex := strings.Index(response, "value")
-	if vinStartIndex == -1 {
-		utils.Error.Printf("VIN cannot be extracted in %s", response)
-		return "ULF001"  //???
+	var respMap map[string]interface{}
+	if err := json.Unmarshal([]byte(response), &respMap); err != nil {
+		utils.Error.Printf("extractVin: response not JSON: %s", response)
+		return ""
 	}
-	vinStartIndex += 8 // value”:”
-	vinEndIndex := utils.NextQuoteMark([]byte(response), vinStartIndex)
-	return response[vinStartIndex:vinEndIndex]
+	// Preferred path: data.dp.value (matches getDataPackMap output).
+	if data, ok := respMap["data"].(map[string]interface{}); ok {
+		if dp, ok := data["dp"].(map[string]interface{}); ok {
+			if v, ok := dp["value"].(string); ok {
+				return v
+			}
+		}
+		if v, ok := data["value"].(string); ok {
+			return v
+		}
+	}
+	// Fallback: top-level "value" (older formats / direct shape).
+	if v, ok := respMap["value"].(string); ok {
+		return v
+	}
+	utils.Error.Printf("extractVin: no value field found in response: %s", response)
+	return ""
 }
 
-func decomposeMqttPayload(mqttPayload string) (string, string) { // {"topic":"X", "request":"{...}"}
+func decomposeMqttPayload(mqttPayload string) (string, string) { // {"topic":"X", "request":{...}}
 	var payloadMap = make(map[string]interface{})
 	utils.MapRequest(mqttPayload, &payloadMap)
-	topic, err := json.Marshal(payloadMap["topic"])
-	if err != nil {
-		utils.Error.Printf("decomposeMqttPayload: cannot marshal topic in: %s", mqttPayload)
+	// Bug fix: the original used json.Marshal on payloadMap["topic"],
+	// which returned `"X"` (with surrounding quotes), and that quoted
+	// string was then handed to MQTT.Publish as the topic name —
+	// producing literal `"X"` topics on the wire. Worse, a missing
+	// "topic" key made Marshal return `"null"` (4 bytes), which
+	// silently passed the len(topic)==0 check at the call site.
+	// Type-assert to string instead so a missing/non-string topic
+	// fails closed (empty return).
+	topic, ok := payloadMap["topic"].(string)
+	if !ok {
+		utils.Error.Printf("decomposeMqttPayload: missing or non-string topic in: %s", mqttPayload)
 		return "", ""
 	}
+	// The request field IS a JSON object that needs re-marshaling.
 	payload, err := json.Marshal(payloadMap["request"])
 	if err != nil {
 		utils.Error.Printf("decomposeMqttPayload: cannot marshal request in:%s", mqttPayload)
-		return string(topic), "corrupt request"
+		return topic, "corrupt request"
 	}
-	return string(topic), string(payload)
+	return topic, string(payload)
 }
 
 func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
@@ -222,7 +288,17 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 	vissv2Channel := make(chan string)
 
 	brokerSocket := getBrokerSocket(false)
-	serverSubscription := mqttSubscribe(brokerSocket, getVissV2Topic(transportMgrChan, mgrId))
+	topic := getVissV2Topic(transportMgrChan, mgrId)
+	if topic == "" {
+		// Refused by isValidVin in getVissV2Topic — don't even try.
+		utils.Error.Printf("MqttMgrInit: refusing to start; could not derive a valid VISS v2 topic")
+		return
+	}
+	serverSubscription := mqttSubscribe(brokerSocket, topic)
+	if serverSubscription == nil {
+		utils.Error.Printf("MqttMgrInit: subscribe failed for topic=%s; manager not started", topic)
+		return
+	}
 	topicId := 0
 	topicList.nodes = 0
 
@@ -232,6 +308,13 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 
 	utils.Info.Println("**** MQTT manager hub entering server loop... ****")
 
+	// The original loop had a `default: time.Sleep(25 * time.Millisecond)`
+	// arm that added 25ms of latency per message and woke this
+	// goroutine 40 times per second forever. It's gone now: a select
+	// with only blocking channel cases parks the goroutine until
+	// something actually arrives. The Disconnect(250) call that lived
+	// after this loop was also unreachable (the for has no break) and
+	// has been removed.
 	for {
 		select {
 
@@ -244,10 +327,17 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 			utils.Info.Printf("MQTT mgr hub: Message from broker:Topic=%s, Payload=%s", topic, payload)
 			validationError := utils.JsonSchemaValidate(payload)
 			if len(validationError) > 0 {
+				// Bug fix: the original code published the error
+				// response back to the client AND THEN fell through
+				// to pushTopic + AddRoutingInfoAndForward, so the
+				// schema-invalid payload was still routed inward to
+				// the server core. `continue` short-circuits that
+				// fall-through.
 				var requestMap map[string]interface{}
 				utils.MapRequest(payload, &requestMap)
 				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
-				publishMessage(brokerSocket, topic, utils.FinalizeMessage(errorResponseMap))
+				publishMessage(serverSubscription, topic, utils.FinalizeMessage(errorResponseMap))
+				continue
 			}
 			pushTopic(topic, topicId)
 			AddRoutingInfoAndForward(payload, mgrId, topicId, transportMgrChan)
@@ -257,12 +347,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 			utils.Info.Printf("MQTT hub: Message from VISSv2 server:%s", vissv2Message)
 			// link routerId to topic, remove routerId from message, create mqtt message, send message to mqtt transport
 			payload, topicHandle := utils.RemoveInternalData(string(vissv2Message))
-			publishMessage(brokerSocket, getTopic(topicHandle), payload)
-
-		default:
-			time.Sleep(25 * time.Millisecond)
+			publishMessage(serverSubscription, getTopic(topicHandle), payload)
 		}
 	}
-
-	serverSubscription.Disconnect(250)
 }
