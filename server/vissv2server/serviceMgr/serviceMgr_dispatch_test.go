@@ -19,12 +19,23 @@
 *   - handleInternalCancelSubscription AGT-cancelled subscription cleanup
 *   - handleUnknownAction            default arm
 *
-* Follow-up PR (this PR) adds tests for the subscribe arm, which was
-* left inline in #129 with a TODO(testing) note and has now been
-* extracted to handleServiceSubscribe. The storage-backend interface
-* (StorageBackend) injection is still deferred to a separate PR — it
-* is a genuinely separate architectural change touching 5 backends
-* and their init paths.
+* Follow-up PR A added tests for the subscribe arm, which was left
+* inline in #129 with a TODO(testing) note and has now been extracted
+* to handleServiceSubscribe.
+*
+* Follow-up PR B (this PR) extracts the five notification-side arms
+* of ServiceMgrInit's select loop and adds tests for the four that
+* are unit-testable without a live UDS socket:
+*   - handleIntervalNotification       <-subscriptionChan
+*   - handleCurveLogNotification       <-CLChannel
+*   - handleRCTick                     <-subscriptTicker.C
+*   - handleFeederNotificationMessage  <-fromFeederRorC
+*   (handleFeederRegistration is extracted but not unit-tested -- it
+*    calls connectToFeeder which opens a real UDS socket.)
+*
+* The storage-backend interface (StorageBackend) injection is still
+* deferred to a separate PR — it is a genuinely separate architectural
+* change touching 5 backends and their init paths.
 *
 * Same shape as the dispatch tests in PRs #124 (udsMgr+httpMgr), #125
 * (feederv4), #126 (wsMgr), #127 (grpcMgr), and #128 (vissv2server core).
@@ -659,5 +670,226 @@ func TestHandleServiceSubscribe_EmptyFilterListBugPreserved(t *testing.T) {
 	}
 	if nextId != startId+1 {
 		t.Errorf("nextId = %d; bug-preserved behaviour increments to %d", nextId, startId+1)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Tests for the notification-arm handlers (follow-up PR B to #129):
+//
+//   - handleIntervalNotification       <-subscriptionChan arm
+//   - handleCurveLogNotification       <-CLChannel arm
+//   - handleRCTick                     <-subscriptTicker.C arm
+//   - handleFeederNotificationMessage  <-fromFeederRorC arm
+//
+// (handleFeederRegistration is not unit-tested -- it calls
+// connectToFeeder which opens a real UDS socket, and mocking that
+// requires more plumbing than the value it delivers here.)
+// ----------------------------------------------------------------------------
+
+// TestHandleIntervalNotification_UnknownIdLogsAndReturns covers the
+// "subscription has been removed but the interval timer fired anyway"
+// race: the handler should log and return without touching backendChan.
+func TestHandleIntervalNotification_UnknownIdLogsAndReturns(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 1},
+	}
+	handleIntervalNotification(9999, subscriptionList, backChan)
+	select {
+	case got := <-backChan:
+		t.Fatalf("backChan should be empty for unknown id; got %v", got)
+	default:
+	}
+}
+
+// TestHandleIntervalNotification_KnownIdSendsToBackend exercises the
+// happy path: the subscription is in the list, the handler builds a
+// well-shaped subscription event and pushes it to backendChan.
+func TestHandleIntervalNotification_KnownIdSendsToBackend(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	subscriptionList := []SubscriptionState{
+		{
+			SubscriptionId: 7,
+			RouterId:       "0?3",
+			Path:           []string{"Vehicle.Speed"},
+		},
+	}
+	handleIntervalNotification(7, subscriptionList, backChan)
+	select {
+	case got := <-backChan:
+		if got["action"] != "subscription" {
+			t.Errorf("action = %v; want subscription", got["action"])
+		}
+		if got["subscriptionId"] != "7" {
+			t.Errorf("subscriptionId = %v; want \"7\"", got["subscriptionId"])
+		}
+		if got["RouterId"] != "0?3" {
+			t.Errorf("RouterId = %v; want 0?3", got["RouterId"])
+		}
+		if _, present := got["data"]; !present {
+			t.Errorf("data key missing from notification event")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleIntervalNotification did not push to backChan")
+	}
+}
+
+// TestHandleIntervalNotification_DropOnBackpressure exercises the
+// non-blocking select branch: when backendChan is full, the handler
+// drops the event rather than block. This pins the original arm's
+// drop-on-overflow behaviour.
+func TestHandleIntervalNotification_DropOnBackpressure(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	backChan <- map[string]interface{}{"stale": "event"} // fill the buffer
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 7, RouterId: "0?3", Path: []string{"Vehicle.Speed"}},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		handleIntervalNotification(7, subscriptionList, backChan)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Good: the handler returned without blocking even though the
+		// channel was full.
+	case <-time.After(time.Second):
+		t.Fatalf("handleIntervalNotification blocked instead of dropping")
+	}
+
+	// The buffer still holds the original stale event — the new one
+	// was dropped on the floor.
+	select {
+	case got := <-backChan:
+		if got["stale"] != "event" {
+			t.Errorf("backChan contained the new event; should have dropped it")
+		}
+	default:
+		t.Fatalf("backChan was unexpectedly drained")
+	}
+}
+
+// TestHandleCurveLogNotification_UnknownIdResetsCloseSignal covers the
+// "subscription is no longer on the list when the close signal
+// arrives" path: closeClSubId is cleared and the handler returns
+// without touching backendChan.
+func TestHandleCurveLogNotification_UnknownIdResetsCloseSignal(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 1, SubscriptionThreads: 3},
+	}
+	closeClSubId = 9999 // pretend a close was pending for an id we won't find
+
+	updated := handleCurveLogNotification(CLPack{SubscriptionId: 9999, DataPack: `{"value":"x","ts":"y"}`}, subscriptionList, backChan)
+
+	if closeClSubId != -1 {
+		t.Errorf("closeClSubId = %d; want -1 (should be cleared on unknown id)", closeClSubId)
+	}
+	if len(updated) != 1 {
+		t.Errorf("subscriptionList mutated unexpectedly; len=%d, want 1", len(updated))
+	}
+	select {
+	case got := <-backChan:
+		t.Fatalf("backChan should be empty on unknown-id path; got %v", got)
+	default:
+	}
+}
+
+// TestHandleCurveLogNotification_DecrementsThreadsAndForwards exercises
+// the happy path: the subscription is in the list, this is NOT the
+// close signal for it, so the threads counter is decremented and the
+// data pack is forwarded to backendChan.
+func TestHandleCurveLogNotification_DecrementsThreadsAndForwards(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 5, RouterId: "0?2", SubscriptionThreads: 3},
+	}
+	closeClSubId = -1 // no pending close
+
+	updated := handleCurveLogNotification(
+		CLPack{SubscriptionId: 5, DataPack: `{"value":"42","ts":"2026-01-01T00:00:00Z"}`},
+		subscriptionList, backChan,
+	)
+
+	if updated[0].SubscriptionThreads != 2 {
+		t.Errorf("SubscriptionThreads = %d; want 2 (decremented from 3)", updated[0].SubscriptionThreads)
+	}
+	select {
+	case got := <-backChan:
+		if got["subscriptionId"] != "5" {
+			t.Errorf("subscriptionId = %v; want \"5\"", got["subscriptionId"])
+		}
+		if got["RouterId"] != "0?2" {
+			t.Errorf("RouterId = %v; want 0?2", got["RouterId"])
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleCurveLogNotification did not push to backChan")
+	}
+}
+
+// TestHandleRCTick_FeederActiveStopsTicker covers the path taken when
+// the feeder is producing range/change notifications itself: the
+// poll-ticker is stopped and the subscription list is returned
+// unchanged.
+func TestHandleRCTick_FeederActiveStopsTicker(t *testing.T) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop() // double-Stop is safe
+	backChan := make(chan map[string]interface{}, 1)
+	subscriptionList := []SubscriptionState{
+		{SubscriptionId: 1},
+	}
+
+	updated := handleRCTick(true, ticker, subscriptionList, backChan)
+	if len(updated) != 1 {
+		t.Errorf("subscriptionList mutated on feeder-active path; len=%d", len(updated))
+	}
+	// We can't directly assert "ticker is stopped" — the time.Ticker
+	// API doesn't expose state. But the call should have returned
+	// promptly and not panicked, which is what matters for behaviour.
+	select {
+	case got := <-backChan:
+		t.Errorf("backChan should be empty on feeder-active path; got %v", got)
+	default:
+	}
+}
+
+// TestHandleRCTick_FeederInactivePollsRC covers the path taken when
+// the feeder is NOT providing notifications: the handler delegates to
+// checkRCFilterAndIssueMessages, which is a no-op on an empty
+// subscription list (so this test just confirms the call returns
+// cleanly with the list unchanged).
+func TestHandleRCTick_FeederInactivePollsRC(t *testing.T) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	backChan := make(chan map[string]interface{}, 1)
+	updated := handleRCTick(false, ticker, []SubscriptionState{}, backChan)
+	if updated == nil || len(updated) != 0 {
+		t.Errorf("subscriptionList should be returned (possibly unchanged) on feeder-inactive path; got %v", updated)
+	}
+}
+
+// TestHandleFeederNotificationMessage_SubscribeOkFlipsNotificationOn
+// covers the feeder telling us "I support range/change notifications"
+// via a subscribe response with status=ok. The handler should flip the
+// feederNotification flag to true.
+func TestHandleFeederNotificationMessage_SubscribeOkFlipsNotificationOn(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	msg := `{"action":"subscribe","status":"ok"}`
+	updatedFlag, _ := handleFeederNotificationMessage(msg, false, []SubscriptionState{}, backChan)
+	if updatedFlag != true {
+		t.Errorf("feederNotification flag = %v; want true after subscribe ok", updatedFlag)
+	}
+}
+
+// TestHandleFeederNotificationMessage_MalformedMessagePreservesFlag
+// covers the defensive arm of decodeFeederMessage: an unparseable
+// message leaves the flag unchanged.
+func TestHandleFeederNotificationMessage_MalformedMessagePreservesFlag(t *testing.T) {
+	backChan := make(chan map[string]interface{}, 1)
+	msg := "not-json-at-all"
+	updatedFlag, _ := handleFeederNotificationMessage(msg, true, []SubscriptionState{}, backChan)
+	if updatedFlag != true {
+		t.Errorf("feederNotification flag = %v; want it to stay true on malformed input", updatedFlag)
 	}
 }

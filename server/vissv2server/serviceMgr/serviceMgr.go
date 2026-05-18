@@ -1694,6 +1694,107 @@ func handleUnknownAction(requestMap map[string]interface{}, dataChan chan map[st
 	dataChan <- errorResponseMap
 }
 
+// handleIntervalNotification handles a fire on subscriptionChan (an
+// interval-based subscription's timer ticked). Looks up the
+// subscription, builds a notification event with the current data
+// pack, and pushes it to backendChan with a non-blocking select — the
+// original arm drops the event rather than block when backendChan is
+// full. Extracted from ServiceMgrInit in follow-up PR B to #129.
+func handleIntervalNotification(subscriptionId int, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) {
+	subIndex := getSubcriptionStateIndex(subscriptionId, subscriptionList)
+	if subIndex == -1 {
+		utils.Error.Printf("Subscription not found for id=%d", subscriptionId)
+		return
+	}
+	subscriptionState := subscriptionList[subIndex]
+	var subscriptionMap = make(map[string]interface{})
+	subscriptionMap["action"] = "subscription"
+	subscriptionMap["ts"] = utils.GetRfcTime()
+	subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
+	subscriptionMap["RouterId"] = subscriptionState.RouterId
+	subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
+	select {
+	case backendChan <- subscriptionMap:
+	default:
+		utils.Error.Printf("serviceMgr: Event dropped")
+	}
+}
+
+// handleCurveLogNotification handles a fire on CLChannel (a
+// curve-logging worker has produced a data point or is signalling
+// shutdown). Decrements the SubscriptionThreads counter for the
+// subscription, removes it from the list when this was the
+// close-signal for the requested subscription, and forwards the data
+// pack to backendChan. Reads and clears the package global
+// closeClSubId in the close-signal path. Returns the updated
+// subscriptionList. Extracted from ServiceMgrInit in follow-up PR B
+// to #129.
+//
+// PRE-EXISTING HAZARD preserved as-is (file separately for fix):
+// after removeFromsubscriptionList, `index` may now point past the
+// end of the slice (the helper does a swap-with-last + truncate). The
+// subsequent subscriptionList[index] accesses then panic when the
+// removed entry was the last one. The original arm has the same
+// hazard.
+func handleCurveLogNotification(clPack CLPack, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
+	index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
+	if index == -1 {
+		closeClSubId = -1
+		return subscriptionList
+	}
+	//subscriptionState := subscriptionList[index]
+	subscriptionList[index].SubscriptionThreads--
+	if clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0 {
+		subscriptionList = removeFromsubscriptionList(subscriptionList, index)
+		closeClSubId = -1
+	}
+	var subscriptionMap = make(map[string]interface{})
+	subscriptionMap["action"] = "subscription"
+	subscriptionMap["ts"] = utils.GetRfcTime()
+	subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
+	subscriptionMap["RouterId"] = subscriptionList[index].RouterId
+	subscriptionMap["data"] = string2Map(clPack.DataPack)["s2m"]
+	backendChan <- subscriptionMap
+	return subscriptionList
+}
+
+// handleRCTick handles a fire on the subscription ticker, which polls
+// range/change filters periodically when the feeder is not providing
+// its own notifications. If the feeder is providing notifications,
+// the ticker is stopped to save the wakeups. Returns the updated
+// subscriptionList. Extracted from ServiceMgrInit in follow-up PR B
+// to #129.
+func handleRCTick(feederNotificationActive bool, subscriptTicker *time.Ticker, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
+	if !feederNotificationActive { // feeder does not issue notifications
+		return checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
+	}
+	subscriptTicker.Stop()
+	return subscriptionList
+}
+
+// handleFeederNotificationMessage handles a fire on fromFeederRorC.
+// Decodes the feeder's message, updates the feederNotification flag
+// returned by decodeFeederMessage, and re-evaluates the subscription
+// list's range/change filters for the triggered path. Returns the
+// updated feederNotification flag and subscriptionList. Extracted
+// from ServiceMgrInit in follow-up PR B to #129.
+func handleFeederNotificationMessage(feederMessage string, feederNotification bool, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) (bool, []SubscriptionState) {
+	triggeredPath, updatedNotification := decodeFeederMessage(feederMessage, feederNotification)
+	subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
+	return updatedNotification, subscriptionList
+}
+
+// handleFeederRegistration handles a fire on feederRegChan. Connects
+// to the registering feeder, updates the registry list, and sends the
+// current list of feeder names back on feederRegChan as the
+// registration acknowledgement. Extracted from ServiceMgrInit in
+// follow-up PR B to #129.
+func handleFeederRegistration(feederReq FeederRegElem, feederRegChan chan FeederRegElem) {
+	connectToFeeder(&feederReq)
+	updateFeederRegList(feederReq)
+	feederRegChan <- createFeederNameList()
+}
+
 func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, stateStorageType string, histSupport bool, dbFile string) {
 	stateDbType = stateStorageType
 	historySupport = histSupport
@@ -1831,7 +1932,6 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 	subscriptTicker := time.NewTicker(23 * time.Millisecond) //range/change subscription ticker when no feeder notifications
 	feederReconnectTicker := time.NewTicker(2 * time.Second)
 	feederNotification := false
-	triggeredPath := ""
 
 	for {
 		select {
@@ -1865,58 +1965,18 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 				dummyValue = 0
 			}
 		case subscriptionId := <-subscriptionChan: // interval notification triggered
-			subIndex := getSubcriptionStateIndex(subscriptionId, subscriptionList)
-			if subIndex == -1 {
-				utils.Error.Printf("Subscription not found for id=%d", subscriptionId)
-				continue
-			}
-			subscriptionState := subscriptionList[subIndex]
-			var subscriptionMap = make(map[string]interface{})
-			subscriptionMap["action"] = "subscription"
-			subscriptionMap["ts"] = utils.GetRfcTime()
-			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.SubscriptionId)
-			subscriptionMap["RouterId"] = subscriptionState.RouterId
-			subscriptionMap["data"] = getDataPackMap(subscriptionState.Path)["dpack"]
-			select {
-			case backendChan <- subscriptionMap:
-			default: 
-				utils.Error.Printf("serviceMgr: Event dropped")
-			}
+			handleIntervalNotification(subscriptionId, subscriptionList, backendChan)
 		case clPack := <-CLChannel: // curve logging notification
-			index := getSubcriptionStateIndex(clPack.SubscriptionId, subscriptionList)
-			if index == -1 {
-				closeClSubId = -1
-				continue
-			}
-			//subscriptionState := subscriptionList[index]
-			subscriptionList[index].SubscriptionThreads--
-			if clPack.SubscriptionId == closeClSubId && subscriptionList[index].SubscriptionThreads == 0 {
-				subscriptionList = removeFromsubscriptionList(subscriptionList, index)
-				closeClSubId = -1
-			}
-			var subscriptionMap = make(map[string]interface{})
-			subscriptionMap["action"] = "subscription"
-			subscriptionMap["ts"] = utils.GetRfcTime()
-			subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionList[index].SubscriptionId)
-			subscriptionMap["RouterId"] = subscriptionList[index].RouterId
-			subscriptionMap["data"] = string2Map(clPack.DataPack)["s2m"]
-			backendChan <- subscriptionMap
+			subscriptionList = handleCurveLogNotification(clPack, subscriptionList, backendChan)
 		case <-subscriptTicker.C:
-			if feederNotification == false { // feeder does not issue notifications
-				subscriptionList = checkRCFilterAndIssueMessages("", subscriptionList, backendChan)
-			} else {
-				subscriptTicker.Stop()
-			}
+			subscriptionList = handleRCTick(feederNotification, subscriptTicker, subscriptionList, backendChan)
 		case <-feederReconnectTicker.C:
 			feederConnectRetry()
 		case feederMessage := <-fromFeederRorC:
 //utils.Info.Printf("Feeder message=%s", feederMessage)
-			triggeredPath, feederNotification = decodeFeederMessage(feederMessage, feederNotification)
-			subscriptionList = checkRCFilterAndIssueMessages(triggeredPath, subscriptionList, backendChan)
+			feederNotification, subscriptionList = handleFeederNotificationMessage(feederMessage, feederNotification, subscriptionList, backendChan)
 		case feederReq := <- feederRegChan:
-			connectToFeeder(&feederReq)
-			updateFeederRegList(feederReq)
-			feederRegChan <- createFeederNameList()
+			handleFeederRegistration(feederReq, feederRegChan)
 		} // select
 	} // for
 utils.Info.Printf("Service manager exit")
