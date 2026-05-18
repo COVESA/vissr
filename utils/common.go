@@ -441,6 +441,15 @@ func readSchema() string {
 }
 
 func JsonSchemaValidate(request string) string {
+	// JsonSchemaInit silently leaves jsonSchema nil if
+	// vissv3.0-schema.json is missing or empty (it only logs an
+	// Error). Without this guard the first request from any
+	// anonymous client through any transport (wsMgr, httpMgr,
+	// udsMgr, mqttMgr) dereferences a nil *jsonschema.Schema and
+	// crashes the whole daemon.
+	if jsonSchema == nil {
+		return "JSON schema not loaded; cannot validate request"
+	}
 	errs, err := jsonSchema.ValidateBytes(context.Background(), []byte(request))
 	if err != nil {
 		return fixSyntax(err.Error())

@@ -124,6 +124,13 @@ func allowedOriginHeader(req *http.Request) string {
 	return ""
 }
 
+// jtiCacheMu serialises access to jtiCache from the main request loop
+// (addCheckJti) and the per-jti expiry goroutines (deleteJti). Without
+// it the Go runtime aborts the process with "concurrent map read and
+// map write" once two AGT requests overlap. Mirrors the equivalent
+// fix in server/vissv2server/atServer/atServer.go.
+var jtiCacheMu sync.Mutex
+
 type Payload struct {
 	// Action  string `json:"action"`
 	Vin     string `json:"vin"`

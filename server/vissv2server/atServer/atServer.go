@@ -10,13 +10,18 @@
 package atServer
 
 import (
+	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
-	"math/rand"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -40,9 +45,25 @@ var theAtSecret string
 
 func init() {
 	theAtSecret = os.Getenv("VISSR_AT_SECRET")
-	if theAtSecret == "" {
-		theAtSecret = "averysecretkeyvalue2" // fallback default; set VISSR_AT_SECRET in production
+	if theAtSecret != "" {
+		return
 	}
+	// SECURITY: the previous fallback hardcoded the literal
+	// "averysecretkeyvalue2" — a value anyone could read from this
+	// repository, allowing them to forge valid access tokens against
+	// any deployment that forgot to set VISSR_AT_SECRET. Replaced with
+	// an ephemeral random secret so misconfigured deployments are
+	// merely degraded (tokens don't survive a restart) rather than
+	// trivially compromised.
+	b := make([]byte, 32)
+	if _, err := cryptorand.Read(b); err != nil {
+		// crypto/rand failing at init is catastrophic and not
+		// something we can recover from. Fail loud rather than fall
+		// back to a known value.
+		log.Fatalf("atServer: VISSR_AT_SECRET unset and crypto/rand failed: %v", err)
+	}
+	theAtSecret = hex.EncodeToString(b)
+	log.Printf("WARNING: atServer: VISSR_AT_SECRET environment variable not set; using an EPHEMERAL secret. Tokens will NOT survive a process restart. Set VISSR_AT_SECRET to a long random value in production.")
 }
 const AGT_PUB_KEY_DIRECTORY = "agt_public_key.rsa"
 const PORT = 8600
@@ -52,6 +73,129 @@ var agtKey *rsa.PublicKey
 
 var jtiCache map[string]struct{} // PoPs JTIs that must be refused to not be reused
 var jtiCacheMu sync.Mutex
+
+// atsHandlerMu serializes the HTTP handler's send-then-receive
+// against the shared unbuffered atsChannel. Two concurrent POSTs
+// would otherwise race: both write request bodies onto the channel,
+// and both read responses, with no guarantee that handler 1 reads
+// response 1 (instead of response 2 and vice versa). Cross-delivered
+// responses are a security issue when one of the requests is a token
+// validation. Mutex makes concurrent requests serialize. (A
+// per-request reply channel would be cleaner but requires changing
+// the wire format the main select loop expects, which is out of
+// scope for this bug-fix PR.)
+var atsHandlerMu sync.Mutex
+
+// ----------------------------------------------------------------------------
+// Protocol-hardening configuration (set at init() from env vars)
+//
+// Each of these is OPTIONAL — when unset, atServer logs a loud
+// warning at startup and falls back to the pre-existing (insecure)
+// behaviour. This preserves dev/CI workflows while giving production
+// deployments the knobs to harden the access-token server.
+//
+//   VISSR_AT_ISSUER          The `iss` claim value emitted on new ATs
+//                             and required at validation. Default
+//                             "vissr-atServer".
+//
+//   VISSR_ECF_SECRET         HMAC-SHA256 key used to authenticate
+//                             consent-reply / consent-cancel messages
+//                             from the External Consent Framework
+//                             (ECF). When set, every ECF message must
+//                             carry an "hmac" field over the canonical
+//                             string "<action>|<messageId>|<consent>"
+//                             (consent is "" for cancel). Unset =
+//                             warn + skip verification.
+//
+//   VISSR_ECF_CERT_PATH      Paths to a TLS certificate / key pair
+//   VISSR_ECF_KEY_PATH        used by the ECF websocket listener.
+//                             Both must be set together. Unset =
+//                             warn + plaintext.
+//
+//   VISSR_ECF_ALLOWED_ORIGIN Comma-separated list of Origin header
+//                             values accepted by the ECF websocket
+//                             upgrade. Unset = warn + accept any
+//                             origin (preserves the previous
+//                             CheckOrigin = return true behaviour).
+// ----------------------------------------------------------------------------
+
+const AT_AUDIENCE = "w3org/gen2" // pinned by the VISS spec; not deployment-configurable
+
+var atIssuer string
+var ecfSecret string
+var ecfCertPath string
+var ecfKeyPath string
+var ecfAllowedOrigins []string
+
+func init() {
+	atIssuer = os.Getenv("VISSR_AT_ISSUER")
+	if atIssuer == "" {
+		atIssuer = "vissr-atServer"
+	}
+	ecfSecret = os.Getenv("VISSR_ECF_SECRET")
+	if ecfSecret == "" {
+		log.Printf("WARNING: atServer: VISSR_ECF_SECRET not set; ECF consent messages will be accepted without HMAC verification. Set VISSR_ECF_SECRET in production.")
+	}
+	ecfCertPath = os.Getenv("VISSR_ECF_CERT_PATH")
+	ecfKeyPath = os.Getenv("VISSR_ECF_KEY_PATH")
+	if ecfCertPath == "" || ecfKeyPath == "" {
+		log.Printf("WARNING: atServer: VISSR_ECF_CERT_PATH and/or VISSR_ECF_KEY_PATH not set; ECF websocket will accept plaintext connections. Set both in production.")
+	}
+	if origins := os.Getenv("VISSR_ECF_ALLOWED_ORIGIN"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				ecfAllowedOrigins = append(ecfAllowedOrigins, trimmed)
+			}
+		}
+	} else {
+		log.Printf("WARNING: atServer: VISSR_ECF_ALLOWED_ORIGIN not set; ECF websocket will accept any Origin header. Set a comma-separated allow-list in production.")
+	}
+}
+
+// computeEcfHmac returns the hex-encoded HMAC-SHA256 of the canonical
+// signing string for an ECF message. The canonical string format is
+// "<action>|<messageId>|<consent>" where consent is "" for the
+// consent-cancel action. The HMAC is sent as the "hmac" field of the
+// JSON message; the ECF client must compute it the same way.
+func computeEcfHmac(action, messageId, consent string) string {
+	mac := hmac.New(sha256.New, []byte(ecfSecret))
+	mac.Write([]byte(action))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(messageId))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(consent))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// verifyEcfHmac compares a presented HMAC against the expected one,
+// using constant-time comparison. When ecfSecret is unset (compat
+// mode) this returns true unconditionally — atServer logged a warning
+// at startup; per-request logging would be too noisy.
+func verifyEcfHmac(action, messageId, consent, presented string) bool {
+	if ecfSecret == "" {
+		return true // compat mode — warn was logged at init()
+	}
+	expected := computeEcfHmac(action, messageId, consent)
+	return hmac.Equal([]byte(expected), []byte(presented))
+}
+
+// checkEcfOrigin implements the upgrader's CheckOrigin function. When
+// VISSR_ECF_ALLOWED_ORIGIN is set, the Origin header must exactly
+// match one of the configured values. When unset, any origin is
+// allowed (the warning was logged at startup).
+func checkEcfOrigin(r *http.Request) bool {
+	if len(ecfAllowedOrigins) == 0 {
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	for _, allowed := range ecfAllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+	utils.Error.Printf("atServer: ECF websocket rejected origin=%q (not in VISSR_ECF_ALLOWED_ORIGIN)", origin)
+	return false
+}
 
 var muxServer = []*http.ServeMux{
 	http.NewServeMux(), // HTTP
@@ -161,13 +305,25 @@ func makeAtServerHandler(atsChannel chan string) func(http.ResponseWriter, *http
 				http.Error(w, "400 bad request method.", 400)
 			}
 		} else {
+			// Bound the request body before io.ReadAll. The AT endpoint
+			// is reachable pre-auth (it issues short-term access tokens),
+			// so an anonymous peer can otherwise send a giant or chunked
+			// body and force ReadAll to allocate until OOM. AT requests
+			// are small JSON envelopes.
+			req.Body = http.MaxBytesReader(w, req.Body, 64*1024)
 			bodyBytes, err := io.ReadAll(req.Body)
 			if err != nil {
-				http.Error(w, "400 request unreadable.", 400)
+				http.Error(w, "413 request body too large or unreadable.", 413)
 			} else {
 				utils.Info.Printf("atServer:received POST request=%s", string(bodyBytes))
+				// Serialize the send-then-receive pair against
+				// atsChannel. Without this lock two concurrent POSTs
+				// can cross-deliver responses. See atsHandlerMu
+				// declaration for the full explanation.
+				atsHandlerMu.Lock()
 				atsChannel <- string(bodyBytes) // Sends request to server channel
 				response := <-atsChannel
+				atsHandlerMu.Unlock()
 				utils.Info.Printf("atServer:POST response=%s", response)
 				if len(response) == 0 {
 					http.Error(w, "400 bad input.", 400)
@@ -208,14 +364,28 @@ func initClientComm(atsChannel chan string, muxServer *http.ServeMux) {
 func initEcfComm(ecfReceiveChan chan string, ecfSendChan chan string, muxServer *http.ServeMux) {
 	ecfHandler := makeEcfHandler(ecfReceiveChan, ecfSendChan)
 	muxServer.HandleFunc("/", ecfHandler)
-	utils.Info.Print(http.ListenAndServe(":8445", muxServer))
+	// Tier-2 fix: switch to TLS when VISSR_ECF_CERT_PATH and
+	// VISSR_ECF_KEY_PATH are both set. When either is missing, fall
+	// back to plaintext (a startup warning was already logged).
+	addr := ":8445"
+	if ecfCertPath != "" && ecfKeyPath != "" {
+		utils.Info.Printf("atServer: ECF websocket listening on %s with TLS (cert=%s)", addr, ecfCertPath)
+		utils.Info.Print(http.ListenAndServeTLS(addr, ecfCertPath, ecfKeyPath, muxServer))
+		return
+	}
+	utils.Info.Printf("atServer: ECF websocket listening on %s plaintext (set VISSR_ECF_CERT_PATH and VISSR_ECF_KEY_PATH to enable TLS)", addr)
+	utils.Info.Print(http.ListenAndServe(addr, muxServer))
 }
 
 func makeEcfHandler(receiveChan chan string, sendChan chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		if req.Header.Get("Upgrade") == "websocket" {
 			utils.Info.Printf("Received websocket request: we are upgrading to a websocket connection.")
-			Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+			// Tier-2 fix: replace the `return true` CheckOrigin with
+			// an allow-list driven by VISSR_ECF_ALLOWED_ORIGIN. When
+			// unset, the allow-list is empty and checkEcfOrigin
+			// accepts any origin (the startup warning covers this).
+			Upgrader.CheckOrigin = checkEcfOrigin
 			h := http.Header{}
 			conn, err := Upgrader.Upgrade(w, req, h)
 			if err != nil {
@@ -296,17 +466,38 @@ func consentReplyResponse(request string) string {
 		utils.Error.Printf("consentReplyResponse:error request=%s", request)
 		return `{"action":"consent-reply", "status":"401-Bad request"}`
 	}
-	if requestMap["messageId"] != nil {
-		gatingId, err := strconv.Atoi(requestMap["messageId"].(string))
-		if err != nil {
-			utils.Error.Printf("consentReplyResponse:error converting id=%s", err)
-			return `{"action":"consent-reply", "status":"401-Bad request"}`
-		}
-		for i := 0; i < LISTSIZE; i++ {
-			if pendingList[i].GatingId == gatingId {
-				pendingList[i].Consent = requestMap["consent"].(string)
-				return `{"action":"consent-reply", "status":"200-OK"}`
-			}
+	// Bug 5 fix: messageId and consent were dereferenced as .(string)
+	// without ok-checks. A malicious or buggy ECF client sending
+	// {"messageId": 123} or {"consent": null} would panic the entire
+	// atServer goroutine. Defensive ok-checks return 401 instead.
+	messageIdStr, ok := requestMap["messageId"].(string)
+	if !ok {
+		utils.Error.Printf("consentReplyResponse:missing or non-string messageId in request=%s", request)
+		return `{"action":"consent-reply", "status":"401-Bad request"}`
+	}
+	consentStr, ok := requestMap["consent"].(string)
+	if !ok {
+		utils.Error.Printf("consentReplyResponse:missing or non-string consent in request=%s", request)
+		return `{"action":"consent-reply", "status":"401-Bad request"}`
+	}
+	// HMAC authentication of the ECF message (Tier-2 fix). When
+	// VISSR_ECF_SECRET is unset, verifyEcfHmac returns true and
+	// startup logged a warning. When set, the ECF must include an
+	// `hmac` field over "consent-reply|<messageId>|<consent>".
+	presentedHmac, _ := requestMap["hmac"].(string)
+	if !verifyEcfHmac("consent-reply", messageIdStr, consentStr, presentedHmac) {
+		utils.Error.Printf("consentReplyResponse:HMAC verification failed for messageId=%s", messageIdStr)
+		return `{"action":"consent-reply", "status":"401-Unauthorized"}`
+	}
+	gatingId, err := strconv.Atoi(messageIdStr)
+	if err != nil {
+		utils.Error.Printf("consentReplyResponse:error converting id=%s", err)
+		return `{"action":"consent-reply", "status":"401-Bad request"}`
+	}
+	for i := 0; i < LISTSIZE; i++ {
+		if pendingList[i].GatingId == gatingId {
+			pendingList[i].Consent = consentStr
+			return `{"action":"consent-reply", "status":"200-OK"}`
 		}
 	}
 	return `{"action":"consent-reply", "status":"404-Not found"}`
@@ -319,24 +510,35 @@ func consentCancelResponse(request string, vissChan chan string) string {
 		utils.Error.Printf("consentCancelResponse:error request=%s", request)
 		return `{"action":"consent-cancel", "status":"401-Bad request"}`
 	}
-	if requestMap["messageId"] != nil {
-		gatingId, err := strconv.Atoi(requestMap["messageId"].(string))
-		if err != nil {
-			utils.Error.Printf("consentCancelResponse:error converting id=%s", err)
-			return `{"action":"consent-cancel", "status":"401-Bad request"}`
+	// Bug 5 fix: same defensive type assertions as consentReplyResponse.
+	messageIdStr, ok := requestMap["messageId"].(string)
+	if !ok {
+		utils.Error.Printf("consentCancelResponse:missing or non-string messageId in request=%s", request)
+		return `{"action":"consent-cancel", "status":"401-Bad request"}`
+	}
+	// HMAC authentication of the ECF message. Cancel has no consent
+	// field; canonical signing string is "consent-cancel|<messageId>|".
+	presentedHmac, _ := requestMap["hmac"].(string)
+	if !verifyEcfHmac("consent-cancel", messageIdStr, "", presentedHmac) {
+		utils.Error.Printf("consentCancelResponse:HMAC verification failed for messageId=%s", messageIdStr)
+		return `{"action":"consent-cancel", "status":"401-Unauthorized"}`
+	}
+	gatingId, err := strconv.Atoi(messageIdStr)
+	if err != nil {
+		utils.Error.Printf("consentCancelResponse:error converting id=%s", err)
+		return `{"action":"consent-cancel", "status":"401-Bad request"}`
+	}
+	for i := 0; i < LISTSIZE; i++ {
+		if pendingList[i].GatingId == gatingId {
+			removeFromPendingList(i)
+			return `{"action":"consent-cancel", "status":"200-OK"}`
 		}
-		for i := 0; i < LISTSIZE; i++ {
-			if pendingList[i].GatingId == gatingId {
-				removeFromPendingList(i)
-				return `{"action":"consent-cancel", "status":"200-OK"}`
-			}
-		}
-		for i := 0; i < LISTSIZE; i++ {
-			if activeList[i].GatingId == gatingId {
-				removeFromActiveList(i)
-				vissChan <- requestMap["messageId"].(string) // remove eventual subscription
-				return `{"action":"consent-cancel", "status":"200-OK"}`
-			}
+	}
+	for i := 0; i < LISTSIZE; i++ {
+		if activeList[i].GatingId == gatingId {
+			removeFromActiveList(i)
+			vissChan <- messageIdStr // remove eventual subscription
+			return `{"action":"consent-cancel", "status":"200-OK"}`
 		}
 	}
 	return `{"action":"consent-cancel", "status":"404-Not found"}`
@@ -467,6 +669,20 @@ func tokenValidationResponse(input string) string {
 		utils.Info.Printf("tokenValidationResponse:invalid signature, error= %s, token=%s", err, atValidatePayload.Token)
 		return `{"validation":"5"}`
 	}
+	// Validate the `aud` and `iss` claims. The AT generator already
+	// emits aud="w3org/gen2" (pinned by the VISS spec) and an iss
+	// derived from VISSR_AT_ISSUER. The previous code never checked
+	// either, which allowed a leaked AT signed with this server's
+	// secret to be replayed against any audience that trusted the
+	// signature.
+	if got := utils.ExtractFromToken(atValidatePayload.Token, "aud"); got != AT_AUDIENCE {
+		utils.Info.Printf("tokenValidationResponse:invalid aud claim=%q (want %q)", got, AT_AUDIENCE)
+		return `{"validation":"20"}` // 20 = Invalid AUD (see getTokenErrorMessage)
+	}
+	if got := utils.ExtractFromToken(atValidatePayload.Token, "iss"); got != atIssuer {
+		utils.Info.Printf("tokenValidationResponse:invalid iss claim=%q (want %q)", got, atIssuer)
+		return `{"validation":"22"}` // 22 = Invalid ISS (new code; see PR description)
+	}
 	purpose := utils.ExtractFromToken(atValidatePayload.Token, "scp")
 	res := validateRequestAccess(purpose, atValidatePayload.Action, atValidatePayload.Paths)
 	if res != 0 {
@@ -486,7 +702,18 @@ func tokenValidationResponse(input string) string {
 	}
 }
 
-func getCompleteToken(token string) string { //input token may be handle or complete token. Return complete token.
+// getCompleteToken looks up the active-list entry whose Atoken or
+// AtokenHandle matches the input. The empty-input guard fixes a
+// subtle vulnerability: unused slots in activeList are initialised
+// with Atoken == "" and AtokenHandle == "", so an empty token string
+// would match every unused slot and return Atoken == "" — a
+// match-any-empty-token primitive that could combine with other
+// gaps (extractSignature returning "" on tokens with no '.') to
+// produce false validations.
+func getCompleteToken(token string) string {
+	if token == "" {
+		return ""
+	}
 	for i := 0; i < LISTSIZE; i++ {
 		if token == activeList[i].Atoken || token == activeList[i].AtokenHandle {
 			return activeList[i].Atoken
@@ -496,6 +723,9 @@ func getCompleteToken(token string) string { //input token may be handle or comp
 }
 
 func getGatingIdAndTokenHandle(token string) (string, string) {
+	if token == "" {
+		return "", ""
+	}
 	for i := 0; i < LISTSIZE; i++ {
 		if token == activeList[i].Atoken {
 			return strconv.Itoa(activeList[i].GatingId), activeList[i].AtokenHandle
@@ -657,8 +887,26 @@ func checkifConsent(purpose string) bool {
 
 var GatingId int
 
+// initGatingId picks a starting GatingId in [666, 9999). The original
+// implementation used unseeded math/rand, which made the starting
+// value predictable across deployments (and trivially predictable
+// across restarts on older Go versions). Combined with the linear
+// increment in newGatingId, this gave a small, predictable ID space
+// — a problem for any session-tracking property the gating ID was
+// supposed to provide. crypto/rand fixes the predictability; the
+// range and increment behaviour are unchanged.
 func initGatingId() {
-	GatingId = 666 + rand.Intn(9999-666)
+	var b [4]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		// crypto/rand failing means we're in trouble at a much
+		// bigger level than gating IDs; pick a deterministic
+		// fallback so the manager can still start.
+		utils.Error.Printf("initGatingId: crypto/rand failed (%v); using fixed starting GatingId", err)
+		GatingId = 666
+		return
+	}
+	n := int(binary.BigEndian.Uint32(b[:]) & 0x7fffffff) // mask sign bit
+	GatingId = 666 + n%(9999-666)
 }
 
 func newGatingId() int {
@@ -704,7 +952,16 @@ func extractKeyValue(key string, input string) string {
 		utils.Error.Printf("extractKeyValue:error input=%s", err)
 		return ""
 	}
-	return inputMap[key].(string)
+	// Guard the type assertion: if `key` is absent (nil interface) or
+	// the value is non-string, the bare `.(string)` panics. This
+	// function is called from the atServer's central event-loop
+	// goroutine, which has no recover() — so a single malformed POST
+	// to /ats by an anonymous peer takes down the atServer entirely.
+	if v, ok := inputMap[key].(string); ok {
+		return v
+	}
+	utils.Error.Printf("extractKeyValue: key %q missing or non-string in input", key)
+	return ""
 }
 
 func validateTokenTimestamps(iat int, exp int) bool {
@@ -757,13 +1014,35 @@ func checkAuthorization(index int, context string) bool {
 	return false
 }
 
-// Returns the role of the actor in the context depending on the index (user, app, device)
+// getActorRole returns the role of the actor in the context
+// depending on the index (user, app, device). The context is the
+// "clx" claim from the AGT — a string of the form "user+app+device".
+//
+// Previously this function sliced context[:strings.Index(context,
+// "+")] without checking that Index returned a non-negative value:
+//   - context = "foo" (no '+')  → Index returns -1, context[:-1]
+//     panics with "slice bounds out of range".
+//   - context = "user+app"      → Index returns the position of the
+//     SECOND '+'... wait, no second '+'; the actorIndex==2 branch
+//     panicked with the same OOB.
+// Since clx flows from a signed AGT, a malformed AGT could DoS the
+// atServer goroutine, and (more subtly) a clx with one '+' instead
+// of two would return adversary-influenced strings used in role
+// matching downstream.
 func getActorRole(actorIndex int, context string) string {
 	delimiter1 := strings.Index(context, "+")
+	if delimiter1 == -1 {
+		utils.Error.Printf("getActorRole: malformed context (no '+'): %q", context)
+		return ""
+	}
 	if actorIndex == 0 {
 		return context[:delimiter1]
 	}
 	delimiter2 := strings.Index(context[delimiter1+1:], "+")
+	if delimiter2 == -1 {
+		utils.Error.Printf("getActorRole: malformed context (missing second '+'): %q", context)
+		return ""
+	}
 	if actorIndex == 1 {
 		return context[delimiter1+1 : delimiter1+1+delimiter2]
 	}
@@ -890,7 +1169,8 @@ func generateAt(payload AtGenPayload) string {
 	jwtoken.AddClaim("exp", strconv.Itoa(exp))
 	jwtoken.AddClaim("scp", payload.Purpose)
 	jwtoken.AddClaim("clx", payload.Agt.PayloadClaims["clx"])
-	jwtoken.AddClaim("aud", "w3org/gen2")
+	jwtoken.AddClaim("aud", AT_AUDIENCE)
+	jwtoken.AddClaim("iss", atIssuer)
 	jwtoken.AddClaim("jti", unparsedId.String())
 	utils.Info.Printf("generateAt:jwtHeader=%s", jwtoken.GetHeader())
 	utils.Info.Printf("generateAt:jwtPayload=%s", jwtoken.GetPayload())

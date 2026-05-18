@@ -365,6 +365,38 @@ func compressPaths(respMessage string, sortedList []string) string {
 	return respMessage
 }
 
+// handleWsTransportResponse processes a single response from the server
+// core: applies compression-response post-processing and forwards to
+// the connected WS client via RemoveRoutingForwardResponse. Extracted
+// from WsMgrInit's for/select loop so the response path can be unit-
+// tested independently of the goroutine machinery — see
+// wsMgr_dispatch_test.go.
+func handleWsTransportResponse(respMessage string, transportMgrChan chan string) {
+	utils.Info.Printf("WS mgr hub: Response from server core:%s", respMessage)
+	respMessage = checkCompressionResponse(respMessage)
+	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+}
+
+// handleWsClientRequest processes a single inbound WS-client request.
+// Extracted from WsMgrInit so the validation / compression /
+// forwarding behaviour can be unit-tested. Matches the shape of
+// handleUdsClientRequest in udsMgr (see PR #124).
+func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
+	if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
+		validationError := utils.JsonSchemaValidate(reqMessage)
+		if len(validationError) > 0 {
+			requestMap := make(map[string]interface{})
+			requestMap["action"] = utils.ExtractFromRequest(reqMessage, "action")
+			requestMap["requestId"] = utils.ExtractFromRequest(reqMessage, "requestId")
+			utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
+			wsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
+			return
+		}
+		checkCompressionRequest(reqMessage)
+	}
+	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
+}
+
 func WsMgrInit(mgrId int, transportMgrChan chan string) {
 	var reqMessage string
 	var clientId int
@@ -378,9 +410,7 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case respMessage := <-transportMgrChan:
-			utils.Info.Printf("WS mgr hub: Response from server core:%s", respMessage)
-			respMessage = checkCompressionResponse(respMessage)
-			RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+			handleWsTransportResponse(respMessage, transportMgrChan)
 			continue
 		case reqMessage = <-wsClientChan[0]: clientId = 0
 		case reqMessage = <-wsClientChan[1]: clientId = 1
@@ -403,18 +433,6 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-wsClientChan[18]: clientId = 18
 		case reqMessage = <-wsClientChan[19]: clientId = 19
 		}
-		if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
-			validationError := utils.JsonSchemaValidate(reqMessage)
-			if len(validationError) > 0 {
-				requestMap := make(map[string]interface{})
-				requestMap["action"] = utils.ExtractFromRequest(reqMessage, "action")
-				requestMap["requestId"] = utils.ExtractFromRequest(reqMessage, "requestId")
-				utils.SetErrorResponse(requestMap, errorResponseMap, 0, validationError) //bad_request
-				wsClientChan[clientId] <- utils.FinalizeMessage(errorResponseMap)
-				continue
-			}
-			checkCompressionRequest(reqMessage)
-		}
-		utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleWsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
 	}
 }
