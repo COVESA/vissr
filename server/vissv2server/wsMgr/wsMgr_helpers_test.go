@@ -22,6 +22,7 @@
 package wsMgr
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -156,18 +157,20 @@ func TestUpdatepayloadId_NoMatch(t *testing.T) {
 // TestSignedTimeDiff formats a signed millisecond diff with a leading
 // sign so the wire format is deterministic.
 func TestSignedTimeDiff(t *testing.T) {
+	// signedTimeDiff uses delta-encoding: positive diffMs (ref is after dp)
+	// maps to "-N" (dp is earlier than ref), negative to "+N", zero to "+0".
 	cases := []struct {
 		name string
 		ms   int64
-		want string // we accept either "+N" or "-N"; mostly looking at the sign
+		want string
 	}{
-		{"positive", 1500, "+"},
-		{"negative", -750, "-"},
+		{"positive", 1500, "-"},
+		{"negative", -750, "+"},
 		{"zero", 0, "+"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := signedTimeDiff("", c.ms)
+			got := signedTimeDiff(strconv.FormatInt(c.ms, 10), c.ms)
 			if !strings.HasPrefix(got, c.want) {
 				t.Fatalf("signedTimeDiff(%d) = %q; want prefix %q", c.ms, got, c.want)
 			}

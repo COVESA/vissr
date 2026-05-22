@@ -6,18 +6,8 @@
 package wsMgr
 
 import (
-	"os"
 	"testing"
-
-	"github.com/covesa/vissr/utils"
 )
-
-// TestMain initialises utils.Info / utils.Error so logging branches
-// inside the helpers don't nil-deref.
-func TestMain(m *testing.M) {
-	utils.InitLog("wsMgr-test.log", os.TempDir(), false, "error")
-	os.Exit(m.Run())
-}
 
 // TestGetValueForKey covers the hand-rolled JSON value extractor used
 // in the WS request fast path. The helper is "best-effort" — it doesn't
