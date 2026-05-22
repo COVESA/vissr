@@ -670,14 +670,6 @@ func TestGetFeederNotifyType(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
-// processHistoryCtrl — index -1 fix (#5)
-// --------------------------------------------------------------------------
-
-	if got != "500 Internal Server Error" {
-		t.Errorf("got %q", got)
-	}
-}
 
 func TestProcessHistoryCtrl_UnknownPathReturns404(t *testing.T) {
 	historyList = nil

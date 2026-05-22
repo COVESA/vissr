@@ -193,6 +193,10 @@ func deallocateTicker(subscriptionId int) int {
 }
 
 func activateInterval(subscriptionChannel chan int, subscriptionId int, interval int) {
+	if interval <= 0 {
+		utils.Error.Printf("activateInterval: Non-positive interval=%d", interval)
+		return
+	}
 	index := allocateTicker(subscriptionId)
 	if index == -1 {
 		utils.Error.Printf("activateInterval: No available ticker.")
@@ -237,7 +241,11 @@ func activateHistory(historyChannel chan int, signalId int, frequency int) {
 		utils.Error.Printf("activateHistory: Invalid frequency=%d", frequency)
 		return
 	}
-	historyTicker[index] = time.NewTicker(time.Duration((3600*1000)/frequency) * time.Millisecond) // freq in cycles per hour
+	tickMs := (3600 * 1000) / frequency
+	if tickMs < 1 {
+		tickMs = 1
+	}
+	historyTicker[index] = time.NewTicker(time.Duration(tickMs) * time.Millisecond) // freq in cycles per hour
 	tickerDone[index] = make(chan struct{})
 	done := tickerDone[index]
 	ticker := historyTicker[index]
@@ -495,12 +503,15 @@ func getCurveLoggingParams(opValue string) (float64, int) { // {"maxerr": "X", "
 	bufSize, err := strconv.Atoi(cLData.BufSize)
 	if err != nil {
 		utils.Error.Printf("getIntervalPeriod: BufSize invalid integer, BufSize=%s", cLData.BufSize)
-		maxErr = 0.0
+		bufSize = 1
 	}
 	return maxErr, bufSize
 }
 
 func createFeederNotifyMessage(variant string, pathList []string, subscriptionId int) string {
+	if len(pathList) == 0 {
+		return ""
+	}
 	paths := `["`
 	for i := 0; i < len(pathList); i++ {
 		paths += pathList[i] + `", "`
@@ -556,6 +567,9 @@ func setVehicleData(path string, value string) string {
 }
 
 func unpackPaths(paths string) []string {
+	if paths == "" {
+		return nil
+	}
 	var pathArray []string
 	if strings.Contains(paths, "[") == true {
 		err := json.Unmarshal([]byte(paths), &pathArray)
@@ -673,8 +687,8 @@ func processHistoryCtrl(histCtrlReq string, historyChan chan int, listExists boo
 			utils.Error.Printf("processHistoryCtrl:Buffer size malformed=%s", bufSizeStr)
 			return "400 Bad Request"
 		}
-		if bufSize < 0 || bufSize > MAXHISTORYBUFSIZE {
-			utils.Error.Printf("processHistoryCtrl:Buffer size out of range: %d (allowed 0..%d)", bufSize, MAXHISTORYBUFSIZE)
+		if bufSize <= 0 || bufSize > MAXHISTORYBUFSIZE {
+			utils.Error.Printf("processHistoryCtrl:Buffer size out of range: %d (allowed 1..%d)", bufSize, MAXHISTORYBUFSIZE)
 			return "400 Bad Request"
 		}
 		historyList[index].BufSize = bufSize
@@ -777,6 +791,9 @@ func processHistoryGet(request string) string { // {"path":"X", "period":"Y"}
 }
 
 func historicDataPack(index int, matches int) string {
+	if matches <= 0 || index < 0 || index >= len(historyList) {
+		return ""
+	}
 	dp := ""
 	if matches > 1 {
 		dp += "["
@@ -1003,19 +1020,21 @@ func decodeFeederRegRequest(request []byte, regIndex string) FeederRegElem {  //
 	var feederRegElem FeederRegElem
 	var reqMap map[string]interface{}
 	err := json.Unmarshal(request, &reqMap)
-	if err != nil {
+	if err != nil || reqMap == nil {
 		utils.Error.Printf("decodeFeederRegRequest:Feeder reg request corrupt, err = %s\nmessage=%s", err, request)
+		feederRegElem.InfoType = "error"
+		return feederRegElem
 	}
-	reqMap["infotype"] = "Data" // The only supported information type
-	if reqMap["action"] == nil || reqMap["name"] == nil ||
-	   (reqMap["action"] != "reg" && reqMap["action"] != "dereg") {
+	action, actionOk := reqMap["action"].(string)
+	name, nameOk := reqMap["name"].(string)
+	if !actionOk || !nameOk || (action != "reg" && action != "dereg") {
 		feederRegElem.InfoType = "error"
 	} else {
-		if reqMap["action"] == "dereg" {
+		feederRegElem.Name = name
+		if action == "dereg" {
 			feederRegElem.InfoType = "dereg"
 		} else {
-			feederRegElem.Name = reqMap["name"].(string)
-			feederRegElem.InfoType = reqMap["infotype"].(string)
+			feederRegElem.InfoType = "Data"
 			feederRegElem.SockFile = FEEDER_REG_DIR + "feederReg" + regIndex + ".sock"
 		}
 	}
@@ -1100,23 +1119,29 @@ func updateFeederRegList(feederRegElem FeederRegElem) {
 	} else {
 		for i := 0; i < len(feederRegList); i++ {
 			if feederRegList[i].Name == feederRegElem.Name {
-				// stäng UDS, lämna tillbaka channel,...
-				feederRegList[i].Conn.Close()
-				feederRegList[i].Conn = nil
+				if feederRegList[i].Conn != nil {
+					feederRegList[i].Conn.Close()
+					feederRegList[i].Conn = nil
+				}
 				freeFeederChannel(feederRegList[i].ChannelIndex)
 				feederRegList = append(feederRegList[:i], feederRegList[i+1:]...)
+				i--
 			}
 		}
 	}
 }
 
 func createFeederNameList() FeederRegElem {
+	var feederRegElem FeederRegElem
+	if len(feederRegList) == 0 {
+		feederRegElem.Name = "[]"
+		return feederRegElem
+	}
 	feederNameList := "["
 	for i := 0; i < len(feederRegList); i++ {
 		feederNameList += `"` + feederRegList[i].Name + `", `
 	}
-	feederNameList = feederNameList[:len(feederNameList)-2] +  "]"
-	var feederRegElem FeederRegElem
+	feederNameList = feederNameList[:len(feederNameList)-2] + "]"
 	feederRegElem.Name = feederNameList
 	return feederRegElem
 }
@@ -1135,6 +1160,9 @@ func getFeederChannelIndex(channelIndex int) int {
 }
 
 func freeFeederChannel(channelIndex int) {
+	if channelIndex < 0 || channelIndex >= len(feederChannelList) {
+		return
+	}
 	feederChannelList[channelIndex].Busy = false
 }
 
@@ -1276,6 +1304,123 @@ func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeeder
 	}
 }
 
+func nonBlockingSend(ch chan string, message string, chName string) {
+	select {
+	case ch <- message:
+	default:
+		utils.Error.Printf("serviceMgr: %s full, dropping message", chName)
+	}
+}
+
+func handleToFeederMessage(message string, fromFeederCl chan string, feederNotification *string, subMessageCount *int) {
+	var messageMap map[string]interface{}
+	var feederUpdatePath string
+	var unsubscribePath []string
+	err := json.Unmarshal([]byte(message), &messageMap)
+	if err != nil {
+		utils.Error.Printf("feederFrontend:Feeder message corrupt, err=%v, message=%s", err, message)
+		return
+	}
+	action, ok := messageMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("feederFrontend:missing/invalid action, message=%s", message)
+		return
+	}
+	infoType := "Data"
+	switch action {
+	case "subscribe":
+		subId, idOk := messageMap["subscriptionId"].(string)
+		variant, varOk := messageMap["variant"].(string)
+		pathRaw, pathPresent := messageMap["path"].([]interface{})
+		if !idOk || !varOk || !pathPresent {
+			utils.Error.Printf("feederFrontend:subscribe message missing/invalid fields, message=%s", message)
+			return
+		}
+		feederSubList = addOnFeederSubList(subId, variant, pathRaw)
+		feederPathList, feederUpdatePath = addOnFeederPathList(pathRaw)
+		if *feederNotification != "not-supported" {
+			if *subMessageCount >= 5 {
+				*feederNotification = "not-supported"
+				return
+			}
+			message = `{"action": "subscribe", "path":` + feederUpdatePath + `}`
+			*subMessageCount++
+		}
+	case "unsubscribe":
+		subId, idOk := messageMap["subscriptionId"].(string)
+		if !idOk {
+			utils.Error.Printf("feederFrontend:unsubscribe missing/invalid subscriptionId, message=%s", message)
+			return
+		}
+		nonBlockingSend(fromFeederCl, message, "fromFeederCl")
+		feederSubList, unsubscribePath = deleteOnFeederSubList(subId)
+		feederPathList, feederUpdatePath = deleteOnFeederPathList(unsubscribePath)
+		if len(feederUpdatePath) > 4 {
+			message = `{"action": "unsubscribe", "path":` + feederUpdatePath + `}`
+		} else {
+			return
+		}
+	case "set":
+	case "invoke":
+		infoType = "Service"
+	default:
+		utils.Error.Printf("feederFrontend:Feeder message action unknown, message=%s", message)
+		return
+	}
+	for i := 0; i < len(feederRegList); i++ {
+		if feederRegList[i].Conn != nil && feederRegList[i].InfoType == infoType {
+			_, err := feederRegList[i].Conn.Write([]byte(message))
+			if err != nil {
+				utils.Error.Printf("feederFrontend:write to feeder %s failed, err=%v", feederRegList[i].Name, err)
+			}
+		}
+	}
+}
+
+func handleFromFeederMessage(message string, fromFeederRorC, fromFeederCl chan string, feederNotification *string) {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(message), &messageMap)
+	if err != nil {
+		utils.Error.Printf("feederFrontend:Feeder message corrupt, err=%v, message=%s", err, message)
+		return
+	}
+	action, ok := messageMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("feederFrontend:missing/invalid action, message=%s", message)
+		return
+	}
+	switch action {
+	case "subscribe":
+		status, ok := messageMap["status"].(string)
+		if !ok {
+			utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+			return
+		}
+		if status == "ok" {
+			nonBlockingSend(fromFeederRorC, message, "fromFeederRorC")
+			nonBlockingSend(fromFeederCl, message, "fromFeederCl")
+			*feederNotification = "supported"
+		} else {
+			*feederNotification = "not-supported"
+		}
+	case "subscription":
+		path, ok := messageMap["path"].(string)
+		if !ok {
+			utils.Error.Printf("feederFrontend:Feeder message corrupt, message=%s", message)
+			return
+		}
+		variant := getSubscribeVariant(path)
+		if strings.Contains(variant, "change") || strings.Contains(variant, "range") {
+			nonBlockingSend(fromFeederRorC, message, "fromFeederRorC")
+		}
+		if strings.Contains(variant, "curvelog") {
+			nonBlockingSend(fromFeederCl, message, "fromFeederCl")
+		}
+	default:
+		utils.Error.Printf("feederFrontend:Feeder message action unknown, message=%s", message)
+	}
+}
+
 func getSubscribeVariant(path string) string {
 	variants := ""
 	for i := 0; i < len(feederSubList); i++ {
@@ -1294,13 +1439,17 @@ func getSubscribeVariant(path string) string {
 }
 
 func addOnFeederSubList(subscriptionId string, variant string, path []interface{}) []FeederSubElem {
-        var feederSubElem FeederSubElem
-        feederSubElem.SubscriptionId = subscriptionId
-        feederSubElem.Variant = variant
-        feederSubElem.Path = make([]string, len(path))
-        for i := 0; i < len(path); i++ {
-        	feederSubElem.Path[i] = path[i].(string)
-        }
+	var feederSubElem FeederSubElem
+	feederSubElem.SubscriptionId = subscriptionId
+	feederSubElem.Variant = variant
+	for i := 0; i < len(path); i++ {
+		pathStr, ok := path[i].(string)
+		if !ok {
+			utils.Error.Printf("addOnFeederSubList: non-string element at index %d, skipping", i)
+			continue
+		}
+		feederSubElem.Path = append(feederSubElem.Path, pathStr)
+	}
 	feederSubList = append(feederSubList, feederSubElem)
 	return feederSubList
 }
@@ -1331,47 +1480,51 @@ func addOnFeederPathList(path []interface{}) ([]FeederPathElem, string) {
 			}
 		}
 		if !pathFound {
-			feederPathElem.Path = path[i].(string)
+			pathStr, ok := path[i].(string)
+			if !ok {
+				utils.Error.Printf("addOnFeederPathList: non-string element at index %d, skipping", i)
+				continue
+			}
+			feederPathElem.Path = pathStr
 			feederPathElem.Reference = 1
 			feederPathList = append(feederPathList, feederPathElem)
-			feederUpdatePath += path[i].(string) + `", "`
+			feederUpdatePath += pathStr + `", "`
 		}
 	}
-	if len(feederUpdatePath) > 2 {
-		feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4]
+	if len(feederUpdatePath) <= 2 {
+		return feederPathList, ""
 	}
+	feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4]
 	return feederPathList, feederUpdatePath + `"]`
 }
 
 func deleteOnFeederPathList(path []string) ([]FeederPathElem, string) {
-	feederUpdatePath := `["`
-	removeIndex := make([]int, len(path))
-	k := 0
-	for i := 0; i < len(path); i++ {
-		removeIndex[k] = -1
+	if len(path) == 0 {
+		return feederPathList, ""
+	}
+	var removedPaths []string
+	for _, p := range path {
 		for j := 0; j < len(feederPathList); j++ {
-			if path [i] == feederPathList[j].Path {
+			if p == feederPathList[j].Path {
 				if feederPathList[j].Reference > 1 {
 					feederPathList[j].Reference--
 				} else {
-					removeIndex[k] = j
-					k++
+					removedPaths = append(removedPaths, p)
+					feederPathList = slices.Delete(feederPathList, j, j+1)
 				}
-			}
-		}
-		k = 0
-		for i := 0; i < len(path); i++ {
-			if removeIndex[k] == i {
-				feederUpdatePath += path[i] + `", "`
-				k++
-				feederPathList = slices.Delete(feederPathList, i, i+1)
+				break
 			}
 		}
 	}
-	if len(feederUpdatePath) > 2 {
-		feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4]
+	if len(removedPaths) == 0 {
+		return feederPathList, ""
 	}
-	return feederPathList, feederUpdatePath + `"]`
+	feederUpdatePath := `["`
+	for _, p := range removedPaths {
+		feederUpdatePath += p + `", "`
+	}
+	feederUpdatePath = feederUpdatePath[:len(feederUpdatePath)-4] + `"]`
+	return feederPathList, feederUpdatePath
 }
 
 func feederReaderMgr(fromFeeders chan string) {
@@ -1915,12 +2068,14 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			handleFeederRegistration(feederReq, feederRegChan)
 		} // select
 	} // for
-utils.Info.Printf("Service manager exit")
 }
 
 func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
 	// check if range or change notification triggered
 	for i := range subscriptionList {
+		if len(subscriptionList[i].Path) == 0 {
+			continue
+		}
 		if len(triggeredPath) == 0 || triggeredPath == subscriptionList[i].Path[0] {
 			doTrigger, triggerDataPoint := checkRangeChangeFilter(subscriptionList[i].FilterList, subscriptionList[i].LatestDataPoint, subscriptionList[i].Path[0])
 			subscriptionList[i].LatestDataPoint = triggerDataPoint
@@ -1955,18 +2110,23 @@ func decodeFeederMessage(feederMessage string, feederNotification bool) (string,
 		utils.Error.Printf("Error in feeder message=%s", feederMessage)
 		return "", feederNotification
 	}
+	action, ok := messageMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("decodeFeederMessage: action is not a string, message=%s", feederMessage)
+		return "", feederNotification
+	}
 	var triggeredPath string
-	switch messageMap["action"].(string) {
+	switch action {
 		case "subscribe":
-			if messageMap["status"] != nil && messageMap["status"].(string) == "ok" {
+			if status, ok := messageMap["status"].(string); ok && status == "ok" {
 				feederNotification = true
 			}
 		case "subscription":
-			if messageMap["path"] != nil {
-				triggeredPath  = messageMap["path"].(string)
+			if path, ok := messageMap["path"].(string); ok {
+				triggeredPath = path
 			}
 		default:
-			utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
+			utils.Error.Printf("Unknown action=%s", action)
 			return "", feederNotification
 	}
 	return triggeredPath, feederNotification
