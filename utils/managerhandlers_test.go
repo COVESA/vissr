@@ -6,7 +6,6 @@ package utils
 
 import (
 	"bytes"
-	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"

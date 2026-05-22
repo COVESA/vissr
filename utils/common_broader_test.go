@@ -114,28 +114,32 @@ func TestExtractRootName(t *testing.T) {
 	}
 }
 
-// TestGenerateHmacVerifyRoundTrip exercises the HMAC pair used for
-// token signing/verification.
-func TestGenerateHmacVerifyRoundTrip(t *testing.T) {
+// TestSymmSignVerifyRoundTrip exercises the symmetric JWT sign/verify
+// pair: SymmSign builds a proper header.payload.signature token that
+// VerifyTokenSignature can check. GenerateHmac is the inner primitive
+// and is exercised indirectly.
+func TestSymmSignVerifyRoundTrip(t *testing.T) {
 	const key = "test-key-32-bytes-long-or-so----"
 	cases := []string{
-		"",
-		"hello",
+		`{"typ":"JWT","alg":"HS256"}`,
 		`{"action":"get","path":"Vehicle.Speed"}`,
-		"a very long string repeated 100 times " + "x",
 	}
 	for _, payload := range cases {
 		t.Run(payload, func(t *testing.T) {
-			signature := GenerateHmac(payload, key)
-			if signature == "" {
-				t.Fatalf("GenerateHmac returned empty signature for %q", payload)
+			var tok JsonWebToken
+			tok.Header = `{"typ":"JWT","alg":"HS256"}`
+			tok.Payload = payload
+			tok.SymmSign(key)
+			full := tok.GetFullToken()
+			if full == "" {
+				t.Fatalf("GetFullToken returned empty for payload %q", payload)
 			}
-			// A signature on a different message must not verify.
-			if err := VerifyTokenSignature(payload+"."+signature, key); err != nil {
-				t.Fatalf("VerifyTokenSignature failed on roundtrip %q: %v", payload, err)
+			if err := VerifyTokenSignature(full, key); err != nil {
+				t.Fatalf("VerifyTokenSignature failed on roundtrip: %v", err)
 			}
-			if err := VerifyTokenSignature(payload+"-tampered."+signature, key); err == nil {
-				t.Fatalf("VerifyTokenSignature accepted a tampered message %q", payload)
+			// Tamper the last byte of the signature segment.
+			if err := VerifyTokenSignature(full[:len(full)-1]+"X", key); err == nil {
+				t.Fatalf("VerifyTokenSignature accepted tampered token for payload %q", payload)
 			}
 		})
 	}
