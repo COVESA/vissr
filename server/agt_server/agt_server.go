@@ -124,13 +124,6 @@ func allowedOriginHeader(req *http.Request) string {
 	return ""
 }
 
-// jtiCacheMu serialises access to jtiCache from the main request loop
-// (addCheckJti) and the per-jti expiry goroutines (deleteJti). Without
-// it the Go runtime aborts the process with "concurrent map read and
-// map write" once two AGT requests overlap. Mirrors the equivalent
-// fix in server/vissv2server/atServer/atServer.go.
-var jtiCacheMu sync.Mutex
-
 type Payload struct {
 	// Action  string `json:"action"`
 	Vin     string `json:"vin"`
@@ -166,7 +159,12 @@ func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *
 		req.Body = http.MaxBytesReader(w, req.Body, MAX_REQUEST_BODY)
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
-			http.Error(w, "400 request unreadable or too large.", 400)
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "Request Entity Too Large.", http.StatusRequestEntityTooLarge)
+			} else {
+				http.Error(w, "400 request unreadable.", http.StatusBadRequest)
+			}
 			return
 		}
 		utils.Info.Printf("agtServer:received POST request=%s\n", string(bodyBytes))
@@ -341,6 +339,9 @@ func authenticateClient(payload Payload) bool {
 func addCheckJti(jti string) bool {
 	jtiCacheMu.Lock()
 	defer jtiCacheMu.Unlock()
+	if jtiCache == nil {
+		jtiCache = make(map[string]struct{})
+	}
 	if _, ok := jtiCache[jti]; ok {
 		return false
 	}
