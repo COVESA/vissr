@@ -19,18 +19,10 @@
 package utils
 
 import (
-	"os"
 	"testing"
 
 	"github.com/gorilla/websocket"
 )
-
-// TestMain initialises utils.Info / utils.Error so the helpers can
-// log without nil-deref under test conditions.
-func TestMain(m *testing.M) {
-	InitLog("utils-managerhandlers-dispatch-test.log", os.TempDir(), false, "error")
-	os.Exit(m.Run())
-}
 
 // TestDecodeWsRequestPayload_JsonPassthrough confirms that with the
 // default (non-PROTOBUF) encoding the helper returns the raw bytes

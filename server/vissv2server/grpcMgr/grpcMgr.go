@@ -225,7 +225,7 @@ func initGrpcServer() {
 			return
 		}
 
-		config := utils.GetTLSConfig("localhost", utils.TrSecConfigPath+utils.SecureConfiguration.CaSecPath+"Root.CA.crt",
+		config := utils.GetTLSConfig(utils.SecureConfiguration.ServerName, utils.TrSecConfigPath+utils.SecureConfiguration.CaSecPath+"Root.CA.crt",
 			tls.ClientAuthType(utils.CertOptToInt(utils.SecureConfiguration.ServerCertOpt)), &cert)
 		tlsCredentials := credentials.NewTLS(config)
 
