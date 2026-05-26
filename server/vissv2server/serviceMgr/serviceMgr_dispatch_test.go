@@ -61,13 +61,6 @@ import (
 	"time"
 )
 
-// TestMain initialises utils.Info / utils.Error so the helpers can
-// log without nil-deref under test conditions. We deliberately do
-// NOT set stateDbType here — the empty value falls through to the
-// default arm in setVehicleData/getVehicleData, returning "" without
-// touching the live storage backends. That keeps these tests
-// self-contained and exercises the service_unavailable / empty-data
-// paths.
 // resetErrorResponseMap clears the shared package-level
 // errorResponseMap between tests. The production code mutates it in
 // place on the assumption that one request is being processed at a
