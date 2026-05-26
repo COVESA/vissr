@@ -45,19 +45,46 @@ type FileTransferCache struct {
 	Status int  //zero=ok, non-zero=nok
 }
 
-// Gets Json string (or nothing) and adds received key and value, if it doesnt receive a value or key, it does nothing
+// Gets Json string (or nothing) and adds received key and value, if it doesnt
+// receive a value or key, it does nothing. If the value starts with `{` or `[`
+// it is treated as already-encoded JSON; otherwise it is treated as a string
+// literal and is JSON-encoded (which escapes `"`, `\`, and control chars)
+// before being inserted. The key is encoded the same way.
 func JsonRecursiveMarshall(key string, value string, jplain *string) {
-	if key == "" || value == "" {
+	if key == "" || value == "" || jplain == nil {
 		return
 	}
-	if !strings.HasPrefix(value, "{") { // If the value of the claim starts with "{", that means the claim has another json inside, wich must not be included between commas
-		value = `"` + value + `"`
+	encodedKey := mustJsonString(key)
+	var encodedValue string
+	if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") {
+		// Caller asserts this is already a JSON object/array literal.
+		encodedValue = value
+	} else {
+		encodedValue = mustJsonString(value)
 	}
 	if *jplain == "" {
-		*jplain = `{"` + key + `":` + value + `}`
+		*jplain = "{" + encodedKey + ":" + encodedValue + "}"
+	} else if strings.HasSuffix(*jplain, "}") {
+		*jplain = (*jplain)[:len(*jplain)-1] + "," + encodedKey + ":" + encodedValue + "}"
 	} else {
-		*jplain = (*jplain)[:len(*jplain)-1] + `,"` + key + `":` + value + `}`
+		// Malformed accumulator; refuse to corrupt it further.
+		Error.Printf("JsonRecursiveMarshall: accumulator does not end in '}' (got %q); skipping key=%q", *jplain, key)
 	}
+}
+
+// mustJsonString returns the JSON-encoded representation of s (surrounded by
+// quotes and with metacharacters escaped). Failure is impossible for a Go
+// string but we guard for safety.
+func mustJsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		// json.Marshal of a string can only fail on extremely pathological
+		// invalid-UTF8 input. Fall back to a defensive double-quote that
+		// preserves length so downstream length checks don't go wild.
+		Error.Printf("mustJsonString: json.Marshal failed for %q: %v", s, err)
+		return `""`
+	}
+	return string(b)
 }
 
 // *********				JSON WEB TOKEN 										***********
@@ -111,8 +138,15 @@ func (token *JsonWebToken) AssymSign(privKey crypto.PrivateKey) error {
 		if err != nil {
 			return err
 		}
-		signature = rSign.Bytes() // APPENDS r,s in big endian
-		signature = append(signature, sSign.Bytes()...)
+		// RFC 7518 §3.4 requires R and S to each be exactly the curve byte
+		// length, zero-padded on the left. Big.Int.Bytes() returns the
+		// minimum number of bytes, so we must pad explicitly.
+		curveByteLen := (ecdsaPriv.Curve.Params().BitSize + 7) / 8
+		signature = make([]byte, 2*curveByteLen)
+		rBytes := rSign.Bytes()
+		sBytes := sSign.Bytes()
+		copy(signature[curveByteLen-len(rBytes):curveByteLen], rBytes)
+		copy(signature[2*curveByteLen-len(sBytes):], sBytes)
 	default:
 		return fmt.Errorf("error: can not sign jwt: invalid key type: %T", typ)
 	}
@@ -241,11 +275,14 @@ func (token JsonWebToken) CheckAssymSignature(key crypto.PublicKey) (err error) 
 		if pubKey.Curve != elliptic.P256() {
 			return errors.New("elliptic curve type not supported")
 		}
-		var r, s *big.Int
-		r = new(big.Int)
-		s = new(big.Int)
-		r.SetBytes(signature[:32])
-		s.SetBytes(signature[32:])
+		// RFC 7518 §3.4: signature is the concatenation of R and S, each
+		// the curve's byte length. For P-256 that's exactly 64 bytes.
+		curveByteLen := (pubKey.Curve.Params().BitSize + 7) / 8
+		if len(signature) != 2*curveByteLen {
+			return fmt.Errorf("invalid ecdsa signature length: got %d bytes, want %d", len(signature), 2*curveByteLen)
+		}
+		r := new(big.Int).SetBytes(signature[:curveByteLen])
+		s := new(big.Int).SetBytes(signature[curveByteLen:])
 		// We have to hash the token to check it
 		hashed := sha256.Sum256([]byte(token.EncodedHeader + "." + token.EncodedPayload))
 		if !ecdsa.Verify(pubKey, hashed[:], r, s) {
@@ -253,7 +290,7 @@ func (token JsonWebToken) CheckAssymSignature(key crypto.PublicKey) (err error) 
 		}
 		return err
 	default:
-		return fmt.Errorf("public key alg not supported: %t", typ)
+		return fmt.Errorf("public key alg not supported: %T", typ)
 	}
 }
 
@@ -314,21 +351,26 @@ func stripJsonQuotes(value json.RawMessage) string {
 func (popToken *PopToken) Unmarshal(token string) error {
 	popToken.HeaderClaims = make(map[string]string)
 	popToken.PayloadClaims = make(map[string]string)
-	// Decodes full token into header and payload
-	popToken.Jwt.DecodeFromFull(token)
+	// Decodes full token into header and payload; propagate parse failures.
+	if err := popToken.Jwt.DecodeFromFull(token); err != nil {
+		return err
+	}
 	// Starting with header
 	var headerMap map[string]json.RawMessage
-	err := json.Unmarshal([]byte(popToken.Jwt.Header), &headerMap)
-	if err != nil {
+	if err := json.Unmarshal([]byte(popToken.Jwt.Header), &headerMap); err != nil {
 		return err
 	}
 	for key, value := range headerMap {
-		popToken.HeaderClaims[key] = stripJsonQuotes(value)
+		popToken.HeaderClaims[key] = rawMessageToClaim(value)
 	}
-	popToken.HeaderClaims["jwk"] = string(headerMap["jwk"]) // Key must be unmarshalled
+	if rawJwk, present := headerMap["jwk"]; present {
+		popToken.HeaderClaims["jwk"] = string(rawJwk) // Key must be unmarshalled as-is
+	}
 	// Then we decode the key
-	if err := popToken.Jwk.Unmarshall(popToken.HeaderClaims["jwk"]); err != nil {
-		return errors.New("can not decode key in poptoken")
+	if popToken.HeaderClaims["jwk"] != "" {
+		if err := popToken.Jwk.Unmarshall(popToken.HeaderClaims["jwk"]); err != nil {
+			return errors.New("can not decode key in poptoken")
+		}
 	}
 	// Continue with payload. Bug fix: check the Unmarshal error
 	// BEFORE iterating payloadMap. The previous code ignored the
@@ -336,13 +378,30 @@ func (popToken *PopToken) Unmarshal(token string) error {
 	// PoP was well-formed when it wasn't (e.g. AGT server cached
 	// the JTI before signature check — bug 4 in agt_server.go).
 	var payloadMap map[string]json.RawMessage
-	if err = json.Unmarshal([]byte(popToken.Jwt.Payload), &payloadMap); err != nil {
+	if err := json.Unmarshal([]byte(popToken.Jwt.Payload), &payloadMap); err != nil {
 		return err
 	}
 	for key, value := range payloadMap {
-		popToken.PayloadClaims[key] = stripJsonQuotes(value)
+		popToken.PayloadClaims[key] = rawMessageToClaim(value)
 	}
 	return nil
+}
+
+// rawMessageToClaim normalizes a JWT claim value into a plain Go string for
+// storage in the *Claims maps. JSON strings are unquoted; numbers/bools/null
+// keep their JSON textual form; objects and arrays keep their full JSON
+// (so the caller can re-parse if needed).
+func rawMessageToClaim(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	// Try to decode as a string first.
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	// Otherwise return the JSON literal as-is (number, bool, null, object, array).
+	return string(raw)
 }
 
 // Initializes popToken from claims and public key. Make sure the private key used to sign is the same used to initialize
@@ -355,6 +414,8 @@ func (popToken *PopToken) Initialize(headerMap, payloadMap map[string]string, pu
 	}
 	// Sets header typ
 	popToken.HeaderClaims["typ"] = "dpop+jwt"
+	// Copy payload (only once - the duplicate copy below was harmless but
+	// confusing).
 	for key, value := range payloadMap {
 		popToken.PayloadClaims[key] = value
 	}
@@ -364,16 +425,14 @@ func (popToken *PopToken) Initialize(headerMap, payloadMap map[string]string, pu
 		popToken.HeaderClaims["alg"] = "RS256"
 	case *ecdsa.PublicKey:
 		popToken.HeaderClaims["alg"] = "ES256"
+	default:
+		return fmt.Errorf("PopToken.Initialize: unsupported public key type: %T", pubKey)
 	}
 	// Initializes jwk var + sets header jwk
 	if err := popToken.Jwk.Initialize(pubKey, "sign"); err != nil {
 		return err
 	}
 	popToken.HeaderClaims["jwk"] = popToken.Jwk.Marshal()
-	// Copy payload
-	for key, value := range payloadMap {
-		popToken.PayloadClaims[key] = value
-	}
 	return nil
 }
 
@@ -404,8 +463,11 @@ func (popToken *PopToken) GenerateToken(privKey crypto.PrivateKey) (token string
 		return
 	}
 	popToken.PayloadClaims["jti"] = unparsedId.String()
-	popToken.PayloadClaims["aud"] = "vissv2/agts"
-	// popToken.PayloadClaims[""]
+	// Only set the default aud if the caller did not already provide one
+	// (the previous code overwrote any caller-set aud).
+	if _, present := popToken.PayloadClaims["aud"]; !present {
+		popToken.PayloadClaims["aud"] = "vissv2/agts"
+	}
 	// Marshal header (must be in order)
 	iterator := []string{"typ", "alg", "jwk"}
 	for _, iter := range iterator {
@@ -510,9 +572,13 @@ func (popToken *PopToken) CheckSignature() error {
 
 // Check exp time
 func (popToken PopToken) CheckExp() (bool, string) {
-	exp, err := strconv.Atoi(popToken.PayloadClaims["exp"])
-	if err != nil {
+	expStr, ok := popToken.PayloadClaims["exp"]
+	if !ok || expStr == "" {
 		return false, "No exp claim"
+	}
+	exp, err := strconv.Atoi(expStr)
+	if err != nil {
+		return false, fmt.Sprintf("Bad exp claim: %q", expStr)
 	}
 	act := int(time.Now().Unix())
 	if act > exp {
@@ -521,17 +587,21 @@ func (popToken PopToken) CheckExp() (bool, string) {
 	return true, "OK"
 }
 
-// Check iats. Gap is the possible error between clocks. lifetime is the maximum time after is creation that the token can be used
+// Check iats. Gap is the possible error between clocks. lifetime is the
+// maximum time after creation that the token can be used.
 func (popToken PopToken) CheckIat(gap int, lifetime int) (bool, string) {
 	act := int(time.Now().Unix())
-	iat, err := strconv.Atoi(popToken.PayloadClaims["iat"])
+	iatStr, ok := popToken.PayloadClaims["iat"]
+	if !ok || iatStr == "" {
+		return false, "Missing iat claim"
+	}
+	iat, err := strconv.Atoi(iatStr)
 	if err != nil {
-		return false, "Bad iat claim"
+		return false, fmt.Sprintf("Bad iat claim: %q", iatStr)
 	}
 	if !(act < iat+gap+lifetime) {
 		return false, fmt.Sprintf("Expired, act time: %d", act)
 	}
-	Info.Printf("\n\n %d ", act)
 	if !(act > iat-gap) { // Check if token is still valid
 		return false, fmt.Sprintf("Created in future time, act time: %d", act)
 	}
@@ -544,9 +614,6 @@ func (popToken *PopToken) Validate(thumbprint, aud string, gap, lifetime int) (v
 	if valid, info = popToken.CheckIat(gap, lifetime); !valid {
 		return
 	}
-	//if valid, info = popToken.CheckExp(); !valid {
-	//	return
-	//}
 	// Makes sure to exist claim "aud"
 	if valid, info = popToken.CheckAud(aud); !valid {
 		return
@@ -559,5 +626,5 @@ func (popToken *PopToken) Validate(thumbprint, aud string, gap, lifetime int) (v
 	if err := popToken.CheckSignature(); err != nil {
 		return false, fmt.Sprintf("%v", err)
 	}
-	return valid, info
+	return true, "OK"
 }
