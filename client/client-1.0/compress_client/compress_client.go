@@ -49,6 +49,7 @@ func pathToUrl(path string) string {
 }
 
 func jsonToStructList(jsonList string) int {
+	requestList.Request = nil
 	var reqList map[string]interface{}
 	err := json.Unmarshal([]byte(jsonList), &reqList)
 	if err != nil {

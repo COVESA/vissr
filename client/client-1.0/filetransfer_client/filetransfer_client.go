@@ -38,11 +38,11 @@ func safeServerFilename(name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("empty filename from server")
 	}
-	if filepath.Base(name) != name {
-		return "", fmt.Errorf("server filename %q contains path separators", name)
-	}
 	if strings.Contains(name, "..") {
 		return "", fmt.Errorf("server filename %q contains parent-directory reference", name)
+	}
+	if filepath.Base(name) != name {
+		return "", fmt.Errorf("server filename %q contains path separators", name)
 	}
 	return name, nil
 }
@@ -337,12 +337,7 @@ func uploadFile(ctrlChannel chan string, dataChannel chan []byte) {
 }
 
 func equalByteArray(array1 []byte, array2 []byte) bool {
-	for i := 0; i < len(array1); i++ {
-		if array1[i] != array2[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(array1, array2)
 }
 
 func getFileDescriptorData(value interface{}) (string, string, string) { // {"name": "xxx","hash": "yyy","uid": "zzz"}

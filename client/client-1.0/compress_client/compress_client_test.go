@@ -21,7 +21,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
+
+func init() {
+	utils.InitLog("compress_client-test.log", os.TempDir(), false, "error")
+}
 
 // TestPathToUrl converts VSS dot-paths into URL slash-paths.
 func TestPathToUrl(t *testing.T) {

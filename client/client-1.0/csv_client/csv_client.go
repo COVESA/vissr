@@ -257,13 +257,10 @@ func processDataLevel5(dp map[string]interface{}, valArray *[]string, tsArray *[
 	for k, v := range dp {
 		switch vv := v.(type) {
 		case string:
-			//			utils.Info.Println(k, "is string", vv)
 			if k == "value" {
-				// valArray[arrayIndex] = vv
-				*valArray = append(*valArray, vv)
+				(*valArray)[arrayIndex] = vv
 			} else if k == "ts" {
-				// tsArray[arrayIndex] = vv
-				*tsArray = append(*tsArray, vv)
+				(*tsArray)[arrayIndex] = vv
 			}
 		default:
 			utils.Info.Println(k, "is of an unknown type")
@@ -278,19 +275,13 @@ func saveInCsv(valArray []string, tsArray []string, arrayIndex int) {
 		fmt.Printf("Could not open data.csv for writing.\n")
 		return
 	}
+	defer treeFp.Close()
 	for i := 0; i < arrayIndex; i++ {
 		treeFp.Write([]byte(tsArray[i]))
 		treeFp.Write([]byte(", "))
-	}
-	treeFp.Write([]byte("\n"))
-
-	for i := 0; i < arrayIndex; i++ {
 		treeFp.Write([]byte(valArray[i]))
-		treeFp.Write([]byte(", "))
+		treeFp.Write([]byte("\n"))
 	}
-	treeFp.Write([]byte("\n"))
-
-	treeFp.Close()
 }
 
 func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel chan string) {
