@@ -11,8 +11,10 @@ package utils
 import (
 	"bytes"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // snapshotWsClientIndexList captures and restores WsClientIndexList around a
@@ -267,3 +269,14 @@ func TestFrontendHttpAppSession_GetForwards(t *testing.T) {
 		t.Fatalf("GET was not forwarded to clientChannel")
 	}
 }
+
+// --------------------------------------------------------------------------
+// Integration-only entry points (documented, not unit-tested)
+//
+// backendHttpAppSession, backendWSAppSession, frontendWSAppSession,
+// HttpChannel.makeappClientHandler, WsChannel.makeappClientHandler,
+// HttpServer.InitClientServer and WsServer.InitClientServer all bind to a
+// real *http.ResponseWriter or *websocket.Conn and exchange data over those
+// connections. They're exercised end-to-end by the integration test suite.
+// The deterministic building blocks they depend on are all covered above.
+// --------------------------------------------------------------------------

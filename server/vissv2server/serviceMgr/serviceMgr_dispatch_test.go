@@ -56,25 +56,10 @@
 package serviceMgr
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/covesa/vissr/utils"
 )
-
-// TestMain initialises utils.Info / utils.Error so the helpers can
-// log without nil-deref under test conditions. We deliberately do
-// NOT set stateDbType here — the empty value falls through to the
-// default arm in setVehicleData/getVehicleData, returning "" without
-// touching the live storage backends. That keeps these tests
-// self-contained and exercises the service_unavailable / empty-data
-// paths.
-func TestMain(m *testing.M) {
-	utils.InitLog("serviceMgr-dispatch-test.log", os.TempDir(), false, "error")
-	os.Exit(m.Run())
-}
 
 // resetErrorResponseMap clears the shared package-level
 // errorResponseMap between tests. The production code mutates it in

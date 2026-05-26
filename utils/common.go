@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -35,7 +36,18 @@ var jsonSchema *jsonschema.Schema
 var validationMatrix [5][5]int = [5][5]int{{0, 1, 2, 11, 12}, {1, 1, 2, 11, 12}, {2, 2, 2, 12, 12}, {11, 11, 12, 11, 12}, {12, 12, 12, 12, 12}}
 
 func GetMaxValidation(newValidation int, currentMaxValidation int) int {
-	return validationMatrix[translateToMatrixIndex(newValidation)][translateToMatrixIndex(currentMaxValidation)]
+	ni := translateToMatrixIndex(newValidation)
+	ci := translateToMatrixIndex(currentMaxValidation)
+	// translateToMatrixIndex returns 0 for any value not in {0,1,2,11,12}.
+	// When that happens for a non-zero input the matrix lookup would silently
+	// return 0 instead of the correct max, so fall back to plain integer max.
+	if (ni == 0 && newValidation != 0) || (ci == 0 && currentMaxValidation != 0) {
+		if newValidation > currentMaxValidation {
+			return newValidation
+		}
+		return currentMaxValidation
+	}
+	return validationMatrix[ni][ci]
 }
 
 func translateToMatrixIndex(index int) int {
@@ -483,11 +495,11 @@ func unpackFilterLevel2(index int, filterExpression map[string]interface{}, fLis
 }
 
 func IsNumber(value string) bool {
-	_, err := strconv.ParseFloat(value, 32)
+	f, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return false
 	}
-	return true
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 func IsBoolean(value string) bool {

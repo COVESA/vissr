@@ -348,7 +348,7 @@ func initClientComm(atsChannel chan string, muxServer *http.ServeMux) {
 		server := http.Server{
 			Addr:    ":" + utils.SecureConfiguration.AtsSecPort,
 			Handler: muxServer,
-			TLSConfig: utils.GetTLSConfig("localhost", "../transport_sec/"+utils.SecureConfiguration.CaSecPath+"Root.CA.crt",
+			TLSConfig: utils.GetTLSConfig(utils.SecureConfiguration.ServerName, "../transport_sec/"+utils.SecureConfiguration.CaSecPath+"Root.CA.crt",
 				tls.ClientAuthType(utils.CertOptToInt(utils.SecureConfiguration.ServerCertOpt)), nil),
 		}
 		utils.Info.Printf("initClientComm():Starting AT Server with TLS on %s/ats", utils.SecureConfiguration.AtsSecPort)

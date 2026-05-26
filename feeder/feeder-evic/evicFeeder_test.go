@@ -24,7 +24,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
+
+func TestMain(m *testing.M) {
+	utils.InitLog("evicFeeder-test.log", os.TempDir(), false, "error")
+	os.Exit(m.Run())
+}
 
 // TestFileExists_EvicFeeder covers the path-exists check.
 func TestFileExists_EvicFeeder(t *testing.T) {
@@ -62,7 +69,10 @@ func TestDeSerializeUInt_EvicFeeder(t *testing.T) {
 // the server-message JSON envelope.
 func TestSplitToDomainDataAndTs_EvicFeeder(t *testing.T) {
 	msg := `{"path":"Vehicle.Speed","dp":{"value":"100","ts":"2026-05-16T12:00:00Z"}}`
-	dd, ts := splitToDomainDataAndTs(msg)
+	dd, ts, ok := splitToDomainDataAndTs(msg)
+	if !ok {
+		t.Fatal("splitToDomainDataAndTs returned ok=false for valid input")
+	}
 	if dd.Name != "Vehicle.Speed" {
 		t.Fatalf("Name = %q; want Vehicle.Speed", dd.Name)
 	}

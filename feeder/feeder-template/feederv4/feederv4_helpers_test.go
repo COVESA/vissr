@@ -109,7 +109,10 @@ func TestSplitToDomainDataAndTs_ServerFormat(t *testing.T) {
 			"value": "100",
 		},
 	}
-	dd, ts := splitToDomainDataAndTs(msg)
+	dd, ts, ok := splitToDomainDataAndTs(msg)
+	if !ok {
+		t.Fatalf("splitToDomainDataAndTs returned ok=false on valid input")
+	}
 	if dd.Name != "Vehicle.Speed" {
 		t.Fatalf("Name = %q; want Vehicle.Speed", dd.Name)
 	}
