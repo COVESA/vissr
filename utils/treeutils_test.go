@@ -31,9 +31,6 @@ import (
 	"testing"
 )
 
-// TestMain initialises the utils package-level loggers so the
-// fixes that call Error.Printf (e.g. intToHex on out-of-range
-// input) don't nil-deref.
 // ----------------------------------------------------------------------------
 // Hex / allowed-buffer helpers (bug 12)
 // ----------------------------------------------------------------------------

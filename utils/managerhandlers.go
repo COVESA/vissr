@@ -13,14 +13,38 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
-//	"time"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+// secureConfigOnce protects SecureConfiguration from a multi-goroutine race.
+// Pre-fix, ReadTransportSecConfig was called concurrently from httpMgr, wsMgr,
+// udsMgr, grpcMgr, atServer (each starts in its own goroutine) and all of them
+// json.Unmarshal-ed into the same package-global SecureConfiguration. -race
+// flagged this. sync.Once guarantees the file is read once and SecureConfiguration
+// is safe to read from any goroutine after the first call returns.
+var secureConfigOnce sync.Once
+
+// HTTP timeouts applied to all TLS / plaintext listeners spawned from this
+// package. Pre-fix the http.Server{} had no read/write timeouts so a slowloris-
+// style attacker could hold a connection open indefinitely, exhausting the
+// listener fd budget. These values are conservative; tune via config if a real
+// workload needs longer-lived streams.
+const (
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 60 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+	httpMaxHeaderBytes    = 1 << 20 // 1 MiB
 )
 
 const backendTermination = "internal-backend-termination"
@@ -40,26 +64,107 @@ func getWsClientIndex() int {
 }
 
 func ReturnWsClientIndex(index int) {
+	if index < 0 || index >= len(WsClientIndexList) {
+		Error.Printf("ReturnWsClientIndex: invalid index=%d (len=%d)", index, len(WsClientIndexList))
+		return
+	}
 	WsClientIndexMu.Lock()
 	defer WsClientIndexMu.Unlock()
 	WsClientIndexList[index] = true
 }
 
-// Initializes TransportSec Variables
+// ReadTransportSecConfig parses transportSec.json and populates the package-
+// global SecureConfiguration. Pre-fix:
+//   - was called from N goroutines (each transport manager) and they all wrote
+//     to SecureConfiguration concurrently with no synchronisation;
+//   - logged a missing config at Info level so ops couldn't tell at a glance
+//     that the server was running plaintext;
+//   - performed no field validation, so transportSec.json={} loaded cleanly
+//     into a zero-valued struct and silently fell through to plaintext;
+//   - did not default the SNI/ServerName field that every call site of
+//     GetTLSConfig hardcoded to "localhost".
+//
+// Now wrapped in sync.Once (race-free regardless of caller count),
+// validateSecConfig runs after parsing, and ServerName defaults to "localhost"
+// with a loud warning so the operator knows to override it.
 func ReadTransportSecConfig() {
+	secureConfigOnce.Do(readTransportSecConfigOnce)
+}
+
+func readTransportSecConfigOnce() {
 	data, err := os.ReadFile(TrSecConfigPath + "transportSec.json")
 	if err != nil {
-		Info.Printf("ReadTransportSecConfig():%stransportSec.json error=%s", TrSecConfigPath, err)
+		Warning.Printf("ReadTransportSecConfig: %stransportSec.json missing/unreadable (err=%v) - falling back to plaintext", TrSecConfigPath, err)
 		SecureConfiguration.TransportSec = "no"
 		return
 	}
-	err = json.Unmarshal(data, &SecureConfiguration)
+	if err := json.Unmarshal(data, &SecureConfiguration); err != nil {
+		Error.Printf("ReadTransportSecConfig: malformed transportSec.json: %v - falling back to plaintext", err)
+		SecureConfiguration.TransportSec = "no"
+		return
+	}
+	validateSecConfig(&SecureConfiguration)
+	Info.Printf("ReadTransportSecConfig: TransportSec=%s ServerName=%s ServerCertOpt=%s", SecureConfiguration.TransportSec, SecureConfiguration.ServerName, SecureConfiguration.ServerCertOpt)
+}
+
+// validateSecConfig fills in safe defaults and emits warnings on questionable
+// configurations. It does not return errors - the server keeps running with
+// whatever the operator supplied; we just make the holes obvious in the log.
+func validateSecConfig(cfg *SecConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.TransportSec != "yes" {
+		// If TLS is off there's nothing to validate; coerce to canonical "no".
+		if cfg.TransportSec != "no" && cfg.TransportSec != "" {
+			Warning.Printf("validateSecConfig: TransportSec=%q is neither \"yes\" nor \"no\"; treating as \"no\"", cfg.TransportSec)
+		}
+		cfg.TransportSec = "no"
+		return
+	}
+	// TransportSec == "yes" - check the fields TLS will actually need.
+	if cfg.ServerName == "" {
+		Warning.Printf("validateSecConfig: serverName not set in transportSec.json - defaulting to \"localhost\". TLS handshakes from any non-localhost client will fail SNI matching. Set serverName to the public DNS name of this server.")
+		cfg.ServerName = "localhost"
+	}
+	if cfg.CaSecPath == "" {
+		Warning.Printf("validateSecConfig: caSecPath empty - CA cert path will resolve to %s", TrSecConfigPath)
+	}
+	if cfg.ServerSecPath == "" {
+		Warning.Printf("validateSecConfig: serverSecPath empty - server.crt/key path will resolve to %s", TrSecConfigPath)
+	}
+	if cfg.ServerCertOpt == "" {
+		Warning.Printf("validateSecConfig: serverCertOpt empty - defaulting to \"ClientCertVerification\" (max security)")
+		cfg.ServerCertOpt = "ClientCertVerification"
+	}
+}
+
+// safeCertPath joins base + sub + filename with filepath.Clean and rejects any
+// resulting path that escapes `base` via `..` segments. Pre-fix the call sites
+// did raw string concatenation, so an operator-supplied CaSecPath of
+// "../../etc/" would let a misconfigured server load CA certs from anywhere
+// on disk.
+func safeCertPath(base, sub, filename string) (string, error) {
+	if base == "" {
+		return "", errors.New("safeCertPath: base is empty")
+	}
+	if filename == "" {
+		return "", errors.New("safeCertPath: filename is empty")
+	}
+	if strings.ContainsAny(filename, "/\\") {
+		return "", errors.New("safeCertPath: filename must not contain path separators")
+	}
+	cleanedBase := filepath.Clean(base)
+	full := filepath.Clean(filepath.Join(cleanedBase, sub, filename))
+	// Ensure `full` is inside `cleanedBase` (or equal to it for sub=="").
+	rel, err := filepath.Rel(cleanedBase, full)
 	if err != nil {
-		Error.Printf("ReadTransportSecConfig():Error unmarshal transportSec.json=%s", err)
-		SecureConfiguration.TransportSec = "no"
-		return
+		return "", err
 	}
-	Info.Printf("ReadTransportSecConfig():SecureConfiguration.TransportSec=%s", SecureConfiguration.TransportSec)
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("safeCertPath: path traversal rejected")
+	}
+	return full, nil
 }
 
 func createRouterIdProperty(mgrId int, clientId int) string {
@@ -301,27 +406,55 @@ func (wsH WsChannel) makeappClientHandler(appClientChannel []chan string) func(h
 	}
 }
 
-// Launches the HTTP Manager
+// Launches the HTTP Manager. Pre-fix this http.Server had no Read/Write/Idle
+// timeouts (slowloris DoS), hardcoded "localhost" SNI, and did raw string
+// concatenation for cert paths (path traversal). All three fixed.
 func (server HttpServer) InitClientServer(muxServer *http.ServeMux, httpClientChan []chan string) {
 	appClientHandler := HttpChannel{}.makeappClientHandler(httpClientChan)
 	muxServer.HandleFunc("/", appClientHandler)
 	Info.Printf("InitClientServer():SecureConfiguration.TransportSec=%s", SecureConfiguration.TransportSec)
-	// Manages the server TLS claims
 	if SecureConfiguration.TransportSec == "yes" {
-		server := http.Server{
-			Addr: ":" + SecureConfiguration.HttpSecPort,
-			TLSConfig: GetTLSConfig("localhost", TrSecConfigPath+SecureConfiguration.CaSecPath+"Root.CA.crt",
-				tls.ClientAuthType(CertOptToInt(SecureConfiguration.ServerCertOpt)), nil),
-			Handler: muxServer,
+		caCertFile, err := safeCertPath(TrSecConfigPath, SecureConfiguration.CaSecPath, "Root.CA.crt")
+		if err != nil {
+			Error.Fatalf("HttpServer.InitClientServer: invalid CA cert path: %v", err)
 		}
-		Info.Printf("HTTPS:CerOpt=%s", SecureConfiguration.ServerCertOpt)
-		Error.Fatal(server.ListenAndServeTLS(TrSecConfigPath+SecureConfiguration.ServerSecPath+"server.crt", TrSecConfigPath+SecureConfiguration.ServerSecPath+"server.key"))
+		serverCrt, err := safeCertPath(TrSecConfigPath, SecureConfiguration.ServerSecPath, "server.crt")
+		if err != nil {
+			Error.Fatalf("HttpServer.InitClientServer: invalid server.crt path: %v", err)
+		}
+		serverKey, err := safeCertPath(TrSecConfigPath, SecureConfiguration.ServerSecPath, "server.key")
+		if err != nil {
+			Error.Fatalf("HttpServer.InitClientServer: invalid server.key path: %v", err)
+		}
+		s := http.Server{
+			Addr: ":" + SecureConfiguration.HttpSecPort,
+			TLSConfig: GetTLSConfig(SecureConfiguration.ServerName, caCertFile,
+				tls.ClientAuthType(CertOptToInt(SecureConfiguration.ServerCertOpt)), nil),
+			Handler:           muxServer,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+			ReadTimeout:       httpReadTimeout,
+			WriteTimeout:      httpWriteTimeout,
+			IdleTimeout:       httpIdleTimeout,
+			MaxHeaderBytes:    httpMaxHeaderBytes,
+		}
+		Info.Printf("HTTPS: ServerName=%s CertOpt=%s Addr=%s", SecureConfiguration.ServerName, SecureConfiguration.ServerCertOpt, s.Addr)
+		Error.Fatal(s.ListenAndServeTLS(serverCrt, serverKey))
 	} else {
-		Error.Fatal(http.ListenAndServe(":8888", muxServer))
+		s := &http.Server{
+			Addr:              ":8888",
+			Handler:           muxServer,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+			ReadTimeout:       httpReadTimeout,
+			WriteTimeout:      httpWriteTimeout,
+			IdleTimeout:       httpIdleTimeout,
+			MaxHeaderBytes:    httpMaxHeaderBytes,
+		}
+		Error.Fatal(s.ListenAndServe())
 	}
 }
 
-// Launches the WebSocket Manager
+// Launches the WebSocket Manager. Same pre-fix bugs as HttpServer.InitClientServer;
+// same fixes.
 func (server WsServer) InitClientServer(muxServer *http.ServeMux, wsClientChan []chan string, mgrIndex int, clientIndex *int) {
 	*clientIndex = 0
 	appClientHandler := WsChannel{server.ClientBackendChannel, mgrIndex, clientIndex}.makeappClientHandler(wsClientChan) // Generates a handler for the requests
@@ -330,56 +463,112 @@ func (server WsServer) InitClientServer(muxServer *http.ServeMux, wsClientChan [
 	muxServer.HandleFunc("/", appClientHandler)
 	Info.Printf("InitClientServer():SecureConfiguration.TransportSec=%s", SecureConfiguration.TransportSec)
 	if SecureConfiguration.TransportSec == "yes" { // In  case a secure connection is used
-		server := http.Server{
-			Addr: ":" + SecureConfiguration.WsSecPort,
-			TLSConfig: GetTLSConfig("localhost", TrSecConfigPath+SecureConfiguration.CaSecPath+"Root.CA.crt",
-				tls.ClientAuthType(CertOptToInt(SecureConfiguration.ServerCertOpt)), nil),
-			Handler: muxServer,
+		caCertFile, err := safeCertPath(TrSecConfigPath, SecureConfiguration.CaSecPath, "Root.CA.crt")
+		if err != nil {
+			Error.Fatalf("WsServer.InitClientServer: invalid CA cert path: %v", err)
 		}
-		Info.Printf("HTTPS:CerOpt=%s", SecureConfiguration.ServerCertOpt)
-		Error.Fatal(server.ListenAndServeTLS(TrSecConfigPath+SecureConfiguration.ServerSecPath+"server.crt", TrSecConfigPath+SecureConfiguration.ServerSecPath+"server.key"))
+		serverCrt, err := safeCertPath(TrSecConfigPath, SecureConfiguration.ServerSecPath, "server.crt")
+		if err != nil {
+			Error.Fatalf("WsServer.InitClientServer: invalid server.crt path: %v", err)
+		}
+		serverKey, err := safeCertPath(TrSecConfigPath, SecureConfiguration.ServerSecPath, "server.key")
+		if err != nil {
+			Error.Fatalf("WsServer.InitClientServer: invalid server.key path: %v", err)
+		}
+		s := http.Server{
+			Addr: ":" + SecureConfiguration.WsSecPort,
+			TLSConfig: GetTLSConfig(SecureConfiguration.ServerName, caCertFile,
+				tls.ClientAuthType(CertOptToInt(SecureConfiguration.ServerCertOpt)), nil),
+			Handler:           muxServer,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+			ReadTimeout:       httpReadTimeout,
+			WriteTimeout:      httpWriteTimeout,
+			IdleTimeout:       httpIdleTimeout,
+			MaxHeaderBytes:    httpMaxHeaderBytes,
+		}
+		Info.Printf("HTTPS(WS): ServerName=%s CertOpt=%s Addr=%s", SecureConfiguration.ServerName, SecureConfiguration.ServerCertOpt, s.Addr)
+		Error.Fatal(s.ListenAndServeTLS(serverCrt, serverKey))
 	} else { // No sec connection
-		Error.Fatal(http.ListenAndServe(":8080", muxServer))
+		s := &http.Server{
+			Addr:              ":8080",
+			Handler:           muxServer,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+			ReadTimeout:       httpReadTimeout,
+			WriteTimeout:      httpWriteTimeout,
+			IdleTimeout:       httpIdleTimeout,
+			MaxHeaderBytes:    httpMaxHeaderBytes,
+		}
+		Error.Fatal(s.ListenAndServe())
 	}
 }
 
+// CertOptToInt maps the JSON serverCertOpt string to a tls.ClientAuthType int.
+// Pre-fix the match was case-sensitive and unknown values silently fell through
+// to max security (4 = RequireAndVerifyClientCert). The fail-safe default is
+// kept, but unknown values now emit a warning so the operator sees the
+// mismatch.
 func CertOptToInt(serverCertOpt string) int {
-	if serverCertOpt == "NoClientCert" {
-		return 0
+	switch strings.TrimSpace(strings.ToLower(serverCertOpt)) {
+	case "noclientcert":
+		return int(tls.NoClientCert) // 0
+	case "clientcertnoverification":
+		return int(tls.RequireAnyClientCert) // 2
+	case "clientcertverification":
+		return int(tls.RequireAndVerifyClientCert) // 4
+	case "":
+		return int(tls.RequireAndVerifyClientCert)
+	default:
+		Warning.Printf("CertOptToInt: unknown serverCertOpt=%q; defaulting to max security (ClientCertVerification)", serverCertOpt)
+		return int(tls.RequireAndVerifyClientCert)
 	}
-	if serverCertOpt == "ClientCertNoVerification" {
-		return 2
-	}
-	if serverCertOpt == "ClientCertVerification" {
-		return 4
-	}
-	return 4 // if unclear, apply max security
 }
 
-// Obtains a tls.Config struct, giving support to https.listenandservetls
+// GetTLSConfig builds a *tls.Config suitable for http.Server.TLSConfig.
+//
+// Pre-fix bugs (now patched):
+//   - AppendCertsFromPEM's bool return was discarded, so a non-empty but
+//     unparseable Root.CA.crt produced an empty cert pool and ClientCertVerification
+//     proceeded with ZERO trusted CAs - undefined behaviour that could trust
+//     anyone or trust no one depending on Go version.
+//   - On any internal failure the function returned nil. The caller fed that
+//     nil into http.Server{TLSConfig: nil}, which made Go's ListenAndServeTLS
+//     synthesise a default TLS config - the carefully constructed MinVersion /
+//     ClientAuth / ClientCAs were silently lost. Every internal failure now
+//     Error.Fatal's so the process exits with a clear "fail-stop on
+//     misconfiguration" rather than running insecurely.
+//   - Drive-by: line 435 Printf had no format-verbs and concatenated args
+//     positionally; reduced to a single %v that actually prints the path.
+//
+// The host parameter is used for the SNI ServerName. Callers should pass
+// SecureConfiguration.ServerName (which defaults to "localhost" with a warning).
 func GetTLSConfig(host string, caCertFile string, certOpt tls.ClientAuthType, serverCert *tls.Certificate) *tls.Config {
-	var caCert []byte
-	var err error
 	var caCertPool *x509.CertPool
 	if certOpt > tls.RequestClientCert { // If a client certificate is required, then the CA certificate is needed
-		caCert, err = os.ReadFile(caCertFile)
+		caCert, err := os.ReadFile(caCertFile)
 		if err != nil {
-			Error.Printf("Error opening cert file %s, error %v", caCertFile, err)
-			return nil
+			Error.Fatalf("GetTLSConfig: cannot open CA cert file %q: %v - refusing to start with empty cert pool", caCertFile, err)
+			return nil // unreachable; appease the compiler
 		}
 		caCertPool = x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			Error.Fatalf("GetTLSConfig: CA cert file %q contained no valid PEM blocks - refusing to start with empty cert pool", caCertFile)
+			return nil // unreachable
+		}
+	}
+
+	if host == "" {
+		Warning.Printf("GetTLSConfig: empty host - SNI/ServerName will be unset; clients verifying the cert SAN will fail")
 	}
 
 	if serverCert == nil {
-		return &tls.Config{ // Returns the tls.Config struct
+		return &tls.Config{
 			ServerName: host,
 			ClientAuth: certOpt,
 			ClientCAs:  caCertPool,
 			MinVersion: tls.VersionTLS12, // TLS versions below 1.2 are considered insecure - see https://www.rfc-editor.org/rfc/rfc7525.txt for details
 		}
 	}
-	return &tls.Config{ // Returns the tls.Config struct
+	return &tls.Config{
 		ServerName:   host,
 		Certificates: []tls.Certificate{*serverCert},
 		ClientAuth:   certOpt,
