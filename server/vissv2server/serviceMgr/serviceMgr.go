@@ -480,13 +480,19 @@ func getCurveLoggingParams(opValue string) (float64, int) { // {"maxerr": "X", "
 	}
 	maxErr, err := strconv.ParseFloat(cLData.MaxErr, 64)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: MaxErr invalid integer, maxErr=%s", cLData.MaxErr)
+		utils.Error.Printf("getCurveLoggingParams: MaxErr invalid, maxErr=%s err=%v", cLData.MaxErr, err)
 		maxErr = 0.0
 	}
 	bufSize, err := strconv.Atoi(cLData.BufSize)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: BufSize invalid integer, BufSize=%s", cLData.BufSize)
-		maxErr = 0.0
+		// Bug-11 fix: the previous line read `maxErr = 0.0` —
+		// likely a copy-paste leaving bufSize at the strconv.Atoi
+		// zero-result. bufSize == 0 then propagated into
+		// createRingBuffer(0+1) and a make([]CLBufElement, 0) that
+		// panicked further down. Reset bufSize to a safe minimum
+		// (1) and log loudly so the operator notices.
+		utils.Error.Printf("getCurveLoggingParams: BufSize invalid, BufSize=%s err=%v; defaulting to 1", cLData.BufSize, err)
+		bufSize = 1
 	}
 	return maxErr, bufSize
 }
@@ -1906,7 +1912,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			handleFeederRegistration(feederReq, feederRegChan)
 		} // select
 	} // for
-utils.Info.Printf("Service manager exit")
+	// Unreachable - infinite for/select loop above never exits.
 }
 
 func checkRCFilterAndIssueMessages(triggeredPath string, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) []SubscriptionState {
