@@ -23,7 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
+
+func init() {
+	utils.InitLog("csv_client-test.log", os.TempDir(), false, "error")
+}
 
 func TestPathToUrl_CsvClient(t *testing.T) {
 	cases := map[string]string{

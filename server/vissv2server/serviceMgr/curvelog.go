@@ -534,61 +534,73 @@ func getClSessionsCount() int {
 	return numOfClSessions
 }
 
+func sendToClServerChan(idx int, msg string) {
+	select {
+	case clServerChan[idx] <- msg:
+	default:
+	}
+}
+
+func handleCurveLogServerMessage(message string, routingDataList []TriggRoutingData) []TriggRoutingData {
+	if len(message) == 0 {
+		return routingDataList
+	}
+	var messageMap map[string]interface{}
+	if err := json.Unmarshal([]byte(message), &messageMap); err != nil {
+		utils.Error.Printf("Error in trigg message=%s", message)
+		return routingDataList
+	}
+	action, ok := messageMap["action"].(string)
+	if !ok {
+		utils.Error.Printf("Error in trigg message=%s", message)
+		return routingDataList
+	}
+	switch action {
+	case "subscribe":
+		if status, ok := messageMap["status"].(string); ok && status == "ok" {
+			for i := 0; i < len(routingDataList); i++ {
+				for j := 0; j < len(routingDataList[i].TriggRoutingList); j++ {
+					sendToClServerChan(routingDataList[i].TriggRoutingList[j].Index, message)
+				}
+			}
+		}
+	case "unsubscribe":
+		if subscriptionId, ok := messageMap["subscriptionId"].(string); ok {
+			for i := 0; i < len(routingDataList); i++ {
+				if routingDataList[i].SubscriptionId == subscriptionId {
+					deallocateTriggChannels(i, routingDataList)
+					routingDataList = slices.Delete(routingDataList, i, i+1)
+					i--
+				}
+			}
+		}
+	case "subscription":
+		if path, ok := messageMap["path"].(string); ok {
+			for j := 0; j < len(routingDataList); j++ {
+				for k := 0; k < len(routingDataList[j].TriggRoutingList); k++ {
+					for l := 0; l < len(routingDataList[j].TriggRoutingList[k].Path); l++ {
+						if routingDataList[j].TriggRoutingList[k].Path[l] == path {
+							sendToClServerChan(routingDataList[j].TriggRoutingList[k].Index, message)
+							break
+						}
+					}
+				}
+			}
+		}
+	default:
+		utils.Error.Printf("Unknown action=%s", action)
+	}
+	return routingDataList
+}
+
 func curveLogServer() {
 	var routingDataList []TriggRoutingData
 	for {
 		select {
-			case message := <- fromFeederCl:
-				if len(message) == 0 {
-					continue
-				}
-				var messageMap map[string]interface{}
-				err := json.Unmarshal([]byte(message), &messageMap)
-				if err != nil || messageMap["action"] == nil {
-					utils.Error.Printf("Error in trigg message=%s", message)
-					continue
-				}
-				switch messageMap["action"].(string) {
-					case "subscribe":
-						if messageMap["status"] != nil && messageMap["status"].(string) == "ok" {
-							// notify all existing compute threads
-							for i  := 0; i < len(routingDataList); i++ {
-								for j  := 0; j < len(routingDataList[i].TriggRoutingList); j++ {
-									clServerChan[routingDataList[i].TriggRoutingList[j].Index] <- message
-								}
-							}
-						}
-					case "unsubscribe":
-						if messageMap["subscriptionId"] != nil {
-							//remove from routingDataList
-							subscriptionId := messageMap["subscriptionId"].(string)
-							for i  := 0; i < len(routingDataList); i++ {
-								if routingDataList[i].SubscriptionId == subscriptionId {
-									deallocateTriggChannels(i, routingDataList)
-									routingDataList = slices.Delete(routingDataList, i, i+1)
-								}
-							}
-						}
-					case "subscription":
-						if messageMap["path"] != nil {
-							// notify all threads that use the path
-							path := messageMap["path"].(string)
-							for j  := 0; j < len(routingDataList); j++ {
-								for k  := 0; k < len(routingDataList[j].TriggRoutingList); k++ {
-									for l  := 0; l < len(routingDataList[j].TriggRoutingList[k].Path); l++ {
-										if routingDataList[j].TriggRoutingList[k].Path[l] == path {
-											clServerChan[routingDataList[j].TriggRoutingList[k].Index] <- message
-											break
-										}
-									}
-								}
-							}
-						}
-					default:
-						utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
-				}
-			case routingData := <- clRouterChan:
-				routingDataList = append(routingDataList, routingData)
+		case message := <-fromFeederCl:
+			routingDataList = handleCurveLogServerMessage(message, routingDataList)
+		case routingData := <-clRouterChan:
+			routingDataList = append(routingDataList, routingData)
 		}
 	}
 }
