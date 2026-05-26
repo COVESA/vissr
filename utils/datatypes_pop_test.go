@@ -15,14 +15,8 @@ package utils
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
-
-func TestMain(m *testing.M) {
-	InitLog("utils-datatypes-pop-test.log", os.TempDir(), false, "error")
-	os.Exit(m.Run())
-}
 
 // TestStripJsonQuotes pins the bug-14 fix. Previously the inline
 // `string(value[1:len(value)-1])` panicked on any JSON value
