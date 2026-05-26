@@ -68,15 +68,15 @@ func noStreamCall(commandIndex int) {
 		}
 		tlsCredentials := credentials.NewTLS(config)
 		portNo := secConfig.GrpcSecPort
-		conn, err = grpc.NewClient(address+portNo, grpc.WithTransportCredentials(tlsCredentials))
+		conn, err = grpc.Dial(address+portNo, grpc.WithTransportCredentials(tlsCredentials), grpc.WithBlock())
 	} else {
 		// grpc.NewClient
 
 		utils.Info.Printf("connecting to port = 8887")
-		conn, err = grpc.NewClient(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err = grpc.Dial(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	}
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		fmt.Printf("did not connect to server: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -175,7 +175,7 @@ func main() {
 	}
 	initCommandList()
 
-	fmt.Printf("Command indicies: 0->GET, 1->SET, 2->SUBSCRIBE, X%10=3->UNSUBSCRIBE, any other value terminates.\nFor UNSUBSCRIBE X/10 is the subscriptionId.\n\n")
+	fmt.Printf("Command indicies: 0->GET, 1->SET, 2->SUBSCRIBE, X modulo 10=3->UNSUBSCRIBE, any other value terminates.\nFor UNSUBSCRIBE X/10 is the subscriptionId.\n\n")
 	var commandIndex int
 	for {
 		fmt.Printf("\nCommand index:")

@@ -350,7 +350,7 @@ func createConversionTable() {
 	fmt.Scanf("%s", &fname)
 	northBoundDomain, southBoundDomain, signalMappingList := readSignalMappingFile(fname)
 	if northBoundDomain == "" {
-		fmt.Printf("%s is not found. Bye.\n")
+		fmt.Printf("%s is not found. Bye.\n", fname)
 		os.Exit(-1)
 	}
 	tableNames := getDomainTableNames()
