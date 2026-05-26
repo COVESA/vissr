@@ -1370,3 +1370,171 @@ func TestAllocateTriggChannelIndex_ReusableAfterRelease(t *testing.T) {
 		t.Errorf("expected released slot %d to be reused; got %d", idx, again)
 	}
 }
+
+// --------------------------------------------------------------------------
+// GAP: populateDimLists — the file-reading wrapper around
+// populateDimListsFromSignals.  When no signaldimension.json exists the
+// signal list is nil and every path must come back as dim1.
+// --------------------------------------------------------------------------
+
+func TestPopulateDimLists_NoSignalFileFallsBackToDim1(t *testing.T) {
+	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("os.Chdir: %v", err)
+	}
+	defer os.Chdir(orig)
+
+	paths := []string{"Vehicle.A", "Vehicle.B", "Vehicle.C"}
+	d1, d2, d3 := populateDimLists(paths)
+	if len(d1) != 3 {
+		t.Errorf("expected 3 dim1 entries; got %d (%v)", len(d1), d1)
+	}
+	if len(d2) != 0 {
+		t.Errorf("expected 0 dim2 entries; got %d", len(d2))
+	}
+	if len(d3) != 0 {
+		t.Errorf("expected 0 dim3 entries; got %d", len(d3))
+	}
+}
+
+// --------------------------------------------------------------------------
+// RESOLUTION: analyzeSignalDimensions with non-nil signal lists — verify
+// that Dim and Id fields are correctly assigned for dim2 and dim3 paths.
+// The existing test only covers the nil (all-dim1) case.
+// --------------------------------------------------------------------------
+
+func TestAnalyzeSignalDimensions_Dim2Classification(t *testing.T) {
+	sdl := &SignalDimensionLists{
+		dim2List: []Dim2Elem{
+			{Path1: "Vehicle.X", Path2: "Vehicle.Y"},
+		},
+	}
+	paths := []string{"Vehicle.X", "Vehicle.Y", "Vehicle.Z"}
+	pdl := analyzeSignalDimensions(paths, sdl)
+	if len(pdl) != 3 {
+		t.Fatalf("expected 3 PathDimElems; got %d", len(pdl))
+	}
+	if pdl[0].Dim != 2 || pdl[1].Dim != 2 {
+		t.Errorf("Vehicle.X and Vehicle.Y should be Dim=2; got %d,%d", pdl[0].Dim, pdl[1].Dim)
+	}
+	if pdl[0].Id != pdl[1].Id {
+		t.Errorf("paired dim2 paths should share Id; got %d vs %d", pdl[0].Id, pdl[1].Id)
+	}
+	if pdl[2].Dim != 1 {
+		t.Errorf("Vehicle.Z should remain Dim=1; got %d", pdl[2].Dim)
+	}
+}
+
+func TestAnalyzeSignalDimensions_Dim3Classification(t *testing.T) {
+	sdl := &SignalDimensionLists{
+		dim3List: []Dim3Elem{
+			{Path1: "Vehicle.A", Path2: "Vehicle.B", Path3: "Vehicle.C"},
+		},
+	}
+	paths := []string{"Vehicle.A", "Vehicle.B", "Vehicle.C"}
+	pdl := analyzeSignalDimensions(paths, sdl)
+	if len(pdl) != 3 {
+		t.Fatalf("expected 3 PathDimElems; got %d", len(pdl))
+	}
+	for i, e := range pdl {
+		if e.Dim != 3 {
+			t.Errorf("pdl[%d].Dim = %d; want 3", i, e.Dim)
+		}
+	}
+	if pdl[0].Id != pdl[1].Id || pdl[1].Id != pdl[2].Id {
+		t.Errorf("all three dim3 paths should share Id; got %d,%d,%d", pdl[0].Id, pdl[1].Id, pdl[2].Id)
+	}
+}
+
+// --------------------------------------------------------------------------
+// RESOLUTION: clReduction2Dim / clReduction3Dim — add step-function and
+// short-buffer cases to match the three-case coverage of clReduction1Dim.
+// --------------------------------------------------------------------------
+
+func TestClReduction2Dim_StepFunctionKeepsCorner(t *testing.T) {
+	buf1 := []CLBufElement{
+		{Value: 0.0, Timestamp: 0.0},
+		{Value: 0.0, Timestamp: 1.0},
+		{Value: 10.0, Timestamp: 2.0},
+		{Value: 10.0, Timestamp: 3.0},
+	}
+	buf2 := []CLBufElement{
+		{Value: 0.0, Timestamp: 0.0},
+		{Value: 0.0, Timestamp: 1.0},
+		{Value: 5.0, Timestamp: 2.0},
+		{Value: 5.0, Timestamp: 3.0},
+	}
+	if got := clReduction2Dim(buf1, buf2, 0, 3, 1.0); got == nil {
+		t.Errorf("expected non-nil savedIndex for step function in 2dim")
+	}
+}
+
+func TestClReduction2Dim_ShortBufferReturnsNil(t *testing.T) {
+	buf1 := []CLBufElement{{Value: 0.0, Timestamp: 0.0}, {Value: 1.0, Timestamp: 1.0}}
+	buf2 := []CLBufElement{{Value: 0.0, Timestamp: 0.0}, {Value: 1.0, Timestamp: 1.0}}
+	if got := clReduction2Dim(buf1, buf2, 0, 1, 0.5); got != nil {
+		t.Errorf("expected nil for lastIndex-firstIndex<=1; got %v", got)
+	}
+}
+
+func TestClReduction3Dim_StepFunctionKeepsCorner(t *testing.T) {
+	step := []CLBufElement{
+		{Value: 0.0, Timestamp: 0.0},
+		{Value: 0.0, Timestamp: 1.0},
+		{Value: 10.0, Timestamp: 2.0},
+		{Value: 10.0, Timestamp: 3.0},
+	}
+	buf1, buf2, buf3 := step, step, step
+	if got := clReduction3Dim(buf1, buf2, buf3, 0, 3, 1.0); got == nil {
+		t.Errorf("expected non-nil savedIndex for step function in 3dim")
+	}
+}
+
+func TestClReduction3Dim_ShortBufferReturnsNil(t *testing.T) {
+	buf := []CLBufElement{{Value: 0.0, Timestamp: 0.0}, {Value: 1.0, Timestamp: 1.0}}
+	if got := clReduction3Dim(buf, buf, buf, 0, 1, 0.5); got != nil {
+		t.Errorf("expected nil for lastIndex-firstIndex<=1; got %v", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// RESOLUTION: clAnalyze2dim / clAnalyze3dim happy paths — the existing
+// tests only exercise the nil-buffer fallback; add linear-data happy paths
+// to match TestClAnalyze1dim_HappyPathWithLinearData.
+// --------------------------------------------------------------------------
+
+func TestClAnalyze2dim_HappyPathWithLinearData(t *testing.T) {
+	rb1 := createRingBuffer(5)
+	rb2 := createRingBuffer(5)
+	base := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 4; i++ {
+		ts := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano)
+		writeRing(&rb1, fmt.Sprintf("%d", i), ts)
+		writeRing(&rb2, fmt.Sprintf("%d", i*2), ts)
+	}
+	dp1, dp2, _ := clAnalyze2dim(&rb1, &rb2, 4, 0.0001)
+	if dp1 == "" || dp2 == "" {
+		t.Errorf("expected non-empty dp strings for linear 2dim data; got %q, %q", dp1, dp2)
+	}
+}
+
+func TestClAnalyze3dim_HappyPathWithLinearData(t *testing.T) {
+	rb1 := createRingBuffer(5)
+	rb2 := createRingBuffer(5)
+	rb3 := createRingBuffer(5)
+	base := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 4; i++ {
+		ts := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano)
+		writeRing(&rb1, fmt.Sprintf("%d", i), ts)
+		writeRing(&rb2, fmt.Sprintf("%d", i*2), ts)
+		writeRing(&rb3, fmt.Sprintf("%d", i*3), ts)
+	}
+	dp1, dp2, dp3, _ := clAnalyze3dim(&rb1, &rb2, &rb3, 4, 0.0001)
+	if dp1 == "" || dp2 == "" || dp3 == "" {
+		t.Errorf("expected non-empty dp strings for linear 3dim data; got %q, %q, %q", dp1, dp2, dp3)
+	}
+}

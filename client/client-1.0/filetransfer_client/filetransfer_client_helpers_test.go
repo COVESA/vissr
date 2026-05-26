@@ -232,6 +232,104 @@ func TestCalculateHash_Client(t *testing.T) {
 	}
 }
 
+// TestReadChunk_HappyPath reads a partial chunk from a file.
+func TestReadChunk_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.bin")
+	if err := os.WriteFile(path, []byte("hello world"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	fp, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer fp.Close()
+
+	buf := make([]byte, 5)
+	n, out, last := readChunk(path, fp, buf)
+	if n != 5 {
+		t.Errorf("read %d bytes; want 5", n)
+	}
+	if string(out[:n]) != "hello" {
+		t.Errorf("buf = %q; want hello", out[:n])
+	}
+	if last != 0x00 {
+		t.Errorf("last = %x; want 0x00 (mid-file)", last)
+	}
+}
+
+// TestReadChunk_EOF signals lastMessage=0x01 when the file position is
+// already at EOF.  os.File.Read returns (0, nil) or (n, nil) on the first
+// call even for a small file; EOF only surfaces on the *next* read, so we
+// exhaust the file first and then call readChunk.
+func TestReadChunk_EOF(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tiny.bin")
+	if err := os.WriteFile(path, []byte("hi"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	fp, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer fp.Close()
+
+	// Exhaust the file so the next Read hits EOF.
+	drain := make([]byte, 64)
+	for {
+		if _, err := fp.Read(drain); err != nil {
+			break
+		}
+	}
+
+	buf := make([]byte, 16)
+	_, _, last := readChunk(path, fp, buf)
+	if last != 0x01 {
+		t.Errorf("last = %x; want 0x01 (EOF after exhaustion)", last)
+	}
+}
+
+// TestWriteChunk_ExactSize writes a full buffer when dataSize == len(buf).
+func TestWriteChunk_ExactSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.bin")
+	fp, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	writeChunk(path, fp, uint32(len("hello world")), []byte("hello world"))
+	fp.Close()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if string(got) != "hello world" {
+		t.Errorf("wrote %q; want hello world", got)
+	}
+}
+
+// TestWriteChunk_PartialSize writes only the first dataSize bytes when
+// dataSize < len(writeBuffer), exercising the slice-and-copy branch.
+func TestWriteChunk_PartialSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "partial.bin")
+	fp, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	writeChunk(path, fp, 5, []byte("hello world"))
+	fp.Close()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("wrote %q; want hello", got)
+	}
+}
+
 // FuzzEncodeDlRequest hardens the binary encoder against unusual input.
 func FuzzEncodeDlRequest(f *testing.F) {
 	seeds := []struct {
