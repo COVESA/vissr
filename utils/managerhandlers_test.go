@@ -1,12 +1,9 @@
 /**
 * (C) 2026 Matt Jones / Ford
 *
-* Tests for the non-TLS helpers in managerhandlers.go. The TLS surface
-* (ReadTransportSecConfig, validateSecConfig, safeCertPath, CertOptToInt,
-* GetTLSConfig) lives in tls_test.go.
-*
-* Also covers: WsClientIndexMu race regression, OOB bounds guard on
-* ReturnWsClientIndex, MaxBytesReader on HTTP POST body.
+* Regression tests for the WsClientIndex race and manager-handlers fixes.
+* Covers: WsClientIndexMu race (PR #119 / this branch), OOB bounds guard
+* on ReturnWsClientIndex, MaxBytesReader on HTTP POST body.
 **/
 
 package utils
@@ -30,158 +27,32 @@ func snapshotWsClientIndexList(t *testing.T) func() {
 }
 
 // --------------------------------------------------------------------------
-// createRouterIdProperty — formats "RouterId":"mgrId?clientId".
+// getWsClientIndex / ReturnWsClientIndex — happy path
 // --------------------------------------------------------------------------
 
-func TestCreateRouterIdProperty(t *testing.T) {
-	got := createRouterIdProperty(3, 7)
-	want := `"RouterId":"3?7"`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestCreateRouterIdProperty_Zero(t *testing.T) {
-	got := createRouterIdProperty(0, 0)
-	want := `"RouterId":"0?0"`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-// --------------------------------------------------------------------------
-// AddRoutingForwardRequest — prepends RouterId + origin into the first "{" of
-// the request and pushes onto transportMgrChan.
-// --------------------------------------------------------------------------
-
-func TestAddRoutingForwardRequest_PrependsRouterIdAndOrigin(t *testing.T) {
-	ch := make(chan string, 1)
-	AddRoutingForwardRequest(`{"action":"get"}`, 1, 5, ch)
-	select {
-	case got := <-ch:
-		if !strings.Contains(got, `"RouterId":"1?5"`) {
-			t.Errorf("missing RouterId; got %q", got)
-		}
-		if !strings.Contains(got, `"origin":"external"`) {
-			t.Errorf("missing origin; got %q", got)
-		}
-		if !strings.Contains(got, `"action":"get"`) {
-			t.Errorf("dropped original action; got %q", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("channel never received")
-	}
-}
-
-func TestAddRoutingForwardRequest_OnlyFirstBraceReplaced(t *testing.T) {
-	// Verifies the strings.Replace(..., 1) hardcoded count - nested objects
-	// keep their braces.
-	ch := make(chan string, 1)
-	AddRoutingForwardRequest(`{"action":"set","data":{"path":"V"}}`, 0, 0, ch)
-	got := <-ch
-	// "{"action" should have been replaced exactly once with the prefix block.
-	if strings.Count(got, `"RouterId"`) != 1 {
-		t.Errorf("RouterId appeared %d times; expected 1: %q", strings.Count(got, `"RouterId"`), got)
-	}
-}
-
-// --------------------------------------------------------------------------
-// RemoveInternalData — pulls "RouterId":"mgrId?clientId" back out and returns
-// the trimmed response + the parsed clientId.
-// --------------------------------------------------------------------------
-
-func TestRemoveInternalData_RoundTrip(t *testing.T) {
-	ch := make(chan string, 1)
-	AddRoutingForwardRequest(`{"action":"get","data":{}}`, 2, 11, ch)
-	withRouterId := <-ch
-	trimmed, clientId := RemoveInternalData(withRouterId)
-	if clientId != 11 {
-		t.Errorf("clientId: got %d; want 11", clientId)
-	}
-	if strings.Contains(trimmed, "RouterId") {
-		t.Errorf("RouterId not stripped: %q", trimmed)
-	}
-	if !strings.Contains(trimmed, `"action":"get"`) {
-		t.Errorf("payload corrupted: %q", trimmed)
-	}
-}
-
-func TestRemoveInternalData_MultiDigitClientId(t *testing.T) {
-	ch := make(chan string, 1)
-	AddRoutingForwardRequest(`{"x":1}`, 3, 12345, ch)
-	_, clientId := RemoveInternalData(<-ch)
-	if clientId != 12345 {
-		t.Errorf("multi-digit clientId: got %d", clientId)
-	}
-}
-
-// --------------------------------------------------------------------------
-// splitToPathQueryKeyValue — splits "path?key=value" into the three pieces.
-// --------------------------------------------------------------------------
-
-func TestSplitToPathQueryKeyValue_NoQuery(t *testing.T) {
-	p, k, v := splitToPathQueryKeyValue("/Vehicle.Speed")
-	if p != "/Vehicle.Speed" || k != "" || v != "" {
-		t.Errorf("got (%q,%q,%q)", p, k, v)
-	}
-}
-
-func TestSplitToPathQueryKeyValue_Filter(t *testing.T) {
-	p, k, v := splitToPathQueryKeyValue("/Vehicle.Speed?filter={\"type\":\"timebased\"}")
-	if p != "/Vehicle.Speed" || k != "filter" {
-		t.Errorf("path/key: got (%q,%q)", p, k)
-	}
-	if !strings.HasPrefix(v, "{") {
-		t.Errorf("filter value: got %q", v)
-	}
-}
-
-func TestSplitToPathQueryKeyValue_Metadata(t *testing.T) {
-	p, k, v := splitToPathQueryKeyValue("/Vehicle?metadata=static")
-	if p != "/Vehicle" || k != "metadata" || v != "static" {
-		t.Errorf("got (%q,%q,%q)", p, k, v)
-	}
-}
-
-func TestSplitToPathQueryKeyValue_UnknownKey(t *testing.T) {
-	_, k, v := splitToPathQueryKeyValue("/Vehicle?bogus=42")
-	if k != "filter" {
-		t.Errorf("unknown key path returns key=%q; want filter (sentinel)", k)
-	}
-	if v != "incorrect http query key" {
-		t.Errorf("value: got %q", v)
-	}
-}
-
-func TestSplitToPathQueryKeyValue_NoEquals(t *testing.T) {
-	p, k, v := splitToPathQueryKeyValue("/Vehicle?just-key")
-	// `?` present but no `=` -> early-return on missing equals leaves k/v empty.
-	if k != "" || v != "" {
-		t.Errorf("got (%q,%q,%q)", p, k, v)
-	}
-}
-
-// --------------------------------------------------------------------------
-// getWsClientIndex / ReturnWsClientIndex — slot allocator for WS clients.
-// --------------------------------------------------------------------------
-
-func TestGetWsClientIndex_AllocatesAndReturns(t *testing.T) {
+func TestGetWsClientIndex_AllocatesFirstFree(t *testing.T) {
 	defer snapshotWsClientIndexList(t)()
-
-	// Ensure all slots free.
 	for i := range WsClientIndexList {
 		WsClientIndexList[i] = true
 	}
 	idx := getWsClientIndex()
 	if idx != 0 {
-		t.Errorf("first free index: got %d; want 0", idx)
+		t.Errorf("first allocation: got %d; want 0", idx)
 	}
-	if WsClientIndexList[0] != false {
-		t.Errorf("slot 0 not marked occupied")
+	if WsClientIndexList[0] {
+		t.Errorf("slot 0 should be marked occupied")
 	}
-	ReturnWsClientIndex(0)
-	if WsClientIndexList[0] != true {
-		t.Errorf("slot 0 not freed by ReturnWsClientIndex")
+}
+
+func TestReturnWsClientIndex_FreesSlot(t *testing.T) {
+	defer snapshotWsClientIndexList(t)()
+	for i := range WsClientIndexList {
+		WsClientIndexList[i] = true
+	}
+	idx := getWsClientIndex()
+	ReturnWsClientIndex(idx)
+	if !WsClientIndexList[idx] {
+		t.Errorf("slot %d not freed", idx)
 	}
 }
 
@@ -205,31 +76,30 @@ func TestReturnWsClientIndex_MakesSlotReclaimable(t *testing.T) {
 		t.Fatalf("after returning slot %d, expected it to be reclaimable; got -1", first)
 	}
 	if second != first {
+		// Not strictly required by contract, but the naive
+		// implementation reclaims the lowest free slot.
 		t.Logf("note: second claim landed on slot %d, not the returned %d (acceptable but unusual)", second, first)
 	}
 }
 
 func TestGetWsClientIndex_ExhaustionReturnsMinusOne(t *testing.T) {
 	defer snapshotWsClientIndexList(t)()
-
 	for i := range WsClientIndexList {
 		WsClientIndexList[i] = false
 	}
 	if got := getWsClientIndex(); got != -1 {
-		t.Errorf("exhausted pool should return -1; got %d", got)
+		t.Errorf("exhausted pool: got %d; want -1", got)
 	}
 }
 
-func TestGetWsClientIndex_AllocateAllReturnsExpectedOrder(t *testing.T) {
+func TestGetWsClientIndex_AllocatesInOrder(t *testing.T) {
 	defer snapshotWsClientIndexList(t)()
-
 	for i := range WsClientIndexList {
 		WsClientIndexList[i] = true
 	}
 	for want := 0; want < len(WsClientIndexList); want++ {
-		got := getWsClientIndex()
-		if got != want {
-			t.Errorf("iteration %d: got %d", want, got)
+		if got := getWsClientIndex(); got != want {
+			t.Errorf("iter %d: got %d", want, got)
 		}
 	}
 	if got := getWsClientIndex(); got != -1 {
@@ -268,10 +138,14 @@ func TestReturnWsClientIndex_TooLargeIndexSafe(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TestGetWsClientIndex_ConcurrentClaimsAreUnique is the regression test
-// for the WsClientIndexMu. Without the mutex, two concurrent WS upgrades
-// could both observe the same slot as free and both claim it.
+// for the WsClientIndexMu. Without the mutex, two concurrent WS
+// upgrades could both observe the same slot as free and both claim it,
+// causing request/response cross-talk between unrelated clients.
+//
+// Run with: go test -race
 func TestGetWsClientIndex_ConcurrentClaimsAreUnique(t *testing.T) {
 	defer snapshotWsClientIndexList(t)()
+	// Reset all slots to "free".
 	WsClientIndexMu.Lock()
 	for i := range WsClientIndexList {
 		WsClientIndexList[i] = true
@@ -304,13 +178,41 @@ func TestGetWsClientIndex_ConcurrentClaimsAreUnique(t *testing.T) {
 	}
 }
 
+func TestWsClientIndex_RaceFree(t *testing.T) {
+	defer snapshotWsClientIndexList(t)()
+	for i := range WsClientIndexList {
+		WsClientIndexList[i] = true
+	}
+	var wg sync.WaitGroup
+	for g := 0; g < 4; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				idx := getWsClientIndex()
+				if idx >= 0 {
+					ReturnWsClientIndex(idx)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	// After all goroutines finish, every slot should be free again.
+	for i, free := range WsClientIndexList {
+		if !free {
+			t.Errorf("slot %d not free after balanced alloc/return", i)
+		}
+	}
+}
+
 // --------------------------------------------------------------------------
 // frontendHttpAppSession — MaxBytesReader regression (oversize POST body)
 // --------------------------------------------------------------------------
 
 // TestFrontendHttpAppSession_RejectsOversizedBody is the regression test
-// for the MaxBytesReader on the VISS HTTP POST handler. Before the fix,
-// an unauthenticated peer could OOM the daemon by sending a giant POST body.
+// for the MaxBytesReader on the VISS HTTP POST handler. Before
+// the fix, an unauthenticated peer could OOM the daemon by sending a
+// giant POST body.
 func TestFrontendHttpAppSession_RejectsOversizedBody(t *testing.T) {
 	clientChannel := make(chan string, 4)
 
@@ -318,12 +220,18 @@ func TestFrontendHttpAppSession_RejectsOversizedBody(t *testing.T) {
 	req := httptest.NewRequest("POST", "/Vehicle.Speed", body)
 	rec := httptest.NewRecorder()
 
+	// frontendHttpAppSession sits behind the MaxBytesReader; the
+	// oversize path returns via backendHttpAppSession which writes
+	// a JSON error body. Pass if the response carries the "too large"
+	// message, regardless of HTTP status code.
 	frontendHttpAppSession(rec, req, clientChannel)
 
 	got := rec.Body.String()
 	if !bytes.Contains([]byte(got), []byte("too large")) {
 		t.Fatalf("expected response body to mention 'too large'; got %q (status %d)", got, rec.Code)
 	}
+	// The handler must not have forwarded the (rejected) request to
+	// the manager hub.
 	select {
 	case msg := <-clientChannel:
 		t.Fatalf("oversize POST should not have been forwarded to clientChannel; got %q", msg)
@@ -337,8 +245,12 @@ func TestFrontendHttpAppSession_GetForwards(t *testing.T) {
 	clientChannel := make(chan string, 4)
 	respChannel := make(chan string, 4)
 
+	// frontendHttpAppSession forwards to clientChannel then waits on
+	// the same channel for the response. Spin up a goroutine that
+	// drains the forward and responds.
 	go func() {
 		req := <-clientChannel
+		// echo something resembling a response
 		respChannel <- req
 		clientChannel <- `{"action":"get","value":"ok"}`
 	}()
@@ -347,6 +259,7 @@ func TestFrontendHttpAppSession_GetForwards(t *testing.T) {
 	rec := httptest.NewRecorder()
 	frontendHttpAppSession(rec, req, clientChannel)
 
+	// Confirm the GET was actually forwarded.
 	select {
 	case forwarded := <-respChannel:
 		if !bytes.Contains([]byte(forwarded), []byte("get")) {

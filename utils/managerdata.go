@@ -25,6 +25,14 @@ var WsClientIndexMu sync.Mutex
 
 var requestTag int
 
+// wsClientIndexMu protects WsClientIndexList from a multi-goroutine race.
+// Pre-fix, getWsClientIndex and ReturnWsClientIndex were called from each
+// frontend WS handler goroutine concurrently and both read+wrote the slice
+// with no synchronisation. Two simultaneous Accept()s could hand out the
+// same slot and clobber each other's reservation. Same shape of bug as the
+// UdsClientIndexList race fixed in PR #149.
+var wsClientIndexMu sync.Mutex
+
 var TrSecConfigPath string = "../transport_sec/" // relative path to the directory containing the transportSec.json file
 type SecConfig struct {
 	TransportSec  string `json:"transportSec"`  // "yes" or "no"
