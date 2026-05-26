@@ -335,7 +335,6 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 			}
 		}
 	}
-	return nil
 }
 
 func extractClientId(killMessage string) int { // mesage contains clientId:xyz

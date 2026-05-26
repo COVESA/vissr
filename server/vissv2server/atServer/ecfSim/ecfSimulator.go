@@ -141,7 +141,6 @@ func uiDialogue(request string) string {
 		fmt.Printf("Invalid action.")
 		return ""
 	}
-	return ""
 }
 
 func prepareCancelRequest(request string) bool {

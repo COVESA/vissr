@@ -11,10 +11,8 @@ package utils
 import (
 	"bytes"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // snapshotWsClientIndexList captures and restores WsClientIndexList around a

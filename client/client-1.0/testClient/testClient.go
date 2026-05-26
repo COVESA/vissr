@@ -448,7 +448,8 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 	var reqMap map[string]interface{}
 	utils.MapRequest(vssRequest, &reqMap)
 	fmt.Printf("Request=:%s\n", vssRequest)
-	ctx, _ := context.WithTimeout(context.Background(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
 	switch reqMap["action"].(string) {
 	case "get":
 		pbRequest := utils.GetRequestJsonToPb(vssRequest)
