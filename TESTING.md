@@ -8,31 +8,8 @@ present comprehensive-coverage PR).
 ## Running the test suite
 
 ```bash
-go test \
-    ./utils \
-    ./server/vissv2server \
-    ./server/vissv2server/atServer \
-    ./server/vissv2server/serviceMgr \
-    ./server/vissv2server/mqttMgr \
-    ./server/vissv2server/wsMgr \
-    ./server/vissv2server/wsMgrFT \
-    ./server/vissv2server/udsMgr \
-    ./server/vissv2server/grpcMgr \
-    ./server/agt_server \
-    ./client/client-1.0/compress_client \
-    ./client/client-1.0/csv_client \
-    ./client/client-1.0/filetransfer_client \
-    ./client/client-1.0/grpc_client \
-    ./client/client-1.0/testClient \
-    ./feeder/feeder-rl \
-    ./feeder/feeder-template/feederv4 \
-    ./feeder/feeder-evic \
-    ./feeder/feeder-evic/evicSim
+go test ./...
 ```
-
-`./...` from the repo root currently fails because of a long-standing
-mixed-package layout in `server/vissv2server/grpcMgr/testprocess/`
-unrelated to these tests. Use the explicit list above.
 
 ## Race-detector tests
 

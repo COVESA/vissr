@@ -59,6 +59,9 @@ enabling any client implementation to connect to the server.
 
 See the tutorial for more information.
 
+## Unit  testing
+Described in [TESTING.md](https://github.com/COVESA/vissr/blob/master/TESTING.md).
+
 ## Contributors
 VISSR is an open standard and we invite anybody to contribute. Currently VISSR contains - among others - significant  contributions from
 
