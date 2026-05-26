@@ -497,7 +497,7 @@ func getCurveLoggingParams(opValue string) (float64, int) { // {"maxerr": "X", "
 	}
 	maxErr, err := strconv.ParseFloat(cLData.MaxErr, 64)
 	if err != nil {
-		utils.Error.Printf("getIntervalPeriod: MaxErr invalid integer, maxErr=%s", cLData.MaxErr)
+		utils.Error.Printf("getCurveLoggingParams: MaxErr invalid, maxErr=%s err=%v", cLData.MaxErr, err)
 		maxErr = 0.0
 	}
 	bufSize, err := strconv.Atoi(cLData.BufSize)
