@@ -538,52 +538,14 @@ func curveLogServer() {
 	var routingDataList []TriggRoutingData
 	for {
 		select {
-		case message := <-fromFeederCl:
-			routingDataList = handleCurveLogServerMessage(message, routingDataList)
-		case routingData := <-clRouterChan:
-			routingDataList = append(routingDataList, routingData)
-		}
-	}
-}
-
-// handleCurveLogServerMessage processes a single feeder message and returns
-// the (possibly mutated) routing-data list. Extracted from curveLogServer
-// so the dispatch is unit-testable.
-func handleCurveLogServerMessage(message string, routingDataList []TriggRoutingData) []TriggRoutingData {
-	if len(message) == 0 {
-		return routingDataList
-	}
-	var messageMap map[string]interface{}
-	err := json.Unmarshal([]byte(message), &messageMap)
-	if err != nil {
-		utils.Error.Printf("Error in trigg message=%s err=%v", message, err)
-		return routingDataList
-	}
-	actionRaw, ok := messageMap["action"]
-	if !ok || actionRaw == nil {
-		utils.Error.Printf("Error in trigg message (missing action)=%s", message)
-		return routingDataList
-	}
-	action, ok := actionRaw.(string)
-	if !ok {
-		utils.Error.Printf("Error in trigg message (action not string)=%s", message)
-		return routingDataList
-	}
-	switch action {
-	case "subscribe":
-		statusRaw, present := messageMap["status"]
-		if !present || statusRaw == nil {
-			return routingDataList
-		}
-		status, ok := statusRaw.(string)
-		if !ok || status != "ok" {
-			return routingDataList
-		}
-		// notify all existing compute threads
-		for i := 0; i < len(routingDataList); i++ {
-			for j := 0; j < len(routingDataList[i].TriggRoutingList); j++ {
-				idx := routingDataList[i].TriggRoutingList[j].Index
-				if idx < 0 || idx >= MAXCLSESSIONS {
+			case message := <- fromFeederCl:
+				if len(message) == 0 {
+					continue
+				}
+				var messageMap map[string]interface{}
+				err := json.Unmarshal([]byte(message), &messageMap)
+				if err != nil || messageMap["action"] == nil {
+					utils.Error.Printf("Error in trigg message=%s", message)
 					continue
 				}
 				switch messageMap["action"].(string) {
@@ -622,25 +584,12 @@ func handleCurveLogServerMessage(message string, routingDataList []TriggRoutingD
 								}
 							}
 						}
-						break
-					}
+					default:
+						utils.Error.Printf("Unknown action=%s", messageMap["action"].(string))
 				}
-			}
+			case routingData := <- clRouterChan:
+				routingDataList = append(routingDataList, routingData)
 		}
-	default:
-		utils.Error.Printf("Unknown action=%s", action)
-	}
-	return routingDataList
-}
-
-// sendToClServerChan does a non-blocking send into the per-session channel.
-// The channel is buffered, but a slow consumer could still wedge the dispatcher
-// if we sent blocking; dropping is preferable to blocking the entire server.
-func sendToClServerChan(index int, message string) {
-	select {
-	case clServerChan[index] <- message:
-	default:
-		utils.Error.Printf("curveLogServer: clServerChan[%d] full, dropping message", index)
 	}
 }
 
