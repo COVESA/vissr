@@ -18,7 +18,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
+
+func TestMain(m *testing.M) {
+	utils.InitLog("evicSim-test.log", os.TempDir(), false, "error")
+	os.Exit(m.Run())
+}
 
 // TestConvertToDomainData_EvicSim parses {"path","value"} JSON into
 // DomainData (mirror of the helper in evicFeeder).

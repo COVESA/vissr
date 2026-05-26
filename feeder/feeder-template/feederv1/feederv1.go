@@ -10,15 +10,18 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"github.com/akamensky/argparse"
-	"github.com/covesa/vissr/utils"
-	"github.com/go-redis/redis"
-	_ "github.com/mattn/go-sqlite3"
+	"errors"
+	"io"
 	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/akamensky/argparse"
+	"github.com/covesa/vissr/utils"
+	"github.com/go-redis/redis"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type DomainData struct {
@@ -35,6 +38,33 @@ var redisClient *redis.Client
 var dbHandle *sql.DB
 var stateDbType string
 
+// mapString returns m[key] as a string. Returns ("", false) on absent, nil,
+// or wrong-type entries. Replaces the unchecked .(string) assertions that
+// previously panicked the feeder on any malformed server message.
+func mapString(m map[string]interface{}, key string) (string, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return s, true
+}
+
+// marshalDatapointJSON encodes the {"value":..., "ts":...} datapoint using
+// encoding/json so values containing quotes / backslashes / control chars
+// can't produce malformed JSON. The pre-fix string-concat path corrupted
+// any value with a `"` in it.
+func marshalDatapointJSON(val, ts string) (string, error) {
+	b, err := json.Marshal(map[string]string{"value": val, "ts": ts})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 func readFeederMap(mapFilename string) []FeederMap {
 	var fMap []FeederMap
 	data, err := os.ReadFile(mapFilename)
@@ -47,7 +77,6 @@ func readFeederMap(mapFilename string) []FeederMap {
 		utils.Error.Printf("readFeederMap():unmarshal error=%s", err)
 		return nil
 	}
-	//utils.Info.Printf("readFeederMap():fMap[0].VssName=%s", fMap[0].VssName)
 	return fMap
 }
 
@@ -60,7 +89,7 @@ func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData) 
 			utils.Info.Printf("Data written to statestorage: Name=%s, Value=%s", outData.Name, outData.Value)
 			status := statestorageSet(outData.Name, outData.Value, utils.GetRfcTime())
 			if status != 0 {
-				utils.Error.Printf("initVSSInterfaceMgr():Redis write failed")
+				utils.Error.Printf("initVSSInterfaceMgr():State storage write failed")
 			}
 		case actuatorData := <-udsChan:
 			inputChan <- actuatorData
@@ -85,9 +114,12 @@ func statestorageSet(path string, val string, ts string) int {
 		}
 		return 0
 	case "redis":
-		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
-		err := redisClient.Set(path, dp, time.Duration(0)).Err()
+		dp, err := marshalDatapointJSON(val, ts)
 		if err != nil {
+			utils.Error.Printf("statestorageSet:Marshal error=%v", err)
+			return -1
+		}
+		if err := redisClient.Set(path, dp, time.Duration(0)).Err(); err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
 			return -1
 		}
@@ -96,44 +128,100 @@ func statestorageSet(path string, val string, ts string) int {
 	return -1
 }
 
+// The pre-fix initUdsEndpoint accepted exactly one connection then read into
+// a fixed 512-byte buffer with no framing; any longer message was truncated
+// silently and produced an unmarshalable fragment. The fixed version loops on
+// Accept (reconnect support), uses an 8 KiB buffer, and drops oversized frames
+// rather than feeding garbage downstream.
 func initUdsEndpoint(udsChan chan DomainData) {
-	os.Remove("/var/tmp/vissv2/server-feeder-channel.sock")
-	listener, err := net.Listen("unix", "/var/tmp/vissv2/server-feeder-channel.sock") //the file must be the same as declared in the feeder-registration.json that the service mgr reads
+	const sockPath = "/var/tmp/vissv2/server-feeder-channel.sock"
+	os.Remove(sockPath)
+	listener, err := net.Listen("unix", sockPath) //the file must be the same as declared in the feeder-registration.json that the service mgr reads
 	if err != nil {
 		utils.Error.Printf("initUdsEndpoint:UDS listen failed, err = %s", err)
 		os.Exit(-1)
 	}
-	conn, err := listener.Accept()
-	if err != nil {
-		utils.Error.Printf("initUdsEndpoint:UDS accept failed, err = %s", err)
-		os.Exit(-1)
-	}
-	defer conn.Close()
-	buf := make([]byte, 512)
+	defer listener.Close()
 	for {
-		n, err := conn.Read(buf)
+		conn, err := listener.Accept()
 		if err != nil {
-			utils.Error.Printf("initUdsEndpoint:Read failed, err = %s", err)
+			utils.Error.Printf("initUdsEndpoint:UDS accept failed, err = %s. Retrying in 1s.", err)
+			time.Sleep(1 * time.Second)
 			continue
 		}
-		utils.Info.Printf("Feeder:Server message: %s", string(buf[:n]))
-		domainData, _ := splitToDomainDataAndTs(string(buf[:n]))
-		udsChan <- domainData
+		udsServeConn(conn, udsChan)
 	}
 }
 
-func splitToDomainDataAndTs(serverMessage string) (DomainData, string) { // server={"dp": {"ts": "Z","value": "Y"},"path": "X"}, redis={"value":"xxx", "ts":"zzz"}
+const udsReadBuf = 8192
+
+func udsServeConn(conn net.Conn, udsChan chan DomainData) {
+	defer conn.Close()
+	buf := make([]byte, udsReadBuf)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				utils.Info.Printf("initUdsEndpoint:peer closed, awaiting next connection")
+			} else {
+				utils.Error.Printf("initUdsEndpoint:Read failed, err = %s", err)
+			}
+			return
+		}
+		// n cannot exceed len(buf) but a full buffer suggests a truncated frame.
+		if n == len(buf) {
+			utils.Error.Printf("initUdsEndpoint:message at buffer size (%d); likely truncated, dropped", n)
+			continue
+		}
+		utils.Info.Printf("Feeder:Server message: %s", string(buf[:n]))
+		domainData, _, ok := splitToDomainDataAndTs(string(buf[:n]))
+		if !ok {
+			continue
+		}
+		select {
+		case udsChan <- domainData:
+		default:
+			utils.Error.Printf("initUdsEndpoint:udsChan full, dropping %q", domainData.Name)
+		}
+	}
+}
+
+// splitToDomainDataAndTs parses a server message of the shape
+//   {"dp": {"ts": "Z","value": "Y"},"path": "X"}
+// and returns the extracted DomainData, the timestamp string, and ok=true.
+// On any parse or shape error, returns zero values and ok=false. Pre-fix this
+// had four unchecked .(string)/.(map) assertions and panicked on any malformed
+// or partial message from the server.
+func splitToDomainDataAndTs(serverMessage string) (DomainData, string, bool) {
 	var domainData DomainData
 	var serverMessageMap map[string]interface{}
-	err := json.Unmarshal([]byte(serverMessage), &serverMessageMap)
-	if err != nil {
+	if err := json.Unmarshal([]byte(serverMessage), &serverMessageMap); err != nil {
 		utils.Error.Printf("splitToDomainDataAndTs:Unmarshal error=%s", err)
-		return domainData, ""
+		return domainData, "", false
 	}
-	domainData.Name = serverMessageMap["path"].(string)
-	dpMap := serverMessageMap["dp"].(map[string]interface{})
-	domainData.Value = dpMap["value"].(string)
-	return domainData, dpMap["ts"].(string)
+	name, ok := mapString(serverMessageMap, "path")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs:missing/invalid path")
+		return domainData, "", false
+	}
+	dpMap, ok := serverMessageMap["dp"].(map[string]interface{})
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs:missing/invalid dp object")
+		return domainData, "", false
+	}
+	value, ok := mapString(dpMap, "value")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs:missing/invalid value")
+		return domainData, "", false
+	}
+	ts, ok := mapString(dpMap, "ts")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs:missing/invalid ts")
+		return domainData, "", false
+	}
+	domainData.Name = name
+	domainData.Value = value
+	return domainData, ts, true
 }
 
 type simulateDataCtx struct {
@@ -180,14 +268,24 @@ func simulateInput(simCtx *simulateDataCtx) DomainData {
 	return input
 }
 
+// calcInputValue returns setValue - 10 + iteration as a decimal string. If
+// setValue is not numeric the parse error is reported (was silently swallowed
+// pre-fix) and the iteration offset alone is returned.
 func calcInputValue(iteration int, setValue string) string {
-	setVal, _ := strconv.Atoi(setValue)
+	setVal, err := strconv.Atoi(setValue)
+	if err != nil {
+		utils.Error.Printf("calcInputValue:setValue=%q not an integer: %v", setValue, err)
+	}
 	newVal := setVal - 10 + iteration
 	return strconv.Itoa(newVal)
 }
 
+// selectRandomInput now guards against an empty fMap (rand.Intn panics on 0).
 func selectRandomInput(fMap []FeederMap) DomainData {
 	var domainData DomainData
+	if len(fMap) == 0 {
+		return domainData
+	}
 	signalIndex := rand.Intn(len(fMap))
 	domainData.Name = fMap[signalIndex].VehicleName
 	domainData.Value = strconv.Itoa(rand.Intn(1000))
@@ -210,11 +308,15 @@ func searchMap(fMap []FeederMap, inDomain string, signalName string) string {
 	return ""
 }
 
+// convertDomainData pre-fix would happily emit a DomainData with Name="" when
+// the lookup failed, poisoning downstream channels. It now returns the input
+// unchanged on unmapped names rather than producing an empty-name datapoint.
 func convertDomainData(inDomain string, inData DomainData, feederMap []FeederMap) DomainData {
 	var outData DomainData
 	outName := searchMap(feederMap, inDomain, inData.Name)
 	if outName == "" {
-		utils.Error.Printf("Domain mapping failed")
+		utils.Error.Printf("Domain mapping failed for %s/%s", inDomain, inData.Name)
+		return inData
 	}
 	outData.Name = outName
 	outData.Value = convertValue(inData.Value)
@@ -243,10 +345,13 @@ func main() {
 		Required: false,
 		Help:     "statestorage database filename",
 		Default:  "../../server/vissv2server/serviceMgr/statestorage.db"})
-	// Parse input
+	// Parse input. Pre-fix this only logged the error and continued running
+	// with whatever defaults / zero values had been left in place. Now we
+	// exit non-zero so misconfiguration is obvious.
 	err := parser.Parse(os.Args)
 	if err != nil {
 		utils.Error.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 	stateDbType = *stateDB
 
@@ -265,6 +370,7 @@ func main() {
 			}
 		} else {
 			utils.Error.Printf("Could not find state storage file = %s", *dbFile)
+			os.Exit(1)
 		}
 	case "redis":
 		redisClient = redis.NewClient(&redis.Options{
@@ -292,6 +398,10 @@ func main() {
 
 	utils.Info.Printf("Initializing the feeder for mapping file %s.", *mapFile)
 	feederMap := readFeederMap(*mapFile)
+	if feederMap == nil {
+		utils.Error.Printf("Failed to read feeder map %s.", *mapFile)
+		os.Exit(1)
+	}
 	go initVSSInterfaceMgr(vssInputChan, vssOutputChan)
 	go initVehicleInterfaceMgr(feederMap, vehicleInputChan, vehicleOutputChan)
 

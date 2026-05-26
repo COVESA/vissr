@@ -239,9 +239,14 @@ func TestRemoveLocalProperty(t *testing.T) {
 // known name; all others fall back to "upload.txt".
 func TestGetInternalFileName(t *testing.T) {
 	cases := map[string]struct{ path, name string }{
-		"Vehicle.UploadFile":     {"", "upload.txt"},
-		"Vehicle.UnknownPath":    {"", "upload.txt"}, // default
-		"":                       {"", "upload.txt"},
+		// Known path: returns the actual filename.
+		"Vehicle.UploadFile": {"", "upload.txt"},
+		// Unknown paths now return ("", "") — security fix: previously
+		// returned ("", "upload.txt") for any input, which was a path-
+		// injection hazard (any attacker-controlled path silently mapped to
+		// the real upload file).
+		"Vehicle.UnknownPath": {"", ""},
+		"": {"", ""},
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {

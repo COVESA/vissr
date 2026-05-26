@@ -25,7 +25,7 @@ func redisSet(client *redis.Client, path string, val string, ts string) int {
 		fmt.Printf("Job failed. Err=%s\n", err)
 		return -1
 	} else {
-		fmt.Println("Datapoint=%s\n", dp)
+		fmt.Printf("Datapoint=%s\n", dp)
 		return 0
 	}
 }

@@ -8,24 +8,41 @@
 package main
 
 import (
-	"fmt"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
+	"math/rand"
+	"net"
+	"os"
+	"os/exec"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/akamensky/argparse"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/covesa/vissr/utils"
 	"github.com/go-redis/redis"
 	_ "github.com/mattn/go-sqlite3"
-	"math/rand"
-	"net"
-	"os"
-	"os/exec"
-	"sort"
-	"strconv"
-	"strings"
-	"slices"
-	"time"
 )
+
+// mapString returns m[key] as a string. Returns "", false on absent, nil, or wrong type.
+// Used throughout to replace the unchecked .(string) assertions that previously
+// panicked the feeder on any malformed message from the server.
+func mapString(m map[string]interface{}, key string) (string, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return s, true
+}
 
 type DomainData struct {
 	Name  string
@@ -70,7 +87,10 @@ var notificationList []string
 
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
+		// Treat any stat error (IsNotExist, permission denied, etc.) as "missing"
+		// so callers don't have to distinguish. Pre-fix this nil-deref'd info on
+		// a non-IsNotExist error.
 		return false
 	}
 	return !info.IsDir()
@@ -117,50 +137,98 @@ func readFeederMap(mapFilename string) []FeederMap {
 	var feederMap []FeederMap
 	treeFp, err := os.OpenFile(mapFilename, os.O_RDONLY, 0644)
 	if err != nil {
-		utils.Error.Printf("Could not open %s for reading map data", mapFilename)
+		utils.Error.Printf("Could not open %s for reading map data: %v", mapFilename, err)
 		return nil
 	}
+	defer treeFp.Close()
 	for {
-		mapElement := readElement(treeFp)
-		if mapElement.Name == "" {
+		mapElement, ok := readElement(treeFp)
+		if !ok || mapElement.Name == "" {
 			break
 		}
 		feederMap = append(feederMap, mapElement)
 	}
-	treeFp.Close()
+	// Sort by Name so callers using sort.Search work correctly.
+	sort.Slice(feederMap, func(i, j int) bool { return feederMap[i].Name < feederMap[j].Name })
 	return feederMap
 }
 
-// The reading order must be aligned with the reading order by the Domain Conversion Tool
-func readElement(treeFp *os.File) FeederMap {
+// readElement reads one FeederMap entry. Returns (zero, false) on short/corrupt
+// read so the caller stops cleanly instead of inheriting a half-populated element.
+func readElement(treeFp *os.File) (FeederMap, bool) {
 	var feederMap FeederMap
-	feederMap.MapIndex = deSerializeUInt(readBytes(2, treeFp)).(uint16)
-	//utils.Info.Printf("feederMap.MapIndex=%d\n", feederMap.MapIndex)
+	mapIndex, ok := readUint16(treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	feederMap.MapIndex = mapIndex
 
-	NameLen := deSerializeUInt(readBytes(1, treeFp)).(uint8)
-	feederMap.Name = string(readBytes((uint32)(NameLen), treeFp))
-	//utils.Info.Printf("NameLen=%d\n", NameLen)
-	//utils.Info.Printf("feederMap.Name=%s\n", feederMap.Name)
+	nameLen, ok := readUint8(treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	nameBytes, ok := readBytes(uint32(nameLen), treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	feederMap.Name = string(nameBytes)
 
-	feederMap.Type = (int8)(deSerializeUInt(readBytes(1, treeFp)).(uint8))
-	//utils.Info.Printf("feederMap.Type=%d\n", feederMap.Type)
+	typeByte, ok := readUint8(treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	feederMap.Type = int8(typeByte)
 
-	feederMap.Datatype = (int8)(deSerializeUInt(readBytes(1, treeFp)).(uint8))
-	//utils.Info.Printf("feederMap.Datatype=%d\n", feederMap.Datatype)
+	dataTypeByte, ok := readUint8(treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	feederMap.Datatype = int8(dataTypeByte)
 
-	feederMap.ConvertIndex = deSerializeUInt(readBytes(2, treeFp)).(uint16)
-	//utils.Info.Printf("feederMap.ConvertIndex=%d\n", feederMap.ConvertIndex)
-
-	return feederMap
+	convertIndex, ok := readUint16(treeFp)
+	if !ok {
+		return feederMap, false
+	}
+	feederMap.ConvertIndex = convertIndex
+	return feederMap, true
 }
 
-func readBytes(numOfBytes uint32, treeFp *os.File) []byte {
-	if numOfBytes > 0 {
-		buf := make([]byte, numOfBytes)
-		treeFp.Read(buf)
-		return buf
+// MaxReadBytes caps per-call allocation so a corrupt file with a large
+// length prefix cannot trigger a multi-GiB allocation.
+const MaxReadBytes = 1 << 20 // 1 MiB
+
+func readBytes(numOfBytes uint32, treeFp *os.File) ([]byte, bool) {
+	if numOfBytes == 0 {
+		return nil, true
 	}
-	return nil
+	if numOfBytes > MaxReadBytes {
+		utils.Error.Printf("readBytes: refusing to allocate %d bytes (cap=%d)", numOfBytes, MaxReadBytes)
+		return nil, false
+	}
+	buf := make([]byte, numOfBytes)
+	if _, err := io.ReadFull(treeFp, buf); err != nil {
+		if err != io.EOF && err != io.ErrUnexpectedEOF {
+			utils.Error.Printf("readBytes: read failed: %v", err)
+		}
+		return nil, false
+	}
+	return buf, true
+}
+
+func readUint8(treeFp *os.File) (uint8, bool) {
+	buf, ok := readBytes(1, treeFp)
+	if !ok {
+		return 0, false
+	}
+	return buf[0], true
+}
+
+func readUint16(treeFp *os.File) (uint16, bool) {
+	buf, ok := readBytes(2, treeFp)
+	if !ok {
+		return 0, false
+	}
+	return uint16(buf[1])*256 + uint16(buf[0]), true
 }
 
 func deSerializeUInt(buf []byte) interface{} {
@@ -189,10 +257,11 @@ func feederRegister(regSockFile string, configData ConfigData) string {
 		utils.Error.Printf("feederRegister:Failed to UDS connect to the server. Err=%s", err)
 		return ""
 	}
+	defer conn.Close()
 	request := `{"action": "reg", "name": "` + configData.Name + `"}`
-	_, err = conn.Write([]byte(request))
-	if err != nil {
+	if _, err := conn.Write([]byte(request)); err != nil {
 		utils.Error.Printf("feederRegister:Write failed, err = %s", err)
+		return ""
 	}
 	buf := make([]byte, 512)
 	n, err := conn.Read(buf)
@@ -202,17 +271,25 @@ func feederRegister(regSockFile string, configData ConfigData) string {
 	}
 	utils.Info.Printf("feederRegister:Reg response from server: %s", string(buf[:n]))
 	var responseMap map[string]interface{}
-	err = json.Unmarshal(buf[:n], &responseMap)
-	if err != nil {
+	if err := json.Unmarshal(buf[:n], &responseMap); err != nil {
 		utils.Error.Printf("feederRegister:Unmarshal error=%s", err)
 		return ""
 	}
-	conn.Close()
-	if responseMap["action"].(string) == "error" {
+	action, ok := mapString(responseMap, "action")
+	if !ok {
+		utils.Error.Printf("feederRegister:Missing/invalid action field in response")
+		return ""
+	}
+	if action == "error" {
 		utils.Error.Printf("feederRegister:Server responded with error")
 		return ""
 	}
-	return responseMap["sockfile"].(string)
+	sockfile, ok := mapString(responseMap, "sockfile")
+	if !ok {
+		utils.Error.Printf("feederRegister:Missing/invalid sockfile field in response")
+		return ""
+	}
+	return sockfile
 }
 
 func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData, configData ConfigData) {
@@ -268,23 +345,41 @@ func statestorageSet(path string, val string, ts string) int {
 		}
 		return 0
 	case "redis":
-		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
-		err := redisClient.Set(path, dp, time.Duration(0)).Err()
+		dp, err := marshalDatapointJSON(val, ts)
 		if err != nil {
+			utils.Error.Printf("statestorageSet:Marshal error=%v", err)
+			return -1
+		}
+		if err := redisClient.Set(path, dp, time.Duration(0)).Err(); err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
 			return -1
 		}
 		return 0
 	case "memcache":
-		dp := `{"value":"` + val + `", "ts":"` + ts + `"}`
-		err := memcacheClient.Set(&memcache.Item{Key: path, Value: []byte(dp)})
+		dp, err := marshalDatapointJSON(val, ts)
 		if err != nil {
+			utils.Error.Printf("statestorageSet:Marshal error=%v", err)
+			return -1
+		}
+		if err := memcacheClient.Set(&memcache.Item{Key: path, Value: []byte(dp)}); err != nil {
 			utils.Error.Printf("Job failed. Err=%s", err)
 			return -1
 		}
 		return 0
 	}
 	return -1
+}
+
+// marshalDatapointJSON encodes the {"value":..., "ts":...} datapoint using
+// encoding/json so values containing quotes / backslashes / control chars
+// can't produce malformed JSON. The pre-fix string-concat path corrupted
+// any value with a `"` in it.
+func marshalDatapointJSON(val, ts string) (string, error) {
+	b, err := json.Marshal(map[string]string{"value": val, "ts": ts})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func inFeederScope(testpath string, scope []string) bool {
@@ -305,50 +400,73 @@ utils.Info.Printf("%s not in scope", testpath)
 // behaviour (set / subscribe / unsubscribe / update) can be unit-
 // tested independently of the goroutine / socket machinery.
 //
-// Behaviour-preserving extraction: the function body below is a
-// straight move from the original udsReader for-loop. See
-// feederv4_dispatch_test.go for the regression / coverage tests.
+// Safety fixes applied: all bare type assertions replaced with comma-ok
+// form; blocking channel sends replaced with non-blocking select/default;
+// unsubscribe now deletes from notificationList (not pathList) index.
 func processFeederServerMessage(serverMessageMap map[string]interface{}, inputChan chan DomainData, udsChan chan string, configData ConfigData) {
-	if serverMessageMap["action"] != nil {
-		switch serverMessageMap["action"].(string) {
-			case "set":
-				domainData, _ := splitToDomainDataAndTs(serverMessageMap["data"].(map[string]interface{}))
-				if inFeederScope(domainData.Name, configData.Scope) {
-					inputChan <- domainData
-				}
-			case "subscribe":
-				pathList := serverMessageMap["path"].([]interface{})
-				for i := 0; i < len(pathList); i++ {
-					if onNotificationList(pathList[i].(string)) == -1 {
-						notificationList = append(notificationList, pathList[i].(string))
-					}
-				}
-				response := `{"action": "subscribe", "status": "ok"}`
-				udsChan <- response
-			case "unsubscribe":
-				pathList := serverMessageMap["path"].([]interface{})
-				for i := 0; i < len(pathList); i++ {
-					if onNotificationList(pathList[i].(string)) != -1 {
-						notificationList = slices.Delete(notificationList, i, i+1)
-					}
-				}
-			case "update":
-				defaultArray := serverMessageMap["defaultList"].([]interface{})
-				var domainData DomainData
-				for i := 0; i < len(defaultArray); i++ {
-					for k, v := range defaultArray[i].(map[string]interface{}) {
-//						utils.Info.Printf("%d: key=%s, value=%s", i, k, v.(string))
-						if k == "path" {
-							domainData.Name = v.(string)
-						} else if k == "default" {
-							domainData.Value = v.(string)
-						}
-					}
-					statestorageSet(domainData.Name, domainData.Value, utils.GetRfcTime())
-				}
-			default:
-				utils.Error.Printf("udsReader:Message action unknown = %s", serverMessageMap["action"].(string))
+	action, ok := mapString(serverMessageMap, "action")
+	if !ok {
+		utils.Error.Printf("processFeederServerMessage: missing/invalid action field")
+		return
+	}
+	switch action {
+	case "set":
+		dataMap, ok := serverMessageMap["data"].(map[string]interface{})
+		if !ok {
+			utils.Error.Printf("processFeederServerMessage: set message missing/invalid data field")
+			return
 		}
+		domainData, _, ok := splitToDomainDataAndTs(dataMap)
+		if !ok {
+			return
+		}
+		if inFeederScope(domainData.Name, configData.Scope) {
+			select {
+			case inputChan <- domainData:
+			default:
+				utils.Error.Printf("processFeederServerMessage: inputChan full, dropping set for %q", domainData.Name)
+			}
+		}
+	case "subscribe":
+		pathList, ok := serverMessageMap["path"].([]interface{})
+		if !ok {
+			utils.Error.Printf("processFeederServerMessage: subscribe missing/invalid path array")
+			return
+		}
+		addNotifications(pathList)
+		select {
+		case udsChan <- `{"action": "subscribe", "status": "ok"}`:
+		default:
+			utils.Error.Printf("processFeederServerMessage: udsChan full, subscribe response dropped")
+		}
+	case "unsubscribe":
+		pathList, ok := serverMessageMap["path"].([]interface{})
+		if !ok {
+			utils.Error.Printf("processFeederServerMessage: unsubscribe missing/invalid path array")
+			return
+		}
+		removeNotifications(pathList)
+	case "update":
+		defaultArray, ok := serverMessageMap["defaultList"].([]interface{})
+		if !ok {
+			utils.Error.Printf("processFeederServerMessage: update missing/invalid defaultList array")
+			return
+		}
+		for i := 0; i < len(defaultArray); i++ {
+			elem, ok := defaultArray[i].(map[string]interface{})
+			if !ok {
+				utils.Error.Printf("processFeederServerMessage: update element %d not an object", i)
+				continue
+			}
+			path, _ := mapString(elem, "path")
+			defVal, _ := mapString(elem, "default")
+			if path == "" {
+				continue
+			}
+			statestorageSet(path, defVal, utils.GetRfcTime())
+		}
+	default:
+		utils.Error.Printf("processFeederServerMessage: action unknown = %s", action)
 	}
 }
 
@@ -359,21 +477,72 @@ func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string, co
 		n, err := conn.Read(buf)
 		if err != nil {
 			utils.Error.Printf("udsReader:Read failed, err = %s", err)
+			if err == io.EOF {
+				return
+			}
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		utils.Info.Printf("udsReader:Message from server: %s", string(buf[:n]))
-		if n > 8192 {
-			utils.Error.Printf("udsReader:Max message size of 8192 chars exceeded. Message dropped")
+		// n cannot exceed len(buf); fill of the buffer suggests truncation.
+		if n == len(buf) {
+			utils.Error.Printf("udsReader: message at buffer size (%d); likely truncated, dropping", n)
 			continue
 		}
-		var serverMessageMap map[string]interface{}
-		err = json.Unmarshal(buf[:n], &serverMessageMap)
-		if err != nil {
-			utils.Error.Printf("udsReader:Unmarshal error=%s", err)
+		handleServerMessage(buf[:n], inputChan, udsChan, configData)
+	}
+}
+
+// handleServerMessage parses one UDS message and dispatches by action. Extracted
+// from udsReader so the dispatch logic is unit-testable and every type assertion
+// uses comma-ok form. Pre-fix, ~10 bare type assertions on attacker-controlled
+// JSON panicked the feeder.
+func handleServerMessage(raw []byte, inputChan chan DomainData, udsChan chan string, configData ConfigData) {
+	var serverMessageMap map[string]interface{}
+	if err := json.Unmarshal(raw, &serverMessageMap); err != nil {
+		utils.Error.Printf("udsReader:Unmarshal error=%s", err)
+		return
+	}
+	_, ok := mapString(serverMessageMap, "action")
+	if !ok {
+		utils.Error.Printf("udsReader:Message missing/invalid action field")
+		return
+	}
+	processFeederServerMessage(serverMessageMap, inputChan, udsChan, configData)
+}
+
+// addNotifications appends each string element of pathList to notificationList
+// unless already present. Non-string elements are skipped.
+func addNotifications(pathList []interface{}) {
+	for i := 0; i < len(pathList); i++ {
+		p, ok := pathList[i].(string)
+		if !ok {
+			utils.Error.Printf("addNotifications: element %d not a string", i)
 			continue
 		}
-		processFeederServerMessage(serverMessageMap, inputChan, udsChan, configData)
+		if onNotificationList(p) == -1 {
+			notificationList = append(notificationList, p)
+		}
+	}
+}
+
+// removeNotifications drops each path in pathList from notificationList.
+// Bug fix: pre-fix code did slices.Delete(notificationList, i, i+1) using the
+// input-pathList index i instead of the matching index in notificationList,
+// deleting the wrong element. It also never decremented i after deletion so
+// shifted entries were skipped.
+func removeNotifications(pathList []interface{}) {
+	for i := 0; i < len(pathList); i++ {
+		p, ok := pathList[i].(string)
+		if !ok {
+			utils.Error.Printf("removeNotifications: element %d not a string", i)
+			continue
+		}
+		idx := onNotificationList(p)
+		if idx == -1 {
+			continue
+		}
+		notificationList = slices.Delete(notificationList, idx, idx+1)
 	}
 }
 
@@ -400,12 +569,36 @@ func onNotificationList(path string) int {
 	return -1
 }
 
-func splitToDomainDataAndTs(serverMessageMap map[string]interface{}) (DomainData, string) { // server={"dp": {"ts": "Z","value": "Y"},"path": "X"}, redis={"value":"xxx", "ts":"zzz"}
+// splitToDomainDataAndTs parses a server datapoint of the shape
+//   {"dp": {"ts": "Z","value": "Y"},"path": "X"}
+// and returns the extracted DomainData, the timestamp string, and ok=true.
+// On any parse / shape error, returns zero values and ok=false (without
+// panicking) so callers can keep processing further messages.
+func splitToDomainDataAndTs(serverMessageMap map[string]interface{}) (DomainData, string, bool) {
 	var domainData DomainData
-	domainData.Name = serverMessageMap["path"].(string)
-	dpMap := serverMessageMap["dp"].(map[string]interface{})
-	domainData.Value = dpMap["value"].(string)
-	return domainData, dpMap["ts"].(string)
+	name, ok := mapString(serverMessageMap, "path")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs: missing/invalid path")
+		return domainData, "", false
+	}
+	dpMap, ok := serverMessageMap["dp"].(map[string]interface{})
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs: missing/invalid dp object")
+		return domainData, "", false
+	}
+	value, ok := mapString(dpMap, "value")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs: missing/invalid value")
+		return domainData, "", false
+	}
+	ts, ok := mapString(dpMap, "ts")
+	if !ok {
+		utils.Error.Printf("splitToDomainDataAndTs: missing/invalid ts")
+		return domainData, "", false
+	}
+	domainData.Name = name
+	domainData.Value = value
+	return domainData, ts, true
 }
 
 type simulateDataCtx struct {
@@ -553,6 +746,10 @@ func calcInputValue(iteration int, setValue string) string {
 func selectRandomInput(fMap []FeederMap) DomainData {
 	var domainData DomainData
 	signalIndex := getRandomVssfMapIndex(fMap)
+	if signalIndex < 0 || signalIndex >= len(fMap) {
+		// No suitable signal - return empty DomainData; the consumer will skip it.
+		return domainData
+	}
 	domainData.Name = fMap[signalIndex].Name
 	if fMap[signalIndex].Datatype == 0 { // uint8, maybe allowed...
 		domainData.Value = strconv.Itoa(rand.Intn(10))
@@ -567,12 +764,24 @@ func selectRandomInput(fMap []FeederMap) DomainData {
 	return domainData
 }
 
+// getRandomVssfMapIndex picks an entry without a dot in the Name (i.e. a
+// vehicle-side leaf). Returns -1 if fMap is empty or contains no qualifying
+// entries. Pre-fix used `% (len(fMap)-1)` which skipped the last slot and
+// divided by zero when len(fMap)==1.
 func getRandomVssfMapIndex(fMap []FeederMap) int {
-	signalIndex := rand.Intn(len(fMap))
-	for strings.Contains(fMap[signalIndex].Name, ".") { // assuming vehicle if names do not contain dot...
-		signalIndex = (signalIndex + 1) % (len(fMap) - 1)
+	if len(fMap) == 0 {
+		return -1
 	}
-	return signalIndex
+	signalIndex := rand.Intn(len(fMap))
+	// Walk at most len(fMap) entries so we don't loop forever if no entry
+	// satisfies the predicate.
+	for attempts := 0; attempts < len(fMap); attempts++ {
+		if !strings.Contains(fMap[signalIndex].Name, ".") {
+			return signalIndex
+		}
+		signalIndex = (signalIndex + 1) % len(fMap)
+	}
+	return -1
 }
 
 func readSimulatedData(fname string) []DataItem {
@@ -593,18 +802,30 @@ func readSimulatedData(fname string) []DataItem {
 	return tripData
 }
 
+// getSimulatedDataPoints returns one datapoint per tripData path. Skips paths
+// whose per-path Dp slice is shorter than dpIndex+1 (rather than panicking,
+// which the pre-fix code did the moment any per-path row was shorter than
+// tripData[0].Dp).
 func getSimulatedDataPoints(dpIndex int) []DomainData {
-	dataPoint := make([]DomainData, len(tripData))
+	dataPoints := make([]DomainData, 0, len(tripData))
 	for i := 0; i < len(tripData); i++ {
-		dataPoint[i].Name = tripData[i].Path
-		dataPoint[i].Value = tripData[i].Dp[dpIndex].Value
+		if dpIndex < 0 || dpIndex >= len(tripData[i].Dp) {
+			continue
+		}
+		dataPoints = append(dataPoints, DomainData{
+			Name:  tripData[i].Path,
+			Value: tripData[i].Dp[dpIndex].Value,
+		})
 	}
-	return dataPoint
+	return dataPoints
 }
 
 func incDpIndex(index int) int {
+	if len(tripData) == 0 || len(tripData[0].Dp) == 0 {
+		return 0
+	}
 	index++
-	if index == len(tripData[0].Dp) {
+	if index >= len(tripData[0].Dp) {
 		return 0
 	}
 	return index
@@ -612,48 +833,68 @@ func incDpIndex(index int) int {
 
 func convertDomainData(north2SouthConv bool, inData DomainData, feederMap []FeederMap) DomainData {
 	var outData DomainData
+	if len(feederMap) == 0 || inData.Name == "" {
+		return inData
+	}
 	matchIndex := sort.Search(len(feederMap), func(i int) bool { return feederMap[i].Name >= inData.Name })
 	if matchIndex == len(feederMap) || feederMap[matchIndex].Name != inData.Name {
 		utils.Error.Printf("convertDomainData:Failed to map= %s", inData.Name)
-		return inData  //assume 1-to-1...
+		return inData //assume 1-to-1...
 	}
-	outData.Name = feederMap[feederMap[matchIndex].MapIndex].Name
+	// Defensive: MapIndex from disk can be out of range.
+	mapIdx := int(feederMap[matchIndex].MapIndex)
+	if mapIdx < 0 || mapIdx >= len(feederMap) {
+		utils.Error.Printf("convertDomainData:MapIndex %d for %q out of range [0,%d)", mapIdx, inData.Name, len(feederMap))
+		return inData
+	}
+	outData.Name = feederMap[mapIdx].Name
 	outData.Value = convertValue(inData.Value, feederMap[matchIndex].ConvertIndex,
-		feederMap[matchIndex].Datatype, feederMap[feederMap[matchIndex].MapIndex].Datatype, north2SouthConv)
+		feederMap[matchIndex].Datatype, feederMap[mapIdx].Datatype, north2SouthConv)
 	return outData
 }
 
 func convertValue(value string, convertIndex uint16, inDatatype int8, outDatatype int8, north2SouthConv bool) string {
-	switch convertIndex {
-	case 0: // no conversion
+	if convertIndex == 0 { // no conversion
 		return value
-	default: // call to conversion method
-		var convertDataMap interface{}
-		err := json.Unmarshal([]byte(scalingDataList[convertIndex-1]), &convertDataMap)
-		if err != nil {
-			utils.Error.Printf("convertValue:Error unmarshal scalingDataList item=%s", scalingDataList[convertIndex-1])
-			return ""
-		}
-		switch vv := convertDataMap.(type) {
-		case map[string]interface{}:
-			return enumConversion(vv, north2SouthConv, value)
-		case interface{}:
-			return linearConversion(vv.([]interface{}), north2SouthConv, value)
-		default:
-			utils.Error.Printf("convertValue: convert data=%s has unknown format.", scalingDataList[convertIndex-1])
-		}
 	}
-	return ""
+	// Bug fix: previously scalingDataList[convertIndex-1] indexed without
+	// bounds check; nil/short list plus any non-zero index panicked.
+	idx := int(convertIndex) - 1
+	if idx < 0 || idx >= len(scalingDataList) {
+		utils.Error.Printf("convertValue: convertIndex %d out of range for scalingDataList(len=%d)", convertIndex, len(scalingDataList))
+		return ""
+	}
+	var convertDataMap interface{}
+	if err := json.Unmarshal([]byte(scalingDataList[idx]), &convertDataMap); err != nil {
+		utils.Error.Printf("convertValue:Error unmarshal scalingDataList item=%s", scalingDataList[idx])
+		return ""
+	}
+	switch vv := convertDataMap.(type) {
+	case map[string]interface{}:
+		return enumConversion(vv, north2SouthConv, value)
+	case []interface{}:
+		// Bug fix: previous `case interface{}` arm matched every type and then
+		// blindly asserted .([]interface{}), panicking on strings/numbers.
+		return linearConversion(vv, north2SouthConv, value)
+	default:
+		utils.Error.Printf("convertValue: convert data=%s has unknown format (got %T)", scalingDataList[idx], convertDataMap)
+		return ""
+	}
 }
 
 func enumConversion(enumObj map[string]interface{}, north2SouthConv bool, inValue string) string { // enumObj = {"Key1":"value1", .., "KeyN":"valueN"}, k is VSS value
 	for k, v := range enumObj {
+		s, ok := v.(string)
+		if !ok {
+			utils.Error.Printf("enumConversion: non-string value for key %q (got %T)", k, v)
+			continue
+		}
 		if north2SouthConv {
 			if k == inValue {
-				return v.(string)
+				return s
 			}
 		} else {
-			if v.(string) == inValue {
+			if s == inValue {
 				return k
 			}
 		}
@@ -663,20 +904,29 @@ func enumConversion(enumObj map[string]interface{}, north2SouthConv bool, inValu
 }
 
 func linearConversion(coeffArray []interface{}, north2SouthConv bool, inValue string) string { // coeffArray = [A, B], y = Ax +B, y is VSS value
-	var A float64
-	var B float64
-	var x float64
-	var err error
-	if x, err = strconv.ParseFloat(inValue, 64); err != nil {
+	if len(coeffArray) < 2 {
+		utils.Error.Printf("linearConversion: coefficient array too short (len=%d, need 2)", len(coeffArray))
+		return ""
+	}
+	x, err := strconv.ParseFloat(inValue, 64)
+	if err != nil {
 		utils.Error.Printf("linearConversion: input value=%s cannot be converted to float.", inValue)
 		return ""
 	}
-	A = coeffArray[0].(float64)
-	B = coeffArray[1].(float64)
+	A, okA := coeffArray[0].(float64)
+	B, okB := coeffArray[1].(float64)
+	if !okA || !okB {
+		utils.Error.Printf("linearConversion: coefficients must be numbers (got A=%T, B=%T)", coeffArray[0], coeffArray[1])
+		return ""
+	}
 	var y float64
 	if north2SouthConv {
 		y = A*x + B
 	} else {
+		if A == 0 {
+			utils.Error.Printf("linearConversion: south-to-north divide-by-zero (A=0)")
+			return ""
+		}
 		y = (x - B) / A
 	}
 	return strconv.FormatFloat(y, 'f', -1, 32)
@@ -718,6 +968,7 @@ func main() {
 	err := parser.Parse(os.Args)
 	if err != nil {
 		fmt.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 
 	utils.InitLog("feeder-log.txt", "./logs", *logFile, *logLevel)
