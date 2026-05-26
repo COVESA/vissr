@@ -97,16 +97,19 @@ func getDcConfig(reqMessage string) (string, string, bool, bool) {
 }
 
 func getValueForKey(reqMessage string, key string) string {
-	var keyValue string
-	keyIndex := strings.Index(reqMessage, key) + len(key)
+	rawIndex := strings.Index(reqMessage, key)
+	if rawIndex == -1 {
+		return ""
+	}
+	keyIndex := rawIndex + len(key)
 	hyphenIndex1 := strings.Index(reqMessage[keyIndex:], `"`)
 	if hyphenIndex1 != -1 {
 		hyphenIndex2 := strings.Index(reqMessage[keyIndex+hyphenIndex1+1:], `"`)
 		if hyphenIndex2 != -1 {
-			keyValue = reqMessage[keyIndex+hyphenIndex1+1:keyIndex+hyphenIndex1+1+hyphenIndex2]
+			return reqMessage[keyIndex+hyphenIndex1+1 : keyIndex+hyphenIndex1+1+hyphenIndex2]
 		}
 	}
-	return keyValue
+	return ""
 }
 
 func initDcCache() {
@@ -119,10 +122,9 @@ func initDcCache() {
 func dcCacheInsert(payloadId string, dcValue string, responseHandling int) {
 	for i := 0; i < DCCACHESIZE; i++ {
 		if dataCompressionCache[i].ResponseHandling == -1 {
-			if setDcValue(dcValue, i) {
-				dataCompressionCache[i].ResponseHandling = responseHandling
-				dataCompressionCache[i].PayloadId = payloadId
-			}
+			setDcValue(dcValue, i)
+			dataCompressionCache[i].ResponseHandling = responseHandling
+			dataCompressionCache[i].PayloadId = payloadId
 			return
 		}
 	}
@@ -164,6 +166,7 @@ func getDcCacheIndex(payloadId string) int {
 
 func resetDcCache(cacheIndex int) {
 	dataCompressionCache[cacheIndex].ResponseHandling = -1
+	dataCompressionCache[cacheIndex].PayloadId = ""
 	dataCompressionCache[cacheIndex].SortedList = nil
 }
 
@@ -233,24 +236,32 @@ func getSortedPaths(respMessage string) []string {
 	var paths []string
 	dataIf := respMap["data"]
 	switch data := dataIf.(type) {
-		case []interface{}:
-//			utils.Info.Println(data, "is []interface{}")
-			for i := 0; i < len(data); i++ {
-				for k, v := range data[i].(map[string]interface{}) {
-					if k == "path" {
-						paths = append(paths, v.(string))
+	case []interface{}:
+		for i := 0; i < len(data); i++ {
+			m, ok := data[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for k, v := range m {
+				if k == "path" {
+					if pathStr, ok := v.(string); ok {
+						paths = append(paths, pathStr)
 					}
 				}
 			}
-		case interface{}:
-//			utils.Info.Println(data, "is interface{}")
-			for k, v := range data.(map[string]interface{}) {
-				if k == "path" {
-					paths = append(paths, v.(string))
+		}
+	case map[string]interface{}:
+		for k, v := range data {
+			if k == "path" {
+				if pathStr, ok := v.(string); ok {
+					paths = append(paths, pathStr)
 				}
 			}
-		default:
-			utils.Info.Println(data, "is of an unknown type")
+		}
+	default:
+		if data != nil {
+			utils.Info.Printf("getSortedPaths(): data field is of unknown type %T", data)
+		}
 	}
 	sort.Strings(paths)
 	return paths
@@ -264,27 +275,35 @@ utils.Info.Printf("compressTs()")
 		return respMessage
 	}
 	var tsList []string
-	messageTs := respMap["ts"].(string)
+	messageTs, ok := respMap["ts"].(string)
+	if !ok {
+		utils.Error.Printf("compressTs(): missing/non-string ts field in=%s", respMessage)
+		return respMessage
+	}
 	dataIf := respMap["data"]
 	switch data := dataIf.(type) {
-		case []interface{}:
-//			utils.Info.Println(data, "is []interface{}")
-			for i := 0; i < len(data); i++ {
-				for k, v := range data[i].(map[string]interface{}) {
-					if k == "dp" {
-						tsList = append(tsList, getDpTsList(v)...)
-					}
-				}
+	case []interface{}:
+		for i := 0; i < len(data); i++ {
+			m, ok := data[i].(map[string]interface{})
+			if !ok {
+				continue
 			}
-		case interface{}:
-//			utils.Info.Println(data, "is interface{}")
-			for k, v := range data.(map[string]interface{}) {
+			for k, v := range m {
 				if k == "dp" {
-						tsList = getDpTsList(v)
+					tsList = append(tsList, getDpTsList(v)...)
 				}
 			}
-		default:
-			utils.Info.Println(data, "is of an unknown type")
+		}
+	case map[string]interface{}:
+		for k, v := range data {
+			if k == "dp" {
+				tsList = getDpTsList(v)
+			}
+		}
+	default:
+		if data != nil {
+			utils.Info.Printf("compressTs(): data field is of unknown type %T", data)
+		}
 	}
 	respMessage = replaceTs(respMessage, messageTs, tsList)
 	return respMessage
@@ -293,24 +312,32 @@ utils.Info.Printf("compressTs()")
 func getDpTsList(dpMap interface{}) []string {
 	var tsList []string
 	switch dp := dpMap.(type) {
-		case []interface{}:
-//			utils.Info.Println(dp, "is []interface{}")
-			for i := 0; i < len(dp); i++ {
-				for k, v := range dp[i].(map[string]interface{}) {
-					if k == "ts" {
-						tsList = append(tsList, v.(string))
+	case []interface{}:
+		for i := 0; i < len(dp); i++ {
+			m, ok := dp[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for k, v := range m {
+				if k == "ts" {
+					if ts, ok := v.(string); ok {
+						tsList = append(tsList, ts)
 					}
 				}
 			}
-		case interface{}:
-//			utils.Info.Println(dp, "is interface{}")
-			for k, v := range dp.(map[string]interface{}) {
-				if k == "ts" {
-						tsList = append(tsList, v.(string))
+		}
+	case map[string]interface{}:
+		for k, v := range dp {
+			if k == "ts" {
+				if ts, ok := v.(string); ok {
+					tsList = append(tsList, ts)
 				}
 			}
-		default:
-			utils.Info.Println(dp, "is of an unknown type")
+		}
+	default:
+		if dp != nil {
+			utils.Info.Printf("getDpTsList(): dpMap is of unknown type %T", dp)
+		}
 	}
 	return tsList
 }
