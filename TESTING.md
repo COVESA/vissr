@@ -10,6 +10,32 @@ present comprehensive-coverage PR).
 ```bash
 go test ./...
 ```
+runs the entire test suite.
+
+The paths to the different unit tests can be explicitly provided, enabling test of a reduced set of unit tests.
+Shown below are the paths to the complete set of unit tests as of 27-05-2026.
+```
+go test \
+    ./utils \
+    ./server/vissv2server \
+    ./server/vissv2server/atServer \
+    ./server/vissv2server/serviceMgr \
+    ./server/vissv2server/mqttMgr \
+    ./server/vissv2server/wsMgr \
+    ./server/vissv2server/wsMgrFT \
+    ./server/vissv2server/udsMgr \
+    ./server/vissv2server/grpcMgr \
+    ./server/agt_server \
+    ./client/client-1.0/compress_client \
+    ./client/client-1.0/csv_client \
+    ./client/client-1.0/filetransfer_client \
+    ./client/client-1.0/grpc_client \
+    ./client/client-1.0/testClient \
+    ./feeder/feeder-rl \
+    ./feeder/feeder-template/feederv4 \
+    ./feeder/feeder-evic \
+    ./feeder/feeder-evic/evicSim
+```
 
 ## Race-detector tests
 
