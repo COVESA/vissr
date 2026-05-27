@@ -141,10 +141,49 @@ func TestProcessDataLevel3_DpArray(t *testing.T) {
 	}
 }
 
-// TestProcessDataLevel2 / Level1 — array-of-data and the top dispatch.
-// TODO(testing): the csv_client storeinArrays only supports
-// single-signal notifications; multi-signal flows are TODO in the
-// production code itself.
+// TestProcessDataLevel2 exercises the []data array dispatcher directly.
+func TestProcessDataLevel2_ArrayOfData(t *testing.T) {
+	val := make([]string, 4)
+	ts := make([]string, 4)
+	dataArray := []interface{}{
+		map[string]interface{}{
+			"path": "Vehicle.Speed",
+			"dp":   map[string]interface{}{"value": "42", "ts": "t1"},
+		},
+		map[string]interface{}{
+			"path": "Vehicle.Rpm",
+			"dp":   map[string]interface{}{"value": "3000", "ts": "t2"},
+		},
+	}
+	idx := processDataLevel2(dataArray, &val, &ts, 0)
+	if idx != 2 {
+		t.Fatalf("processDataLevel2 two-element array = %d; want 2", idx)
+	}
+	if val[0] != "42" || ts[0] != "t1" {
+		t.Errorf("first entry: val=%q ts=%q; want 42,t1", val[0], ts[0])
+	}
+	if val[1] != "3000" || ts[1] != "t2" {
+		t.Errorf("second entry: val=%q ts=%q; want 3000,t2", val[1], ts[1])
+	}
+}
+
+func TestProcessDataLevel2_NonMapElementSkipped(t *testing.T) {
+	val := make([]string, 4)
+	ts := make([]string, 4)
+	dataArray := []interface{}{
+		"not-a-map", // skipped without panic
+		map[string]interface{}{
+			"path": "Vehicle.Speed",
+			"dp":   map[string]interface{}{"value": "10", "ts": "t"},
+		},
+	}
+	idx := processDataLevel2(dataArray, &val, &ts, 0)
+	if idx != 1 {
+		t.Fatalf("expected 1 after skipping non-map element; got %d", idx)
+	}
+}
+
+// TestProcessDataLevel1 — top-level dispatch for single-data and array-of-data.
 func TestProcessDataLevel1_SingleData(t *testing.T) {
 	val := make([]string, 4)
 	ts := make([]string, 4)
