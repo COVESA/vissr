@@ -12,22 +12,22 @@
     <title>VISSR Build System :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1779970139" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1779970139" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1779978975" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1779978975" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1779970139" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1779978975" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1779970139"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1779978975"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1779970139"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1779970139"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1779978975"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1779978975"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1779970139"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1779978975"></script>
 
     
   </div>
@@ -852,6 +852,7 @@
       <ul>
         <li><a href="#logging">Logging</a></li>
         <li><a href="#testing">Testing</a></li>
+        <li><a href="#manual-mqtt-testing-with-local-broker">Manual MQTT testing with local broker</a></li>
         <li><a href="#transport-protocols">Transport protocols</a></li>
         <li><a href="#git-tags-and-releases">Git tags and releases</a></li>
         <li><a href="#go-modules">Go modules</a></li>
@@ -951,7 +952,34 @@ This data can be modified in the tripdata.json file in the feederv3 directory.</
 <p>To get the VISSR stack running to enable testing using e. g. a client under development,
 or any of the clients found in the <a href="https://github.com/COVESA/vissr/tree/master/client">client directories</a>,
 there is the runstack.sh script that builds and starts the server and the feederv3, with the feeder generating simulated input.</p>
-<h3 id="transport-protocols">Transport protocols</h3>
+<h4 id="mqtt-testing-with-local-broker">MQTT testing with local broker</h4>
+<p>The script runtest.sh sets two environment variables that selects the MQTT broker to use
+and the vehicle VIN (which is used to create the server topic name).</p>
+<pre tabindex="0"><code>export MQTT_BROKER_ADDR=test.mosquitto.org
+export MQTT_VIN=WVWZZZ1KZEW000000
+</code></pre><p>If the MQTT_BROKER_ADDR variable is set to an empty string (e.g. by commenting out the line in the script) then the server will try to address a local broker.</p>
+<p>If the MQTT_VIN variable is set to an empty string (e.g. by comenting out the line in the script) then the server reads the VIN from the Vehicle tree
+(Vehicle.VehicleIdentification.VIN). This attribute must then have been set in the vspec file (default: xxx) to a correctly formatted VIN.</p>
+<p>An example is shown below of how to install and run a local broker which then need to be done before executing the runtest.sh script.</p>
+<pre tabindex="0"><code>brew install mosquitto          # one-time
+mosquitto -c &lt;(printf &#39;listener 1883\nallow_anonymous true\n&#39;) &amp;
+</code></pre><h3 id="manual-mqtt-testing-with-local-broker">Manual MQTT testing with local broker</h3>
+<p>If a local broker is installed and started as described above then manual MQTT testing is also an option as describd below.</p>
+<ol>
+<li>Start the server with MQTT enabled + a test VIN</li>
+</ol>
+<pre tabindex="0"><code>cd server/vissv2server
+go build &amp;&amp; MQTT_VIN=TESTVIN001 ./vissv2server -m
+</code></pre><ol start="2">
+<li>Send a VISS request</li>
+</ol>
+<pre tabindex="0"><code>mosquitto_pub -h 127.0.0.1 -p 1883 -t /TESTVIN001/Vehicle \
+  -m &#39;{&#34;topic&#34;:&#34;myreply&#34;,&#34;request&#34;:{&#34;action&#34;:&#34;get&#34;,&#34;path&#34;:&#34;Vehicle.Speed&#34;,&#34;requestId&#34;:&#34;1&#34;}}&#39;
+</code></pre><ol start="3">
+<li>Subscribe for the response on a second terminal</li>
+</ol>
+<pre tabindex="0"><code>mosquitto_sub -h 127.0.0.1 -p 1883 -t myreply
+</code></pre><h3 id="transport-protocols">Transport protocols</h3>
 <p>The following transport protocols are supported</p>
 <ul>
 <li>HTTP</li>
@@ -1461,19 +1489,19 @@ the remotiveLabs broker in the cloud.<a href="https://github.com/covesa/vissr/tr
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1779970139"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1779970139"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1779970139"></script>
-    <script src="/vissr/js/jquery.sticky.js?1779970139"></script>
-    <script src="/vissr/js/featherlight.min.js?1779970139"></script>
-    <script src="/vissr/js/highlight.pack.js?1779970139"></script>
+    <script src="/vissr/js/clipboard.min.js?1779978975"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1779978975"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1779978975"></script>
+    <script src="/vissr/js/jquery.sticky.js?1779978975"></script>
+    <script src="/vissr/js/featherlight.min.js?1779978975"></script>
+    <script src="/vissr/js/highlight.pack.js?1779978975"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1779970139"></script>
-    <script src="/vissr/js/learn.js?1779970139"></script>
-    <script src="/vissr/js/hugo-learn.js?1779970139"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1779978975"></script>
+    <script src="/vissr/js/learn.js?1779978975"></script>
+    <script src="/vissr/js/hugo-learn.js?1779978975"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1779970139"></script>
+            <script src="/vissr/mermaid/mermaid.js?1779978975"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
