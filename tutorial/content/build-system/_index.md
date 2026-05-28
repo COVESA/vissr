@@ -95,6 +95,46 @@ To get the VISSR stack running to enable testing using e. g. a client under deve
 or any of the clients found in the [client directories](https://github.com/COVESA/vissr/tree/master/client),
 there is the runstack.sh script that builds and starts the server and the feederv3, with the feeder generating simulated input.
 
+#### MQTT testing with local broker
+
+The script runtest.sh sets two environment variables that selects the MQTT broker to use
+and the vehicle VIN (which is used to create the server topic name).
+```
+export MQTT_BROKER_ADDR=test.mosquitto.org
+export MQTT_VIN=WVWZZZ1KZEW000000
+```
+If the MQTT_BROKER_ADDR variable is set to an empty string (e.g. by commenting out the line in the script) then the server will try to address a local broker.
+
+If the MQTT_VIN variable is set to an empty string (e.g. by comenting out the line in the script) then the server reads the VIN from the Vehicle tree
+(Vehicle.VehicleIdentification.VIN). This attribute must then have been set in the vspec file (default: xxx) to a correctly formatted VIN.
+
+An example is shown below of how to install and run a local broker which then need to be done before executing the runtest.sh script.
+```
+brew install mosquitto          # one-time
+mosquitto -c <(printf 'listener 1883\nallow_anonymous true\n') &
+```
+
+### Manual MQTT testing with local broker
+
+If a local broker is installed and started as described above then manual MQTT testing is also an option as describd below.
+
+1. Start the server with MQTT enabled + a test VIN
+```
+cd server/vissv2server
+go build && MQTT_VIN=TESTVIN001 ./vissv2server -m
+```
+
+2. Send a VISS request
+```
+mosquitto_pub -h 127.0.0.1 -p 1883 -t /TESTVIN001/Vehicle \
+  -m '{"topic":"myreply","request":{"action":"get","path":"Vehicle.Speed","requestId":"1"}}'
+```
+
+3. Subscribe for the response on a second terminal
+```
+mosquitto_sub -h 127.0.0.1 -p 1883 -t myreply
+```
+
 ### Transport protocols
 The following transport protocols are supported
 * HTTP
