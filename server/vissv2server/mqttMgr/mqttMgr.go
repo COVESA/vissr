@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/covesa/vissr/utils"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
@@ -201,22 +202,49 @@ func publishMessage(client MQTT.Client, topic, payload string) {
 	}
 }
 
-func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
-	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get",
-	"path":"Vehicle.VehicleIdentification.VIN", "requestId":"570415", "origin":"internal"}`
-	transportMgrChan <- vinRequest
-	response := <-transportMgrChan
-	vin := extractVin(string(response))
-	utils.Info.Printf("VIN=%s", vin)
-	if !isValidVin(vin) {
-		// MQTT topic-name injection guard: a VIN containing '+', '#',
-		// or '/' would let the manager subscribe to wildcard topics
-		// outside this vehicle's scope. Refuse to build a topic from
-		// an invalid VIN.
-		utils.Error.Printf("getVissV2Topic: refusing to build topic from invalid VIN=%q", vin)
+// getVissV2TopicFromEnv checks MQTT_VIN env var and returns the MQTT topic if set.
+func getVissV2TopicFromEnv() string {
+	vin := os.Getenv("MQTT_VIN")
+	if vin == "" {
 		return ""
 	}
+	if !isValidVin(vin) {
+		utils.Error.Printf("getVissV2Topic: MQTT_VIN=%q is not a valid VIN (alphanumeric + - _)", vin)
+		return ""
+	}
+	utils.Info.Printf("getVissV2Topic: using MQTT_VIN env var, topic=/%s/Vehicle", vin)
 	return "/" + vin + "/Vehicle"
+}
+
+func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
+	// Fast path: MQTT_VIN env var bypasses the channel round-trip (useful for
+	// local development where state storage has no VIN populated yet).
+	if topic := getVissV2TopicFromEnv(); topic != "" {
+		return topic
+	}
+
+	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get", "path":"Vehicle.VehicleIdentification.VIN", "requestId":"570415", "origin":"internal"}`
+	transportMgrChan <- vinRequest
+
+	// transportMgrChan is bidirectional (requests go server-ward, responses
+	// come back on the same channel via transportDataSession). We rely on the
+	// channel being unbuffered: if it were buffered our own send would sit in
+	// the buffer and we'd echo-read it before transportDataSession consumes it.
+	// vissv2server.initChannels explicitly keeps transportMgrChannel[2] unbuffered
+	// for exactly this reason.
+	select {
+	case response := <-transportMgrChan:
+		vin := extractVin(string(response))
+		utils.Info.Printf("VIN=%s", vin)
+		if !isValidVin(vin) {
+			utils.Error.Printf("getVissV2Topic: refusing to build topic from invalid VIN=%q (set MQTT_VIN env var to override)", vin)
+			return ""
+		}
+		return "/" + vin + "/Vehicle"
+	case <-time.After(5 * time.Second):
+		utils.Error.Printf("getVissV2Topic: timed out waiting for VIN response after 5s (set MQTT_VIN env var to override)")
+		return ""
+	}
 }
 
 // extractVin parses the VIN out of a server-core get response. The
