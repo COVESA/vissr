@@ -347,8 +347,18 @@ func TestInitChannels_BuffersPipeline(t *testing.T) {
 		t.Errorf("serviceDataChan[0] should be buffered")
 	}
 	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
-		if cap(transportMgrChannel[i]) == 0 {
-			t.Errorf("transportMgrChannel[%d] should be buffered", i)
+		// MQTT (index 2) is intentionally unbuffered: MqttMgrInit performs a
+		// synchronous VIN-fetch handshake in one goroutine. A buffered channel
+		// causes the goroutine to echo-read its own send before
+		// transportDataSession can consume it.
+		if i == 2 {
+			if cap(transportMgrChannel[i]) != 0 {
+				t.Errorf("transportMgrChannel[%d] (MQTT) should be unbuffered", i)
+			}
+		} else {
+			if cap(transportMgrChannel[i]) == 0 {
+				t.Errorf("transportMgrChannel[%d] should be buffered", i)
+			}
 		}
 		if cap(transportDataChan[i]) == 0 {
 			t.Errorf("transportDataChan[%d] should be buffered", i)

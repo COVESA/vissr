@@ -978,6 +978,12 @@ func initChannels() {
 		transportDataChan[i] = make(chan map[string]interface{}, pipelineBuf)
 		backendChan[i] = make(chan map[string]interface{}, pipelineBuf)
 	}
+	// MQTT's channel must stay unbuffered. MqttMgrInit performs a synchronous
+	// VIN-fetch by sending on and receiving from the same channel in one
+	// goroutine. A buffered channel causes an echo: the goroutine reads its own
+	// send before transportDataSession can consume it. Unbuffered forces the
+	// send to block until transportDataSession reads, preserving ordering.
+	transportMgrChannel[2] = make(chan string)
 	atsChannel = make([]chan string, 2)
 	atsChannel[0] = make(chan string) // access token verification (serialized by atsChannelMu)
 	atsChannel[1] = make(chan string) // token cancellation
