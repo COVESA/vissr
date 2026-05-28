@@ -5,6 +5,9 @@ usage() {
 }
 
 startme() {
+	export MQTT_VIN=WVWZZZ1KZEW000000
+	export MQTT_BROKER_ADDR=test.mosquitto.org
+
 	echo "Building server..."
 	cd server/vissv2server
 	go build && mkdir -p logs

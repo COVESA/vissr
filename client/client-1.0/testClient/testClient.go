@@ -410,14 +410,23 @@ func mqttTesterRun(mqttCommandList []string, doneChannel chan bool) {
 	ok := true
 	fmt.Printf("\n********** MQTT testing **************\n")
 	brokerSocket = getBrokerSocket(false)
-	clientTopic = "VISSv3.0/testClient"
+	clientTopic = "VISS/testClient"
 	mqttSubscribe(brokerSocket, clientTopic)
-	serverTopic = "visserr:Data-not-available/Vehicle"  //visserr:Data-not-available is the value used by the serverr MQTT mgr if the tree does not have a default value set
+	serverTopic = getVissV2Topic()
 	for i := 0; i < len(mqttCommandList); i++ {
 		publishVissV2Request(brokerSocket, mqttCommandList[i], clientTopic, serverTopic)
 		time.Sleep(2 * time.Second)
 	}
 	doneChannel <- ok
+}
+
+func getVissV2Topic() string {
+	vin := os.Getenv("MQTT_VIN")
+	if vin == "" {
+		return "/VIN123/Vehicle"
+	}
+	fmt.Printf("getVissV2Topic: using MQTT_VIN env var, topic=/%s/Vehicle", vin)
+	return "/" + vin + "/Vehicle"
 }
 
 func initGrpcSession() *grpc.ClientConn {
