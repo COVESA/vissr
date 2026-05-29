@@ -5,7 +5,7 @@ usage() {
 }
 
 startme() {
-	export MQTT_VIN=WVWZZZ1KZEW000000
+#	export MQTT_VIN=WVWZZZ1KZEW000000
 	export MQTT_BROKER_ADDR=test.mosquitto.org
 
 	echo "Building server..."
@@ -13,7 +13,7 @@ startme() {
 	go build && mkdir -p logs
 	cd ../../
 	echo "Starting server"
-	screen -S vissv2server -dm bash -c "pushd server/vissv2server && ./vissv2server -m &> ./logs/vissv2server-log.txt && popd"
+	screen -S vissv2server -dm bash -c "pushd server/vissv2server && ./vissv2server -m -d &> ./logs/vissv2server-log.txt && popd"
 
 	echo "Building feederv4..."
 	cd feeder/feeder-template/feederv4

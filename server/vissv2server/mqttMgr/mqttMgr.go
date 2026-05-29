@@ -316,8 +316,8 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 	vissv2Channel := make(chan string)
 
 	brokerSocket := getBrokerSocket(false)
-	// wait for 1 second to allow the server to start
-	time.Sleep(1 * time.Second)
+	// wait for 2 seconds to allow the server and feeder to start
+	time.Sleep(2 * time.Second)
 	topic := getVissV2Topic(transportMgrChan, mgrId)
 	if topic == "" {
 		// Refused by isValidVin in getVissV2Topic — don't even try.
