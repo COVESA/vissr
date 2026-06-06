@@ -503,7 +503,11 @@ func TestTimeoutWatchdog_FiresOnExpiry(t *testing.T) {
 	sessions["tw-s1"] = &monitorSession{sessionId: "tw-s1", serviceId: "tw-1",
 		routerIndex: 0, filterKind: "all"}
 
-	inv.cancelFn = startTimeoutWatchdog(inv, bcs)
+	// Store cancelFn under mu: UpdateServiceState reads inv.cancelFn under mu.
+	cancelFn := startTimeoutWatchdog(inv, bcs)
+	mu.Lock()
+	inv.cancelFn = cancelFn
+	mu.Unlock()
 
 	select {
 	case event := <-ch:
