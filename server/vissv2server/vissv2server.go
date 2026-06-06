@@ -33,6 +33,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
+	"github.com/covesa/vissr/server/vissv2server/vdmloader"
 	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
@@ -1071,6 +1072,7 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
+	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (v4.0alpha; mutually exclusive with --him loading)", Default: ""})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1081,9 +1083,18 @@ func main() {
 
 	utils.InitLog("servercore-log.txt", "./logs", *logFile, *logLevel)
 
-	if !utils.InitForest("viss.him") {
-		utils.Error.Printf("Failed to initialize viss.him")
-		return
+	if *vdmDir != "" {
+		n, err := vdmloader.LoadDir(*vdmDir)
+		if err != nil {
+			utils.Error.Printf("Failed to load VDM from %s: %v", *vdmDir, err)
+			return
+		}
+		utils.Info.Printf("VDM loader: registered %d tree(s) from %s", n, *vdmDir)
+	} else {
+		if !utils.InitForest("viss.him") {
+			utils.Error.Printf("Failed to initialize viss.him")
+			return
+		}
 	}
 
 	if *dPop {

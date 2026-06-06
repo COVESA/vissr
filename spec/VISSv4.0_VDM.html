@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISSv4.0 – VDM Integration Specification</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.6; color: #222; }
+  h1 { border-bottom: 3px solid #004080; padding-bottom: .5rem; }
+  h2 { border-bottom: 1px solid #ccc; margin-top: 2rem; }
+  h3 { margin-top: 1.5rem; }
+  code, pre { background: #f4f4f4; font-family: "Courier New", monospace; }
+  pre { padding: 1rem; overflow-x: auto; border-left: 4px solid #004080; }
+  code { padding: 0 .25rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: .5rem .75rem; text-align: left; }
+  th { background: #e8f0fe; }
+  .note { background: #fffbe6; border-left: 4px solid #f0c040; padding: .75rem 1rem; margin: 1rem 0; }
+  .normative { font-style: italic; color: #004080; }
+  nav { background: #f0f0f0; padding: 1rem; margin-bottom: 2rem; border-radius: 4px; }
+  nav ul { margin: 0; padding-left: 1.5rem; }
+  nav li { margin: .25rem 0; }
+  a { color: #004080; }
+</style>
+</head>
+<body>
+
+<h1>VISSv4.0 — VDM Integration Specification</h1>
+
+<p><strong>Status:</strong> Alpha draft &nbsp;|&nbsp;
+   <strong>Date:</strong> 2026-06-06 &nbsp;|&nbsp;
+   <strong>Authors:</strong> COVESA vissr contributors</p>
+
+<p>This document specifies how the COVESA <strong>VDM</strong> (Vehicle Data Model)
+   GraphQL SDL format is loaded and used inside the
+   <strong>vissr</strong> (VISS v2 Reference Server) as of version 4.0.</p>
+
+<nav>
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#overview">§1 Overview</a></li>
+    <li><a href="#vdm-background">§2 VDM Background</a></li>
+    <li><a href="#directives">§3 Supported SDL Directives</a></li>
+    <li><a href="#node-mapping">§4 Node Type Mapping</a></li>
+    <li><a href="#datatype-mapping">§5 Datatype Mapping</a></li>
+    <li><a href="#tree-reconstruction">§6 Tree Reconstruction Algorithm</a></li>
+    <li><a href="#instance-tags">§7 Instance Tags (multi-instance)</a></li>
+    <li><a href="#viss-service-extension">§8 @viss_service Extension</a></li>
+    <li><a href="#server-integration">§9 Server Integration (--vdm flag)</a></li>
+    <li><a href="#him-interop">§10 HIM / VDM Interoperability</a></li>
+    <li><a href="#ci-validation">§11 CI Validation with s2dm</a></li>
+    <li><a href="#conformance">§12 Conformance</a></li>
+    <li><a href="#appendix-a">Appendix A — SDL Directives Preamble</a></li>
+    <li><a href="#appendix-b">Appendix B — Example VDM File</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="overview">§1 Overview</h2>
+
+<p>VISSv4.0 extends vissr with native support for the
+   <a href="https://github.com/COVESA/vdm">COVESA VDM</a> signal-model format.
+   Where earlier releases required a compiled VSS binary tree (loaded via the
+   <code>viss.him</code> forest manifest), v4.0 allows operators to supply a
+   directory of raw <code>.graphql</code> SDL files instead.
+   The server parses them at startup, builds the equivalent
+   <code>utils.Node_t</code> signal trees in memory, and registers them in the
+   HIM forest — with no binary pre-compilation step required.</p>
+
+<p>Key additions:</p>
+<ul>
+  <li><strong><code>vdmloader</code> package</strong> — pure-Go SDL parser
+      (uses <code>github.com/vektah/gqlparser/v2</code>).</li>
+  <li><strong><code>--vdm &lt;dir&gt;</code> server flag</strong> — alternative
+      to <code>--him</code>; loads every <code>*.graphql</code> file in
+      <em>dir</em>.</li>
+  <li><strong><code>@viss_service</code> directive</strong> — marks a VDM field
+      as a service procedure entry point, enabling VISSv3.2 invoke/monitor
+      semantics on VDM-defined signals.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="vdm-background">§2 VDM Background</h2>
+
+<p>The <strong>Vehicle Data Model (VDM)</strong> is a COVESA initiative that
+   expresses the VSS signal catalog in <strong>GraphQL Schema Definition Language
+   (SDL)</strong> rather than YAML.  The SDL is authored using the
+   <strong>s2dm</strong> (Simplified Semantic Data Modeling) methodology and
+   toolchain, which validates structural and semantic constraints beyond what
+   the GraphQL type system alone enforces.</p>
+
+<p>A VDM SDL file contains:</p>
+<ul>
+  <li><strong>Object types</strong> annotated with
+      <code>@vspec(element: BRANCH, fqn: "Dot.Path")</code> — tree branch
+      nodes.</li>
+  <li><strong>Field definitions</strong> annotated with
+      <code>@vspec(element: SENSOR|ACTUATOR|ATTRIBUTE, fqn: "Dot.Leaf.Path")</code>
+      — signal leaf nodes.</li>
+  <li>Custom scalars (<code>Int8</code>, <code>UInt8</code>, etc.) that map to
+      VSS datatypes.</li>
+  <li>Optional <code>@range(min, max)</code> for numeric bounds.</li>
+</ul>
+
+<p>VDM has no notion of mutations or procedures — it is a pure signal/data
+   model. The <code>@viss_service</code> directive described in §8 is a vissr
+   extension that does not yet exist in upstream VDM.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="directives">§3 Supported SDL Directives</h2>
+
+<h3>3.1 @vspec</h3>
+<pre><code>directive @vspec(
+  element: VspecElement!   # node kind — see §4
+  fqn:     String!         # fully-qualified dot-separated signal path
+  description: String      # human-readable description
+  comment:     String      # implementation note (ignored at runtime)
+  deprecation: String      # deprecation notice (ignored at runtime)
+) on OBJECT | FIELD_DEFINITION</code></pre>
+
+<h3>3.2 @range</h3>
+<pre><code>directive @range(min: Float, max: Float) on FIELD_DEFINITION</code></pre>
+<p>Populates <code>Node_t.Min</code> and <code>Node_t.Max</code> as decimal
+   strings.</p>
+
+<h3>3.3 @viss_service (v4.0 extension)</h3>
+<pre><code>directive @viss_service on FIELD_DEFINITION</code></pre>
+<p>When present on a field definition, the loader creates a
+   <code>PROCEDURE</code> node instead of the element type declared in
+   <code>@vspec</code>.  This enables VISSv3.2 service semantics (invoke,
+   monitor, cancel, discover) on the field.  See §8 for details.</p>
+
+<h3>3.4 VspecElement enum</h3>
+<table>
+  <tr><th>Value</th><th>Meaning</th></tr>
+  <tr><td>BRANCH</td><td>Intermediate tree node with children</td></tr>
+  <tr><td>SENSOR</td><td>Read-only signal leaf</td></tr>
+  <tr><td>ACTUATOR</td><td>Writable signal leaf</td></tr>
+  <tr><td>ATTRIBUTE</td><td>Static configuration leaf</td></tr>
+  <tr><td>STRUCT</td><td>Composite structure (future use)</td></tr>
+  <tr><td>PROPERTY</td><td>Property within a struct (future use)</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="node-mapping">§4 Node Type Mapping</h2>
+
+<p>The loader maps VDM elements to <code>utils.Node_t.NodeType</code> as
+   follows:</p>
+
+<table>
+  <tr><th>VDM element / condition</th><th>utils constant</th></tr>
+  <tr><td>BRANCH (on OBJECT or FIELD_DEFINITION)</td><td><code>utils.BRANCH</code></td></tr>
+  <tr><td>SENSOR</td><td><code>utils.SENSOR</code></td></tr>
+  <tr><td>ACTUATOR</td><td><code>utils.ACTUATOR</code></td></tr>
+  <tr><td>ATTRIBUTE</td><td><code>utils.ATTRIBUTE</code></td></tr>
+  <tr><td>Any field annotated with <code>@viss_service</code></td><td><code>utils.PROCEDURE</code></td></tr>
+</table>
+
+<p class="note"><strong>Note:</strong> The <code>@viss_service</code> override
+   takes precedence over the <code>@vspec(element: …)</code> value on the same
+   field.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="datatype-mapping">§5 Datatype Mapping</h2>
+
+<table>
+  <tr><th>GraphQL type</th><th>VSS / Node_t datatype string</th></tr>
+  <tr><td>Int8</td><td>int8</td></tr>
+  <tr><td>UInt8</td><td>uint8</td></tr>
+  <tr><td>Int16</td><td>int16</td></tr>
+  <tr><td>UInt16</td><td>uint16</td></tr>
+  <tr><td>Int</td><td>int32</td></tr>
+  <tr><td>UInt32</td><td>uint32</td></tr>
+  <tr><td>Int64</td><td>int64</td></tr>
+  <tr><td>UInt64</td><td>uint64</td></tr>
+  <tr><td>Float</td><td>float</td></tr>
+  <tr><td>Boolean</td><td>bool</td></tr>
+  <tr><td>String</td><td>string</td></tr>
+  <tr><td>Any other type name</td><td>lower-cased type name</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="tree-reconstruction">§6 Tree Reconstruction Algorithm</h2>
+
+<p>The <code>@vspec(fqn: …)</code> attribute is the authoritative source of
+   tree structure.  The GraphQL type hierarchy is
+   <em>not</em> used for parent-child relationships; only the FQN strings are.</p>
+
+<ol>
+  <li>Parse the combined preamble + SDL with
+      <code>gqlparser.LoadSchema</code>.</li>
+  <li>Walk every type and field definition.  For each
+      <code>@vspec</code>-annotated node, record <code>fqn → Node_t</code>
+      in a flat map.</li>
+  <li>Sort all FQN strings lexicographically so parents always appear before
+      children.</li>
+  <li>For each non-root FQN, compute the parent FQN by stripping the last
+      dot-segment.  If the parent is missing from the map, synthesise an
+      intermediate <code>BRANCH</code> node and insert it.</li>
+  <li>Call <code>appendChild(parent, child)</code> to link the node and
+      maintain the <code>Children</code> counter.</li>
+  <li>Collect all root nodes (FQN contains no <code>.</code>) and return
+      them.</li>
+</ol>
+
+<p class="normative">Implementations MUST preserve the invariant
+   <code>node.Children == uint8(len(node.Child))</code> after every
+   <code>appendChild</code> call.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="instance-tags">§7 Instance Tags (multi-instance)</h2>
+
+<p>VDM represents multi-instance nodes (e.g., seat rows × sides) using
+   <em>instance-tag</em> types and dimension enums.  For example:</p>
+
+<pre><code>enum RowDimension { ROW1 ROW2 }
+enum SideDimension { DRIVER_SIDE PASSENGER_SIDE }
+
+type VehicleCabinSeat_InstanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  Backrest: Float @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Seat.Backrest.Recline")
+}</code></pre>
+
+<p><strong>v4.0alpha status:</strong> Instance tag expansion (flattening
+   <code>ROW1.DRIVER_SIDE</code> etc. into indexed subtrees) is
+   <strong>not yet implemented</strong>.  The loader treats instance-tagged
+   types as ordinary branch nodes and generates a single subtree without
+   expanding instances.  Full instance expansion is planned for v4.1.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="viss-service-extension">§8 @viss_service Extension</h2>
+
+<p>VDM itself has no concept of procedures or mutations.  The
+   <code>@viss_service</code> directive is a vissr-specific extension that
+   service developers add to their VDM field definitions to expose them as
+   callable service procedures over VISSv3.2 invoke/monitor channels.</p>
+
+<h3>8.1 Declaring a service procedure</h3>
+<pre><code>type VehicleSeating @vspec(element: BRANCH, fqn: "VehicleSeating", description: "Seating service") {
+  MoveSeat: Boolean
+    @vspec(element: SENSOR, fqn: "VehicleSeating.MoveSeat", description: "Adjust a seat position")
+    @viss_service
+}</code></pre>
+
+<p>The loader will create a <code>PROCEDURE</code> node at
+   <code>VehicleSeating.MoveSeat</code>.  The vissr service manager
+   (<code>vissServiceMgr</code>) treats <code>PROCEDURE</code> nodes exactly as
+   it does procedure nodes loaded from a <code>.Service</code> HIM tree.</p>
+
+<h3>8.2 Interaction with VISSv3.2 service protocol</h3>
+<p>Once the VDM tree is registered, clients can interact with
+   <code>@viss_service</code> fields using the standard VISSv3.2 actions:
+   <code>invoke</code>, <code>monitor</code>, <code>cancel</code>, and
+   <code>discover</code>.</p>
+
+<p class="note"><strong>Note:</strong> The <code>@viss_service</code>
+   directive is not part of the upstream VDM or s2dm specification.  It is
+   intended as a vissr-specific overlay that service authors add to their own
+   VDM extension files without modifying the base VDM schema.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="server-integration">§9 Server Integration (--vdm flag)</h2>
+
+<h3>9.1 Command-line flag</h3>
+<pre><code>vissv2server --vdm &lt;dir&gt;</code></pre>
+
+<p>When <code>--vdm</code> is supplied, the server skips
+   <code>viss.him</code> loading and instead calls
+   <code>vdmloader.LoadDir(dir)</code> at startup.  All
+   <code>*.graphql</code> files in <em>dir</em> are parsed in lexicographic
+   order.  Each distinct root FQN (e.g., <code>Vehicle</code>) becomes a
+   separate tree registered in the HIM forest via
+   <code>utils.RegisterServiceTree</code>.</p>
+
+<h3>9.2 Mutual exclusivity</h3>
+<p><code>--vdm</code> and the default <code>viss.him</code> loading are
+   mutually exclusive.  If both a VDM directory and a
+   <code>viss.him</code> file are relevant, run the server with <code>--vdm</code>
+   (the <code>viss.him</code> path will not be read).</p>
+
+<h3>9.3 Multiple SDL files</h3>
+<p>All <code>*.graphql</code> files in the directory are loaded.  If two files
+   define a root with the same FQN (e.g., both export a
+   <code>Vehicle</code> root), the second registration is silently skipped and
+   a warning is logged.  Only the first file's tree is used.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="him-interop">§10 HIM / VDM Interoperability</h2>
+
+<p>v4.0 VDM trees and v3.x HIM trees use the same internal
+   <code>utils.Node_t</code> representation.  A server instance can only load
+   one or the other at startup, but the VISS protocol layer cannot distinguish
+   between the two at runtime — signal paths, subscriptions, and discovery
+   work identically regardless of how the tree was loaded.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="ci-validation">§11 CI Validation with s2dm</h2>
+
+<p>The <strong>s2dm</strong> Python toolchain validates that VDM SDL files are
+   structurally and semantically correct (naming conventions, forbidden
+   patterns, required directive presence, etc.).  vissr does not depend on
+   s2dm at runtime; s2dm is a CI gate only.</p>
+
+<p>To add s2dm validation to a vissr CI pipeline:</p>
+
+<pre><code># In .github/workflows/test.yml, before Go tests:
+- name: Validate VDM SDL (s2dm)
+  run: |
+    pip install uv
+    uv run poe validate --input path/to/vdm-files/</code></pre>
+
+<p>s2dm validates that every type has a valid <code>@vspec</code> annotation,
+   that FQN strings are well-formed, and that COVESA naming conventions are
+   respected.  The loader's own tests cover parse correctness; s2dm covers
+   semantic compliance with the VDM authoring rules.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="conformance">§12 Conformance</h2>
+
+<p>A conforming v4.0 VDM loader implementation MUST:</p>
+<ol>
+  <li>Accept the preamble in Appendix A as valid SDL without error.</li>
+  <li>Reconstruct the tree hierarchy from <code>@vspec(fqn: …)</code> values,
+      not from the GraphQL type graph.</li>
+  <li>Map all GraphQL types listed in §5 to the correct VSS datatype
+      string.</li>
+  <li>Populate <code>Node_t.Min</code> and <code>Node_t.Max</code> from
+      <code>@range</code> as decimal strings without trailing zeros.</li>
+  <li>Override <code>NodeType</code> to <code>PROCEDURE</code> for any field
+      bearing <code>@viss_service</code>.</li>
+  <li>Synthesise intermediate <code>BRANCH</code> nodes for any FQN parent not
+      explicitly declared in the SDL.</li>
+  <li>Maintain <code>Node_t.Children == uint8(len(Node_t.Child))</code> at all
+      times.</li>
+  <li>Reject SDL that contains no <code>@vspec</code>-annotated type (return an
+      error).</li>
+  <li>Reject SDL that contains no root-level <code>BRANCH</code> type
+      (return an error).</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="appendix-a">Appendix A — SDL Directives Preamble</h2>
+
+<p>The following preamble is automatically prepended to every SDL string
+   by the loader.  Authors do not need to repeat it in their files.</p>
+
+<pre><code>directive @vspec(
+  element: VspecElement!
+  fqn: String!
+  description: String
+  comment: String
+  deprecation: String
+) on OBJECT | FIELD_DEFINITION
+
+directive @range(min: Float, max: Float) on FIELD_DEFINITION
+
+directive @viss_service on FIELD_DEFINITION
+
+enum VspecElement {
+  BRANCH
+  SENSOR
+  ACTUATOR
+  ATTRIBUTE
+  STRUCT
+  PROPERTY
+}
+
+scalar Int8
+scalar UInt8
+scalar Int16
+scalar UInt16
+scalar UInt32
+scalar Int64
+scalar UInt64</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="appendix-b">Appendix B — Example VDM File</h2>
+
+<p>The following <code>vehicle.graphql</code> file demonstrates a minimal but
+   representative VDM signal model that the v4.0 loader can consume directly.</p>
+
+<pre><code># vehicle.graphql — minimal VDM SDL example for vissr v4.0
+
+type Vehicle @vspec(element: BRANCH, fqn: "Vehicle", description: "Top-level vehicle object") {
+  Speed: Float         @vspec(element: SENSOR,    fqn: "Vehicle.Speed",    description: "Current speed in km/h") @range(min: 0, max: 250)
+  ADAS:  VehicleADAS   @vspec(element: BRANCH,    fqn: "Vehicle.ADAS")
+  Cabin: VehicleCabin  @vspec(element: BRANCH,    fqn: "Vehicle.Cabin")
+}
+
+type VehicleADAS @vspec(element: BRANCH, fqn: "Vehicle.ADAS", description: "Advanced driver-assistance systems") {
+  ActiveAutonomyLevel: String  @vspec(element: ATTRIBUTE, fqn: "Vehicle.ADAS.ActiveAutonomyLevel", description: "Current autonomy level")
+  ABS: VehicleADASABS          @vspec(element: BRANCH,    fqn: "Vehicle.ADAS.ABS")
+}
+
+type VehicleADASABS @vspec(element: BRANCH, fqn: "Vehicle.ADAS.ABS", description: "Antilock braking system") {
+  IsEnabled: Boolean @vspec(element: ACTUATOR, fqn: "Vehicle.ADAS.ABS.IsEnabled", description: "Enable or disable ABS")
+  IsActive:  Boolean @vspec(element: SENSOR,   fqn: "Vehicle.ADAS.ABS.IsActive",  description: "ABS is currently active")
+}
+
+type VehicleCabin @vspec(element: BRANCH, fqn: "Vehicle.Cabin", description: "Vehicle cabin") {
+  Temperature: Float @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Temperature", description: "Cabin temperature in °C") @range(min: -40, max: 100)
+}</code></pre>
+
+<p>Start the server with:</p>
+<pre><code>vissv2server --vdm /path/to/vdm-files/</code></pre>
+
+<p>Then query a signal in the loaded tree:</p>
+<pre><code>{"action":"get","path":"Vehicle.Speed","requestId":"req-1"}</code></pre>
+
+<hr>
+<p style="font-size:.9em;color:#666;">
+VISSv4.0 VDM Integration Specification · COVESA vissr project ·
+<a href="https://github.com/covesa/vissr">github.com/covesa/vissr</a>
+</p>
+
+</body>
+</html>

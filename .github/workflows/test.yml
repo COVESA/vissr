@@ -48,6 +48,22 @@ jobs:
             echo "vissServiceSDK not present on this branch, skipping"
           fi
 
+      - name: vet - vdmloader
+        run: |
+          if [ -d server/vissv2server/vdmloader ]; then
+            go vet ./server/vissv2server/vdmloader/...
+          else
+            echo "vdmloader not present on this branch, skipping"
+          fi
+
+      - name: test - vdmloader
+        run: |
+          if [ -d server/vissv2server/vdmloader ]; then
+            go test -race -count=1 ./server/vissv2server/vdmloader/...
+          else
+            echo "vdmloader not present on this branch, skipping"
+          fi
+
       - name: build all packages
         run: go build ./...
 

@@ -315,6 +315,20 @@ func NewPropertyNode(name, datatype, description string) *Node_t {
 	return &Node_t{Name: name, NodeType: PROPERTY, Datatype: datatype, Description: description}
 }
 
+// NewSignalNode creates a signal Node_t (sensor, actuator, or attribute).
+// nodeType must be one of the SENSOR, ACTUATOR, ATTRIBUTE constants.
+func NewSignalNode(name, nodeType, datatype, description, min, max, unit string) *Node_t {
+	return &Node_t{
+		Name:        name,
+		NodeType:    nodeType,
+		Datatype:    datatype,
+		Description: description,
+		Min:         min,
+		Max:         max,
+		Unit:        unit,
+	}
+}
+
 func CreatePathListFile(pListPath string) {
 	j := 1
 	for i:=0; i < len(himForest); i++ {
