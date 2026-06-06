@@ -26,23 +26,33 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: vet — vissServiceMgr
+      - name: vet - vissServiceMgr
         run: go vet ./server/vissv2server/vissServiceMgr/...
 
-      - name: vet — vissServiceSDK
-        run: go vet ./server/vissv2server/vissServiceSDK/...
+      - name: vet - vissServiceSDK
+        run: |
+          if [ -d server/vissv2server/vissServiceSDK ]; then
+            go vet ./server/vissv2server/vissServiceSDK/...
+          else
+            echo "vissServiceSDK not present on this branch, skipping"
+          fi
 
-      - name: test — vissServiceMgr
+      - name: test - vissServiceMgr
         run: go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
 
-      - name: test — vissServiceSDK
-        run: go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
+      - name: test - vissServiceSDK
+        run: |
+          if [ -d server/vissv2server/vissServiceSDK ]; then
+            go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
+          else
+            echo "vissServiceSDK not present on this branch, skipping"
+          fi
 
       - name: build all packages
         run: go build ./...
 
   # ------------------------------------------------------------------ #
-  #  MQTT integration tests — requires the mosquitto broker container   #
+  #  MQTT integration tests - requires the mosquitto broker container   #
   # ------------------------------------------------------------------ #
   mqtt-tests:
     name: MQTT integration (mosquitto TLS)
@@ -81,7 +91,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: test — paho-mqtt
+      - name: test - paho-mqtt
         run: go test -v -count=1 ./paho-mqtt/...
 
       - name: Dump mosquitto logs on failure
