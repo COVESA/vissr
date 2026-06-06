@@ -403,18 +403,48 @@ orchestration health checks without a separate metrics endpoint.
 
 ## Running the example
 
-A complete example service process is in
-`server/vissv2server/vissServiceMgr/example/`. To run it:
+A complete example service process (`seatService.go`) is in
+`server/vissv2server/vissServiceMgr/example/`. It registers the procedure
+`VehicleService.Seating.MoveSeat` and simulates seat movement with periodic
+position updates. To run it:
 
 ```bash
 # Terminal 1: start the VISS server
 cd server/vissv2server && go run . --him viss.him
 
 # Terminal 2: start the service process
-cd server/vissv2server/vissServiceMgr/example && go run .
+go run ./server/vissv2server/vissServiceMgr/example/seatService.go
 
 # Terminal 3: invoke the service
 wscat -c ws://localhost:8080 <<'MSG'
-{"action":"invoke","path":"My.Service.Proc","input":{},"filter":{"variant":"all"},"requestId":"r1"}
+{"action":"invoke","path":"VehicleService.Seating.MoveSeat","input":{"SeatId":"1","Position":"40"},"filter":{"variant":"all"},"requestId":"r1"}
 MSG
 ```
+
+---
+
+## Running the test suite
+
+Unit tests (with race detector) for the service packages:
+
+```bash
+go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
+go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
+```
+
+MQTT integration tests require the mosquitto broker container running locally.
+Use `docker-compose.test.yml` at the repo root:
+
+```bash
+# Start broker (first-time: trust the CA cert — see docker-compose.test.yml header)
+docker compose -f docker-compose.test.yml up -d
+
+# Run MQTT tests
+go test -v -count=1 ./paho-mqtt/...
+
+# Tear down
+docker compose -f docker-compose.test.yml down
+```
+
+CI runs all of the above automatically on every push/PR via
+`.github/workflows/test.yml`.
