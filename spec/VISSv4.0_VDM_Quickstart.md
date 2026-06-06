@@ -190,6 +190,57 @@ with COVESA VDM authoring rules.
 
 ---
 
+## Inspecting your signal tree with vdminfo
+
+Before starting the server, verify what the loader will produce:
+
+```bash
+go run ./tools/vdminfo ./my-vdm/
+```
+
+Example output:
+```
+=== Vehicle  (domain: Vehicle, version: 1.0) ===
+Vehicle  [branch, 6 children]
+  Speed  (sensor, float, km/h, 0..250)
+  CurrentGear  (sensor, vehiclegearposition, default=Park, allowed=[Park|Reverse|Neutral|Drive])
+  Cabin  [branch, 1 children]
+    Seat  [branch, 2 children]
+      Row1  [branch, 2 children]
+        DriverSide  [branch, 3 children]
+          IsOccupied  (sensor, bool)
+          Position  (actuator, uint8, 0..100)
+        PassengerSide  [branch, 3 children]
+          ...
+```
+
+Use it in CI to diff tree output between VDM versions:
+```bash
+go run ./tools/vdminfo ./my-vdm/ > tree-new.txt
+diff tree-baseline.txt tree-new.txt
+```
+
+---
+
+## Web dashboard
+
+Start the server with `--web-addr` to open the embedded signal-tree dashboard:
+
+```bash
+vissv2server --vdm ./my-vdm/ --web-addr :8090
+```
+
+Then open **http://localhost:8090** in a browser. The dashboard shows:
+
+- A collapsible signal tree on the left (searchable)
+- Node details on the right: path, type, datatype, unit, range, default, allowed values
+- Switch between loaded trees via the dropdown at the top
+
+The dashboard reads from `/api/forest` and `/api/tree/{rootName}` — you can
+also query these endpoints directly with `curl` for scripting.
+
+---
+
 ## Running the test suite
 
 Unit tests for the VDM loader:
@@ -215,6 +266,56 @@ docker compose -f docker-compose.test.yml down
 
 CI runs all of the above automatically on every push/PR via
 `.github/workflows/test.yml`.
+
+---
+
+## Units, default values, and allowed values
+
+### Units
+
+Add `@unit(value: "…")` to any signal field. Pass a standard string or a
+SCREAMING_SNAKE_CASE name — the loader normalises both:
+
+```graphql
+Speed: Float @vspec(element: SENSOR, fqn: "Vehicle.Speed") @unit(value: "km/h")
+Temp:  Float @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Temperature") @unit(value: "DEGREES_CELSIUS")
+# → Node_t.Unit = "celsius"
+```
+
+Common normalised names: `km/h`, `m/s`, `mph`, `celsius`, `degrees`, `radians`,
+`percent`, `m`, `km`, `kW`, `kWh`, `V`, `A`, `Nm`, `rpm`, `s`, `ms`, `Hz`.
+
+### Default values
+
+```graphql
+IsEnabled: Boolean @vspec(element: ACTUATOR, fqn: "…") @defaultValue(value: "false")
+CurrentGear: GearEnum @vspec(element: SENSOR, fqn: "…") @defaultValue(value: "Park")
+```
+
+The value is stored as a string in `Node_t.DefaultValue` and used by the server
+to seed the state-storage backend at startup.
+
+### Allowed values (enum signals)
+
+Type a signal field as a GraphQL enum and the loader automatically populates
+`Node_t.AllowedDef`:
+
+```graphql
+enum GearPosition {
+  PARK    @vspec(originalName: "Park")
+  REVERSE @vspec(originalName: "Reverse")
+  NEUTRAL @vspec(originalName: "Neutral")
+  DRIVE   @vspec(originalName: "Drive")
+}
+
+type Vehicle … {
+  CurrentGear: GearPosition
+    @vspec(element: SENSOR, fqn: "Vehicle.CurrentGear")
+    @defaultValue(value: "Park")
+}
+```
+
+The server will reject `set` requests with values outside the allowed list.
 
 ---
 

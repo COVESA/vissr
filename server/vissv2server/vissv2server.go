@@ -34,6 +34,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/vdmloader"
+	"github.com/covesa/vissr/server/vissv2server/webdash"
 	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
@@ -1072,7 +1073,8 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
-	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (v4.0alpha; mutually exclusive with --him loading)", Default: ""})
+	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (mutually exclusive with viss.him)", Default: ""})
+	webAddr := parser.String("", "web-addr", &argparse.Options{Required: false, Help: "address for optional VDM web dashboard (e.g. :8090); disabled when empty", Default: ""})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1094,6 +1096,12 @@ func main() {
 		if !utils.InitForest("viss.him") {
 			utils.Error.Printf("Failed to initialize viss.him")
 			return
+		}
+	}
+
+	if *webAddr != "" {
+		if err := webdash.Start(*webAddr); err != nil {
+			utils.Error.Printf("webdash: failed to start on %s: %v", *webAddr, err)
 		}
 	}
 

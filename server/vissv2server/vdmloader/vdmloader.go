@@ -42,12 +42,13 @@ directive @vspec(
   comment: String
   deprecation: String
   originalName: String
+  unit: String
 ) on OBJECT | FIELD_DEFINITION | ENUM_VALUE
 
 directive @range(min: Float, max: Float) on FIELD_DEFINITION
-
+directive @unit(value: String!) on FIELD_DEFINITION
+directive @defaultValue(value: String!) on FIELD_DEFINITION
 directive @instanceTag on OBJECT
-
 directive @viss_service on FIELD_DEFINITION
 
 enum VspecElement {
@@ -169,8 +170,16 @@ func ParseSDL(sdl string) ([]*utils.Node_t, []TreeMeta, error) {
 				minVal, maxVal := rangeArgs(f.Directives)
 				dt := mapDatatype(f.Type.Name())
 				desc := descriptionArg(f.Directives)
+				unit := unitFromDirectives(f.Directives)
+				defVal := defaultValueArg(f.Directives)
 				nodeType := mapElement(fieldElem)
-				fqnMap[fieldFQN] = utils.NewSignalNode(name, nodeType, dt, desc, minVal, maxVal, "")
+				n := utils.NewSignalNode(name, nodeType, dt, desc, minVal, maxVal, unit)
+				n.DefaultValue = defVal
+				if av := allowedValues(schema, f.Type.Name()); len(av) > 0 {
+					n.AllowedDef = av
+					n.Allowed = uint8(len(av))
+				}
+				fqnMap[fieldFQN] = n
 			case "BRANCH":
 				if _, ok := fqnMap[fieldFQN]; !ok {
 					fqnMap[fieldFQN] = utils.NewBranchNode(name)
@@ -431,6 +440,105 @@ func addClonedToMap(fqnMap map[string]*utils.Node_t, node *utils.Node_t, rootFQN
 	for _, child := range node.Child {
 		addClonedToMap(fqnMap, child, rootFQN+"."+child.Name)
 	}
+}
+
+// ── Unit / default / allowed helpers ────────────────────────────────────────
+
+// unitFromDirectives extracts the unit string from @unit(value:) or
+// @vspec(unit:), normalising SCREAMING_SNAKE_CASE to standard unit strings.
+func unitFromDirectives(dirs ast.DirectiveList) string {
+	for _, d := range dirs {
+		if d.Name == "unit" {
+			for _, arg := range d.Arguments {
+				if arg.Name == "value" {
+					return normalizeUnit(strings.Trim(arg.Value.String(), `"`))
+				}
+			}
+		}
+	}
+	for _, d := range dirs {
+		if d.Name == "vspec" {
+			for _, arg := range d.Arguments {
+				if arg.Name == "unit" {
+					return normalizeUnit(strings.Trim(arg.Value.String(), `"`))
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeUnit converts well-known SCREAMING_SNAKE_CASE unit enum names to
+// standard unit strings. Values that don't match pass through unchanged so
+// authors can supply arbitrary strings directly (e.g. "km/h").
+func normalizeUnit(s string) string {
+	known := map[string]string{
+		"KM_PER_HOUR":             "km/h",
+		"M_PER_S":                 "m/s",
+		"MPH":                     "mph",
+		"DEGREES_CELSIUS":         "celsius",
+		"CELSIUS":                 "celsius",
+		"DEGREES":                 "degrees",
+		"RADIANS":                 "radians",
+		"PERCENT":                 "percent",
+		"PASCAL":                  "Pa",
+		"KILOGRAM":                "kg",
+		"GRAM":                    "g",
+		"METER":                   "m",
+		"KILOMETER":               "km",
+		"LITER":                   "l",
+		"WATT":                    "W",
+		"KILOWATT":                "kW",
+		"KILOWATT_HOUR":           "kWh",
+		"VOLT":                    "V",
+		"AMPERE":                  "A",
+		"NEWTON_METER":            "Nm",
+		"REVOLUTION_PER_MINUTE":   "rpm",
+		"SECOND":                  "s",
+		"MILLISECOND":             "ms",
+		"MINUTE":                  "min",
+		"HOUR":                    "h",
+		"HERTZ":                   "Hz",
+		"BAR":                     "bar",
+		"MILLIMETER":              "mm",
+	}
+	if v, ok := known[s]; ok {
+		return v
+	}
+	return s
+}
+
+// defaultValueArg extracts the value string from @defaultValue(value:).
+func defaultValueArg(dirs ast.DirectiveList) string {
+	for _, d := range dirs {
+		if d.Name != "defaultValue" {
+			continue
+		}
+		for _, arg := range d.Arguments {
+			if arg.Name == "value" {
+				return strings.Trim(arg.Value.String(), `"`)
+			}
+		}
+	}
+	return ""
+}
+
+// allowedValues returns the set of allowed string values for a signal typed
+// as a user-defined GraphQL enum. Returns nil for scalars, built-in types,
+// and any internal VDM enums (VspecElement, *_InstanceTag_Dimension*).
+func allowedValues(schema *ast.Schema, typeName string) []string {
+	t := schema.Types[typeName]
+	if t == nil || t.Kind != ast.Enum || t.BuiltIn {
+		return nil
+	}
+	if typeName == "VspecElement" || strings.Contains(typeName, "_InstanceTag_Dimension") {
+		return nil
+	}
+	vals := make([]string, 0, len(t.EnumValues))
+	for _, ev := range t.EnumValues {
+		vals = append(vals, originalName(ev))
+	}
+	return vals
 }
 
 // ── SDL directive helpers ────────────────────────────────────────────────────

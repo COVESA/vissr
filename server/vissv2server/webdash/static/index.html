@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vissr — VDM Signal Tree</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1a1d23; --surface: #23272e; --border: #363b45;
+  --text: #d4d8e0; --muted: #7c8391; --accent: #4c9be8;
+  --green: #56d364; --orange: #e8963c; --purple: #bc8cff; --red: #f47067;
+  --sensor: var(--green); --actuator: var(--orange);
+  --attribute: var(--purple); --branch: var(--muted);
+  --procedure: var(--red);
+}
+body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── header ── */
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: .6rem 1rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+header h1 { font-size: 1rem; font-weight: 600; color: var(--accent); letter-spacing: .04em; }
+header select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .3rem .6rem; border-radius: 4px; font-size: 13px; cursor: pointer; }
+header select:focus { outline: none; border-color: var(--accent); }
+#status { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+/* ── layout ── */
+main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── tree panel ── */
+#tree-panel { width: 42%; min-width: 280px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: .5rem 0; }
+#search { display: block; width: calc(100% - 1rem); margin: .5rem; padding: .4rem .7rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+#search:focus { outline: none; border-color: var(--accent); }
+#search::placeholder { color: var(--muted); }
+#tree-root { padding: 0 0 1rem 0; }
+
+/* ── tree items ── */
+.tree-item { display: flex; align-items: center; gap: .4rem; padding: .22rem .5rem .22rem 0; cursor: pointer; white-space: nowrap; border-radius: 3px; margin: 0 .25rem; }
+.tree-item:hover { background: rgba(255,255,255,.05); }
+.tree-item.selected { background: rgba(76,155,232,.18); }
+.tree-indent { display: inline-block; width: 16px; flex-shrink: 0; }
+.toggle { width: 16px; text-align: center; flex-shrink: 0; color: var(--muted); font-size: 10px; user-select: none; }
+.node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.node-badge { font-size: 10px; padding: .1em .45em; border-radius: 3px; font-weight: 600; flex-shrink: 0; text-transform: uppercase; letter-spacing: .04em; }
+.badge-branch    { background: rgba(124,131,145,.2); color: var(--muted); }
+.badge-sensor    { background: rgba(86,211,100,.15); color: var(--sensor); }
+.badge-actuator  { background: rgba(232,150,60,.15);  color: var(--actuator); }
+.badge-attribute { background: rgba(188,140,255,.15); color: var(--attribute); }
+.badge-procedure { background: rgba(244,112,103,.15); color: var(--procedure); }
+.tree-children { }
+
+/* ── detail panel ── */
+#detail-panel { flex: 1; overflow-y: auto; padding: 1.5rem; }
+#detail-panel h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--text); }
+#detail-panel .empty { color: var(--muted); font-size: 13px; margin-top: 2rem; text-align: center; }
+.detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: .4rem 1rem; }
+.detail-label { color: var(--muted); font-size: 12px; padding-top: .1rem; }
+.detail-value { color: var(--text); font-size: 13px; word-break: break-all; }
+.detail-value.path { font-family: monospace; font-size: 12px; color: var(--accent); }
+.allowed-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+.allowed-chip { background: rgba(188,140,255,.15); color: var(--attribute); padding: .15em .5em; border-radius: 3px; font-size: 12px; }
+hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+/* ── scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>vissr VDM Dashboard</h1>
+  <select id="forest-select"><option value="">Loading…</option></select>
+  <input id="search" type="search" placeholder="Filter signals…">
+  <span id="status">—</span>
+</header>
+
+<main>
+  <div id="tree-panel">
+    <div id="tree-root"></div>
+  </div>
+  <div id="detail-panel">
+    <p class="empty">Select a signal node to see its properties.</p>
+  </div>
+</main>
+
+<script>
+// ── state ───────────────────────────────────────────────────────────────────
+let treeData = null;
+let selected = null;
+
+// ── bootstrap ────────────────────────────────────────────────────────────────
+async function init() {
+  const forestRes = await fetch('/api/forest').catch(() => null);
+  if (!forestRes || !forestRes.ok) {
+    document.getElementById('status').textContent = 'Error: cannot reach /api/forest';
+    return;
+  }
+  const forest = await forestRes.json();
+  const sel = document.getElementById('forest-select');
+  sel.innerHTML = '';
+  if (!forest || forest.length === 0) {
+    sel.innerHTML = '<option>No trees loaded</option>';
+    return;
+  }
+  forest.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.rootName;
+    opt.textContent = `${f.rootName}  (${f.domain} v${f.version})`;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', () => loadTree(sel.value));
+  loadTree(sel.value);
+}
+
+async function loadTree(rootName) {
+  if (!rootName) return;
+  document.getElementById('status').textContent = 'Loading…';
+  document.getElementById('tree-root').innerHTML = '';
+  clearDetail();
+  const res = await fetch(`/api/tree/${rootName}`).catch(() => null);
+  if (!res || !res.ok) {
+    document.getElementById('status').textContent = `Error loading tree ${rootName}`;
+    return;
+  }
+  treeData = await res.json();
+  const count = countNodes(treeData);
+  document.getElementById('status').textContent = `${count} nodes`;
+  renderTree(treeData, document.getElementById('tree-root'), '');
+}
+
+// ── tree rendering ───────────────────────────────────────────────────────────
+function countNodes(node) {
+  return 1 + (node.children || []).reduce((s, c) => s + countNodes(c), 0);
+}
+
+function renderTree(node, container, parentPath, depth = 0) {
+  const path = parentPath ? `${parentPath}.${node.name}` : node.name;
+  const hasCh = node.children && node.children.length > 0;
+
+  const item = document.createElement('div');
+  item.className = 'tree-item';
+  item.dataset.path = path;
+  item.dataset.node = JSON.stringify(node);
+
+  // Indentation
+  for (let i = 0; i < depth; i++) {
+    const ind = document.createElement('span');
+    ind.className = 'tree-indent';
+    item.appendChild(ind);
+  }
+
+  // Toggle arrow
+  const toggle = document.createElement('span');
+  toggle.className = 'toggle';
+  toggle.textContent = hasCh ? '▶' : '';
+  item.appendChild(toggle);
+
+  // Name
+  const nameEl = document.createElement('span');
+  nameEl.className = 'node-name';
+  nameEl.textContent = node.name;
+  item.appendChild(nameEl);
+
+  // Badge
+  const badge = document.createElement('span');
+  badge.className = `node-badge badge-${node.nodeType || 'branch'}`;
+  badge.textContent = node.nodeType || 'branch';
+  item.appendChild(badge);
+
+  container.appendChild(item);
+
+  // Children container
+  let childContainer = null;
+  let expanded = depth < 1; // auto-expand first level
+
+  if (hasCh) {
+    childContainer = document.createElement('div');
+    childContainer.className = 'tree-children';
+    childContainer.style.display = expanded ? '' : 'none';
+    toggle.textContent = expanded ? '▼' : '▶';
+    node.children.forEach(ch => renderTree(ch, childContainer, path, depth + 1));
+    container.appendChild(childContainer);
+
+    toggle.addEventListener('click', e => {
+      e.stopPropagation();
+      expanded = !expanded;
+      childContainer.style.display = expanded ? '' : 'none';
+      toggle.textContent = expanded ? '▼' : '▶';
+    });
+  }
+
+  item.addEventListener('click', () => {
+    // Deselect previous
+    if (selected) selected.classList.remove('selected');
+    item.classList.add('selected');
+    selected = item;
+    showDetail(JSON.parse(item.dataset.node), item.dataset.path);
+  });
+}
+
+// ── detail panel ─────────────────────────────────────────────────────────────
+function clearDetail() {
+  document.getElementById('detail-panel').innerHTML = '<p class="empty">Select a signal node to see its properties.</p>';
+}
+
+function showDetail(node, path) {
+  const panel = document.getElementById('detail-panel');
+  const rows = [];
+
+  const row = (label, value, cls = '') =>
+    `<div class="detail-label">${label}</div><div class="detail-value ${cls}">${value}</div>`;
+
+  rows.push(row('Path', escHtml(path), 'path'));
+  rows.push(row('Node type', badge(node.nodeType)));
+  if (node.datatype) rows.push(row('Datatype', escHtml(node.datatype)));
+  if (node.unit)     rows.push(row('Unit', escHtml(node.unit)));
+  if (node.min || node.max) rows.push(row('Range', `${node.min || '—'} … ${node.max || '—'}`));
+  if (node.default)  rows.push(row('Default', escHtml(node.default)));
+  if (node.description) rows.push(row('Description', escHtml(node.description)));
+
+  let allowedHtml = '';
+  if (node.allowed && node.allowed.length > 0) {
+    const chips = node.allowed.map(v => `<span class="allowed-chip">${escHtml(v)}</span>`).join('');
+    allowedHtml = `<hr class="divider"><div class="detail-grid"><div class="detail-label">Allowed values</div><div class="detail-value"><div class="allowed-chips">${chips}</div></div></div>`;
+  }
+
+  let childCount = '';
+  if (node.children && node.children.length > 0) {
+    childCount = `<hr class="divider"><div class="detail-grid">${row('Children', node.children.length)}</div>`;
+  }
+
+  panel.innerHTML = `
+    <h2>${escHtml(node.name)}</h2>
+    <div class="detail-grid">${rows.join('')}</div>
+    ${allowedHtml}
+    ${childCount}
+  `;
+}
+
+function badge(type) {
+  return `<span class="node-badge badge-${type || 'branch'}">${type || 'branch'}</span>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── search / filter ───────────────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  document.querySelectorAll('.tree-item').forEach(item => {
+    const path = (item.dataset.path || '').toLowerCase();
+    item.style.display = (!q || path.includes(q)) ? '' : 'none';
+  });
+  // Show parent containers that have visible children
+  document.querySelectorAll('.tree-children').forEach(c => {
+    if (q) c.style.display = '';
+  });
+});
+
+// ── start ────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

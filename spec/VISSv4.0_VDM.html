@@ -278,7 +278,48 @@ enum VehicleCabinSeat_InstanceTag_Dimension2 {
    instance do not affect others.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<h2 id="viss-service-extension">§8 @viss_service Extension</h2>
+<h2 id="unit-default-allowed">§8 Unit, Default Value, and Allowed Values</h2>
+
+<h3>8.1 Unit</h3>
+<p>A signal's physical unit is declared with the <code>@unit(value:)</code>
+   directive or the <code>unit</code> argument of <code>@vspec</code>.  The
+   value may be a plain string (<code>"km/h"</code>) or a SCREAMING_SNAKE_CASE
+   enum name that the loader maps to a standard string:</p>
+<pre><code>Speed: Float @vspec(element: SENSOR, fqn: "Vehicle.Speed") @unit(value: "KM_PER_HOUR")
+# → Node_t.Unit = "km/h"</code></pre>
+<p>The full normalisation table is defined in <code>vdmloader/vdmloader.go</code>
+   (<code>normalizeUnit</code>).  Values not in the table are passed through
+   unchanged.</p>
+
+<h3>8.2 Default value</h3>
+<p>A signal's initial value at startup is declared with
+   <code>@defaultValue(value: "…")</code>:</p>
+<pre><code>IsEnabled: Boolean @vspec(element: ACTUATOR, fqn: "…") @defaultValue(value: "false")
+# → Node_t.DefaultValue = "false"</code></pre>
+
+<h3>8.3 Allowed values (enum signals)</h3>
+<p>When a signal field is typed as a user-defined GraphQL enum, the loader
+   populates <code>Node_t.AllowedDef</code> with the enum values.
+   <code>@vspec(originalName:)</code> on each enum value controls the string
+   stored in <code>AllowedDef</code>; it falls back to SCREAMING_SNAKE_CASE →
+   PascalCase conversion.</p>
+<pre><code>enum GearPosition {
+  PARK    @vspec(originalName: "Park")
+  REVERSE @vspec(originalName: "Reverse")
+  DRIVE   @vspec(originalName: "Drive")
+}
+type Vehicle … {
+  CurrentGear: GearPosition
+    @vspec(element: SENSOR, fqn: "Vehicle.CurrentGear")
+    @defaultValue(value: "Park")
+}
+# → Node_t.AllowedDef = ["Park","Reverse","Drive"]
+# → Node_t.Allowed = 3
+# → Node_t.DefaultValue = "Park"</code></pre>
+<p>Internal VDM enums (VspecElement, <code>*_InstanceTag_Dimension*</code>) are
+   never exposed as allowed values.</p>
+
+<h2 id="viss-service-extension">§9 @viss_service Extension</h2>
 
 <p>VDM itself has no concept of procedures or mutations.  The
    <code>@viss_service</code> directive is a vissr-specific extension that
@@ -309,7 +350,7 @@ enum VehicleCabinSeat_InstanceTag_Dimension2 {
    VDM extension files without modifying the base VDM schema.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<h2 id="server-integration">§9 Server Integration (--vdm flag)</h2>
+<h2 id="server-integration">§10 Server Integration (--vdm flag)</h2>
 
 <h3>9.1 Command-line flag</h3>
 <pre><code>vissv2server --vdm &lt;dir&gt;</code></pre>
@@ -335,7 +376,20 @@ enum VehicleCabinSeat_InstanceTag_Dimension2 {
    a warning is logged.  Only the first file's tree is used.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<h2 id="him-interop">§10 HIM / VDM Interoperability</h2>
+<h3>10.4 Web dashboard (--web-addr)</h3>
+<p>The optional embedded web dashboard is enabled with:</p>
+<pre><code>vissv2server --vdm &lt;dir&gt; --web-addr :8090</code></pre>
+<p>The dashboard serves an interactive signal-tree explorer at
+   <code>http://localhost:8090</code>.  JSON API endpoints:</p>
+<table>
+  <tr><th>Path</th><th>Description</th></tr>
+  <tr><td><code>GET /api/forest</code></td><td>Array of <code>{rootName, domain, version}</code> objects for every loaded tree.</td></tr>
+  <tr><td><code>GET /api/tree/{rootName}</code></td><td>Full node tree as JSON with name, nodeType, datatype, unit, min, max, default, allowed, children.</td></tr>
+</table>
+<p>The dashboard is disabled by default (empty <code>--web-addr</code>) and has
+   no runtime dependencies beyond Go's standard library.</p>
+
+<h2 id="him-interop">§11 HIM / VDM Interoperability</h2>
 
 <p>v4.0 VDM trees and v3.x HIM trees use the same internal
    <code>utils.Node_t</code> representation.  A server instance can only load
@@ -344,7 +398,25 @@ enum VehicleCabinSeat_InstanceTag_Dimension2 {
    work identically regardless of how the tree was loaded.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<h2 id="ci-validation">§11 CI Validation with s2dm</h2>
+<h2 id="vdminfo">§12 vdminfo Inspection Tool</h2>
+
+<p>The <code>tools/vdminfo</code> package is a standalone CLI for inspecting
+   VDM SDL files without starting the full server:</p>
+<pre><code>go run ./tools/vdminfo ./my-vdm-files/
+
+# Example output:
+=== Vehicle  (domain: Vehicle, version: 1.0) ===
+Vehicle  [branch, 6 children]
+  Speed  (sensor, float, km/h, 0..250)
+  CurrentGear  (sensor, vehiclegearposition, default=Park, allowed=[Park|Reverse|Neutral|Drive])
+  ADAS  [branch, 2 children]
+    ABS  [branch, 2 children]
+      IsEnabled  (actuator, bool, default=false)
+    …</code></pre>
+<p>Useful in CI to diff tree output between VDM revisions and to verify that
+   instance tag expansion produces the expected signal paths.</p>
+
+<h2 id="ci-validation">§13 CI Validation with s2dm</h2>
 
 <p>The <strong>s2dm</strong> Python toolchain validates that VDM SDL files are
    structurally and semantically correct (naming conventions, forbidden
@@ -365,7 +437,7 @@ enum VehicleCabinSeat_InstanceTag_Dimension2 {
    semantic compliance with the VDM authoring rules.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
-<h2 id="conformance">§12 Conformance</h2>
+<h2 id="conformance">§14 Conformance</h2>
 
 <p>A conforming v4.0 VDM loader implementation MUST:</p>
 <ol>

@@ -413,6 +413,169 @@ type Svc @vspec(element: BRANCH, fqn: "Svc", description: "service root") {
 	}
 }
 
+// ── Unit mapping tests ──────────────────────────────────────────────────────
+
+func TestParseSDL_UnitPopulated(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speed := findNode(roots[0], "Speed")
+	if speed == nil {
+		t.Fatal("Speed not found")
+	}
+	if speed.Unit != "km/h" {
+		t.Errorf("Speed.Unit = %q, want km/h", speed.Unit)
+	}
+}
+
+func TestParseSDL_UnitNormalised(t *testing.T) {
+	sdl := `
+type T @vspec(element: BRANCH, fqn: "T") {
+  Temp: Float @vspec(element: SENSOR, fqn: "T.Temp") @unit(value: "DEGREES_CELSIUS")
+}
+`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := findNode(roots[0], "Temp")
+	if temp == nil {
+		t.Fatal("Temp not found")
+	}
+	if temp.Unit != "celsius" {
+		t.Errorf("Temp.Unit = %q, want celsius", temp.Unit)
+	}
+}
+
+func TestNormalizeUnit(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"KM_PER_HOUR", "km/h"},
+		{"M_PER_S", "m/s"},
+		{"DEGREES_CELSIUS", "celsius"},
+		{"PERCENT", "percent"},
+		{"km/h", "km/h"},   // already a standard string — pass through
+		{"unknown", "unknown"},
+	}
+	for _, tc := range cases {
+		if got := normalizeUnit(tc.in); got != tc.want {
+			t.Errorf("normalizeUnit(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// ── Default value tests ─────────────────────────────────────────────────────
+
+func TestParseSDL_DefaultValuePopulated(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mileage := findNode(roots[0], "TripMileage")
+	if mileage == nil {
+		t.Fatal("TripMileage not found")
+	}
+	if mileage.DefaultValue != "0" {
+		t.Errorf("TripMileage.DefaultValue = %q, want 0", mileage.DefaultValue)
+	}
+}
+
+func TestParseSDL_DefaultValueString(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	isEnabled := findNode(roots[0], "IsEnabled")
+	if isEnabled == nil {
+		t.Fatal("IsEnabled not found")
+	}
+	if isEnabled.DefaultValue != "false" {
+		t.Errorf("IsEnabled.DefaultValue = %q, want false", isEnabled.DefaultValue)
+	}
+}
+
+func TestParseSDL_NoDefaultValue(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speed := findNode(roots[0], "Speed")
+	if speed == nil {
+		t.Fatal("Speed not found")
+	}
+	if speed.DefaultValue != "" {
+		t.Errorf("Speed.DefaultValue = %q, want empty", speed.DefaultValue)
+	}
+}
+
+// ── Allowed values tests ─────────────────────────────────────────────────────
+
+func TestParseSDL_AllowedValuesFromEnum(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gear := findNode(roots[0], "CurrentGear")
+	if gear == nil {
+		t.Fatal("CurrentGear not found")
+	}
+	if int(gear.Allowed) != 4 {
+		t.Errorf("CurrentGear.Allowed = %d, want 4", gear.Allowed)
+	}
+	want := map[string]bool{"Park": true, "Reverse": true, "Neutral": true, "Drive": true}
+	for _, v := range gear.AllowedDef {
+		if !want[v] {
+			t.Errorf("unexpected allowed value %q", v)
+		}
+	}
+	if len(gear.AllowedDef) != 4 {
+		t.Errorf("len(AllowedDef) = %d, want 4", len(gear.AllowedDef))
+	}
+}
+
+func TestParseSDL_AllowedOriginalNames(t *testing.T) {
+	sdl := `
+enum Dir { NORTH @vspec(originalName: "North") SOUTH @vspec(originalName: "South") }
+type Nav @vspec(element: BRANCH, fqn: "Nav") {
+  Heading: Dir @vspec(element: SENSOR, fqn: "Nav.Heading")
+}
+`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heading := findNode(roots[0], "Heading")
+	if heading == nil {
+		t.Fatal("Heading not found")
+	}
+	if len(heading.AllowedDef) != 2 {
+		t.Fatalf("AllowedDef len = %d, want 2", len(heading.AllowedDef))
+	}
+	if heading.AllowedDef[0] != "North" || heading.AllowedDef[1] != "South" {
+		t.Errorf("AllowedDef = %v, want [North South]", heading.AllowedDef)
+	}
+}
+
+func TestParseSDL_ScalarHasNoAllowed(t *testing.T) {
+	sdl := readFixture(t, "vehicle.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speed := findNode(roots[0], "Speed")
+	if speed == nil {
+		t.Fatal("Speed not found")
+	}
+	if len(speed.AllowedDef) != 0 {
+		t.Errorf("Speed.AllowedDef = %v, want empty", speed.AllowedDef)
+	}
+}
+
 // ── Instance tag expansion tests ─────────────────────────────────────────────
 
 func TestInstanceTag_2D_ExpandsCorrectInstances(t *testing.T) {

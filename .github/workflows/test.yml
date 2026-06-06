@@ -64,6 +64,28 @@ jobs:
             echo "vdmloader not present on this branch, skipping"
           fi
 
+      - name: vet - webdash
+        run: |
+          if [ -d server/vissv2server/webdash ]; then
+            go vet ./server/vissv2server/webdash/...
+          else
+            echo "webdash not present on this branch, skipping"
+          fi
+
+      - name: build - vdminfo
+        run: |
+          if [ -d tools/vdminfo ]; then
+            go build ./tools/vdminfo/...
+          else
+            echo "vdminfo not present on this branch, skipping"
+          fi
+
+      - name: smoke - vdminfo
+        run: |
+          if [ -f tools/vdminfo/main.go ]; then
+            go run ./tools/vdminfo ./server/vissv2server/vdmloader/testdata/
+          fi
+
       - name: build all packages
         run: go build ./...
 
