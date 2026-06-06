@@ -218,11 +218,59 @@ CI runs all of the above automatically on every push/PR via
 
 ---
 
-## Known limitations (v4.0alpha)
+## Multi-instance signals (instance tags)
+
+VDM's instance tag mechanism lets one signal definition expand to cover many
+physical instances — for example one seat template that becomes
+`Row1.DriverSide`, `Row1.PassengerSide`, `Row2.DriverSide`, etc.
+
+Add an `_InstanceTag` type and its dimension enums to your SDL:
+
+```graphql
+type VehicleCabinSeat @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  IsOccupied: Boolean @vspec(element: SENSOR,   fqn: "Vehicle.Cabin.Seat.IsOccupied")
+  Position:   UInt8   @vspec(element: ACTUATOR, fqn: "Vehicle.Cabin.Seat.Position") @range(min: 0, max: 100)
+}
+
+type VehicleCabinSeat_InstanceTag @instanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  dimension1: VehicleCabinSeat_InstanceTag_Dimension1
+  dimension2: VehicleCabinSeat_InstanceTag_Dimension2
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension1 {
+  ROW1 @vspec(originalName: "Row1")
+  ROW2 @vspec(originalName: "Row2")
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension2 {
+  DRIVER_SIDE    @vspec(originalName: "DriverSide")
+  PASSENGER_SIDE @vspec(originalName: "PassengerSide")
+}
+```
+
+The loader expands this automatically into:
+```
+Vehicle.Cabin.Seat.Row1.DriverSide.IsOccupied
+Vehicle.Cabin.Seat.Row1.DriverSide.Position
+Vehicle.Cabin.Seat.Row1.PassengerSide.IsOccupied
+Vehicle.Cabin.Seat.Row1.PassengerSide.Position
+Vehicle.Cabin.Seat.Row2.DriverSide.IsOccupied
+...
+```
+
+Query any instance directly:
+```json
+{"action":"get","path":"Vehicle.Cabin.Seat.Row1.DriverSide.Position","requestId":"req-3"}
+```
+
+Up to N dimensions are supported; VDM today uses 1 or 2.
+
+---
+
+## Known limitations (v4.0)
 
 | Limitation | Planned fix |
 |---|---|
-| Instance tag expansion (Row × Side multi-instance) not yet implemented | v4.1 |
 | `@viss_service` is a vissr extension, not part of upstream VDM | Upstreaming TBD |
 | `--vdm` and `viss.him` are mutually exclusive at startup | Mixed mode planned |
-| STRUCT / PROPERTY element types are parsed but not fully handled | v4.1 |
+| STRUCT / PROPERTY element types are parsed but not expanded | v4.1 |

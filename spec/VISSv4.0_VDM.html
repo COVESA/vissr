@@ -211,20 +211,71 @@
 <h2 id="instance-tags">§7 Instance Tags (multi-instance)</h2>
 
 <p>VDM represents multi-instance nodes (e.g., seat rows × sides) using
-   <em>instance-tag</em> types and dimension enums.  For example:</p>
+   <em>instance-tag</em> types and dimension enums.  A type named
+   <code>{Base}_InstanceTag</code> bearing <code>@instanceTag</code> is a
+   multi-instance template: the loader expands it into one subtree per
+   combination of dimension values and attaches those subtrees under the base
+   FQN branch.</p>
 
-<pre><code>enum RowDimension { ROW1 ROW2 }
-enum SideDimension { DRIVER_SIDE PASSENGER_SIDE }
+<h3>7.1 SDL pattern</h3>
+<pre><code>type VehicleCabinSeat @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  IsOccupied: Boolean @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Seat.IsOccupied")
+  Position:   UInt8   @vspec(element: ACTUATOR, fqn: "Vehicle.Cabin.Seat.Position") @range(min: 0, max: 100)
+}
 
-type VehicleCabinSeat_InstanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
-  Backrest: Float @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Seat.Backrest.Recline")
+type VehicleCabinSeat_InstanceTag @instanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  dimension1: VehicleCabinSeat_InstanceTag_Dimension1
+  dimension2: VehicleCabinSeat_InstanceTag_Dimension2
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension1 {
+  ROW1 @vspec(originalName: "Row1")
+  ROW2 @vspec(originalName: "Row2")
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension2 {
+  DRIVER_SIDE    @vspec(originalName: "DriverSide")
+  PASSENGER_SIDE @vspec(originalName: "PassengerSide")
 }</code></pre>
 
-<p><strong>v4.0alpha status:</strong> Instance tag expansion (flattening
-   <code>ROW1.DRIVER_SIDE</code> etc. into indexed subtrees) is
-   <strong>not yet implemented</strong>.  The loader treats instance-tagged
-   types as ordinary branch nodes and generates a single subtree without
-   expanding instances.  Full instance expansion is planned for v4.1.</p>
+<h3>7.2 Expansion result</h3>
+<p>The loader expands the above into the following tree (all leaf signals
+   cloned into every instance):</p>
+<pre><code>Vehicle.Cabin.Seat (BRANCH)
+  ├── Row1 (BRANCH)
+  │    ├── DriverSide (BRANCH)
+  │    │    ├── IsOccupied (SENSOR, bool)
+  │    │    └── Position   (ACTUATOR, uint8, range 0–100)
+  │    └── PassengerSide (BRANCH)
+  │         ├── IsOccupied (SENSOR, bool)
+  │         └── Position   (ACTUATOR, uint8, range 0–100)
+  └── Row2 (BRANCH)
+       ├── DriverSide (BRANCH)
+       │    ├── IsOccupied (SENSOR, bool)
+       │    └── Position   (ACTUATOR, uint8, range 0–100)
+       └── PassengerSide (BRANCH)
+            ├── IsOccupied (SENSOR, bool)
+            └── Position   (ACTUATOR, uint8, range 0–100)</code></pre>
+
+<h3>7.3 Naming and SCREAMING_SNAKE_CASE fallback</h3>
+<p>Each enum value's expanded path segment comes from
+   <code>@vspec(originalName: "...")</code>.  If this argument is absent the
+   loader converts the enum value name from SCREAMING_SNAKE_CASE to PascalCase:
+   <code>DRIVER_SIDE</code> → <code>DriverSide</code>, <code>ROW1</code> →
+   <code>Row1</code>.</p>
+
+<h3>7.4 Dimensions</h3>
+<p>Up to N dimensions are supported (VDM currently uses 1 or 2).
+   Dimension fields must be named <code>dimension1</code>,
+   <code>dimension2</code>, … in order on the <code>_InstanceTag</code>
+   type.  Instances are generated in lexicographic order of dimension value
+   combinations.</p>
+
+<p class="normative">A conforming implementation MUST deep-clone the full
+   signal subtree of the base FQN into every generated instance, preserving
+   all field values (datatype, min, max, unit, description) and maintaining
+   independent <code>*Node_t</code> pointers per instance so mutations to one
+   instance do not affect others.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <h2 id="viss-service-extension">§8 @viss_service Extension</h2>
@@ -331,6 +382,13 @@ type VehicleCabinSeat_InstanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Se
       explicitly declared in the SDL.</li>
   <li>Maintain <code>Node_t.Children == uint8(len(Node_t.Child))</code> at all
       times.</li>
+  <li>Expand every <code>*_InstanceTag</code> type bearing <code>@instanceTag</code>
+      into one subtree per dimension-value combination, deep-cloning the base
+      signal subtree into each instance with independent <code>*Node_t</code>
+      pointers.</li>
+  <li>Derive instance path segments from <code>@vspec(originalName:)</code>
+      on enum values, falling back to SCREAMING_SNAKE_CASE → PascalCase
+      conversion when the argument is absent.</li>
   <li>Reject SDL that contains no <code>@vspec</code>-annotated type (return an
       error).</li>
   <li>Reject SDL that contains no root-level <code>BRANCH</code> type
@@ -352,6 +410,8 @@ type VehicleCabinSeat_InstanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Se
 ) on OBJECT | FIELD_DEFINITION
 
 directive @range(min: Float, max: Float) on FIELD_DEFINITION
+
+directive @instanceTag on OBJECT
 
 directive @viss_service on FIELD_DEFINITION
 

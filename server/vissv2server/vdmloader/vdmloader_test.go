@@ -413,6 +413,232 @@ type Svc @vspec(element: BRANCH, fqn: "Svc", description: "service root") {
 	}
 }
 
+// ── Instance tag expansion tests ─────────────────────────────────────────────
+
+func TestInstanceTag_2D_ExpandsCorrectInstances(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL cabin.graphql: %v", err)
+	}
+	seat := findNode(roots[0], "Seat")
+	if seat == nil {
+		t.Fatal("Seat node not found")
+	}
+	// Seat must have Row1 and Row2 as children (not IsOccupied/IsBelted/Position directly)
+	if int(seat.Children) != 2 {
+		t.Errorf("Seat.Children = %d, want 2 (Row1, Row2)", seat.Children)
+	}
+	row1 := findNode(seat, "Row1")
+	if row1 == nil {
+		t.Fatal("Seat.Row1 not found")
+	}
+	if row1.NodeType != utils.BRANCH {
+		t.Errorf("Row1.NodeType = %q, want branch", row1.NodeType)
+	}
+	// Row1 must have DriverSide and PassengerSide
+	if int(row1.Children) != 2 {
+		t.Errorf("Row1.Children = %d, want 2 (DriverSide, PassengerSide)", row1.Children)
+	}
+}
+
+func TestInstanceTag_2D_ChildrenClonedPerInstance(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every leaf instance should have IsOccupied, IsBelted, Position
+	for _, rowName := range []string{"Row1", "Row2"} {
+		for _, sideName := range []string{"DriverSide", "PassengerSide"} {
+			seat := findNode(roots[0], "Seat")
+			row := findNode(seat, rowName)
+			if row == nil {
+				t.Fatalf("%s not found under Seat", rowName)
+			}
+			side := findNode(row, sideName)
+			if side == nil {
+				t.Fatalf("%s not found under %s", sideName, rowName)
+			}
+			for _, childName := range []string{"IsOccupied", "IsBelted", "Position"} {
+				if findNode(side, childName) == nil {
+					t.Errorf("Seat.%s.%s.%s not found", rowName, sideName, childName)
+				}
+			}
+		}
+	}
+}
+
+func TestInstanceTag_2D_SignalPropertiesPreserved(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := findNode(roots[0], "Seat")
+	row1 := findNode(seat, "Row1")
+	driver := findNode(row1, "DriverSide")
+	pos := findNode(driver, "Position")
+	if pos == nil {
+		t.Fatal("Position not found under Row1.DriverSide")
+	}
+	if pos.NodeType != utils.ACTUATOR {
+		t.Errorf("Position.NodeType = %q, want actuator", pos.NodeType)
+	}
+	if pos.Min != "0" || pos.Max != "100" {
+		t.Errorf("Position range = [%q, %q], want [0, 100]", pos.Min, pos.Max)
+	}
+}
+
+func TestInstanceTag_2D_ClonesAreIndependent(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := findNode(roots[0], "Seat")
+	row1 := findNode(seat, "Row1")
+	row2 := findNode(seat, "Row2")
+	driver1 := findNode(row1, "DriverSide")
+	driver2 := findNode(row2, "DriverSide")
+	pos1 := findNode(driver1, "Position")
+	pos2 := findNode(driver2, "Position")
+	if pos1 == nil || pos2 == nil {
+		t.Fatal("Position not found in one or both instances")
+	}
+	if pos1 == pos2 {
+		t.Error("Row1 and Row2 share the same Position pointer — deep clone failed")
+	}
+}
+
+func TestInstanceTag_2D_ParentLinksCorrect(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := findNode(roots[0], "Seat")
+	row1 := findNode(seat, "Row1")
+	driver := findNode(row1, "DriverSide")
+	if driver.Parent == nil || driver.Parent.Name != "Row1" {
+		t.Errorf("DriverSide.Parent = %v, want Row1", driver.Parent)
+	}
+	pos := findNode(driver, "Position")
+	if pos.Parent == nil || pos.Parent.Name != "DriverSide" {
+		t.Errorf("Position.Parent = %v, want DriverSide", pos.Parent)
+	}
+}
+
+func TestInstanceTag_1D_ExpandsCorrectInstances(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	door := findNode(roots[0], "Door")
+	if door == nil {
+		t.Fatal("Door node not found")
+	}
+	// Door must have Row1, Row2, Row3
+	if int(door.Children) != 3 {
+		t.Errorf("Door.Children = %d, want 3 (Row1, Row2, Row3)", door.Children)
+	}
+	for _, row := range []string{"Row1", "Row2", "Row3"} {
+		n := findNode(door, row)
+		if n == nil {
+			t.Errorf("Door.%s not found", row)
+		}
+	}
+}
+
+func TestInstanceTag_1D_ChildrenCloned(t *testing.T) {
+	sdl := readFixture(t, "cabin.graphql")
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	door := findNode(roots[0], "Door")
+	for _, row := range []string{"Row1", "Row2", "Row3"} {
+		rowNode := findNode(door, row)
+		if rowNode == nil {
+			t.Fatalf("Door.%s not found", row)
+		}
+		for _, childName := range []string{"IsOpen", "IsLocked"} {
+			if findNode(rowNode, childName) == nil {
+				t.Errorf("Door.%s.%s not found", row, childName)
+			}
+		}
+	}
+}
+
+// ── screaming2Pascal and dimensionCombinations helpers ───────────────────────
+
+func TestScreaming2Pascal(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"ROW1", "Row1"},
+		{"DRIVER_SIDE", "DriverSide"},
+		{"PASSENGER_SIDE", "PassengerSide"},
+		{"LEFT", "Left"},
+		{"RIGHT", "Right"},
+		{"MIDDLE", "Middle"},
+	}
+	for _, tc := range cases {
+		if got := screaming2Pascal(tc.in); got != tc.want {
+			t.Errorf("screaming2Pascal(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestDimensionCombinations_2D(t *testing.T) {
+	dims := [][]dimValue{
+		{{origName: "Row1"}, {origName: "Row2"}},
+		{{origName: "DriverSide"}, {origName: "PassengerSide"}},
+	}
+	combos := dimensionCombinations(dims)
+	if len(combos) != 4 {
+		t.Fatalf("expected 4 combinations, got %d", len(combos))
+	}
+	want := [][2]string{{"Row1", "DriverSide"}, {"Row1", "PassengerSide"}, {"Row2", "DriverSide"}, {"Row2", "PassengerSide"}}
+	for i, combo := range combos {
+		if combo[0].origName != want[i][0] || combo[1].origName != want[i][1] {
+			t.Errorf("combo[%d] = [%s,%s], want [%s,%s]", i, combo[0].origName, combo[1].origName, want[i][0], want[i][1])
+		}
+	}
+}
+
+func TestDimensionCombinations_1D(t *testing.T) {
+	dims := [][]dimValue{
+		{{origName: "Row1"}, {origName: "Row2"}, {origName: "Row3"}},
+	}
+	combos := dimensionCombinations(dims)
+	if len(combos) != 3 {
+		t.Fatalf("expected 3 combinations, got %d", len(combos))
+	}
+}
+
+func TestDeepClone_IsIndependent(t *testing.T) {
+	orig := utils.NewBranchNode("Parent")
+	child := utils.NewSignalNode("Speed", utils.SENSOR, "float", "speed", "0", "250", "km/h")
+	appendChild(orig, child)
+
+	clone := deepClone(orig)
+	if clone == orig {
+		t.Fatal("clone is same pointer as orig")
+	}
+	if clone.Child[0] == orig.Child[0] {
+		t.Error("clone child is same pointer as orig child")
+	}
+	if clone.Child[0].Name != "Speed" {
+		t.Errorf("clone child name = %q, want Speed", clone.Child[0].Name)
+	}
+	if clone.Child[0].Max != "250" {
+		t.Errorf("clone child Max = %q, want 250", clone.Child[0].Max)
+	}
+	if clone.Child[0].Parent != clone {
+		t.Error("clone child Parent does not point to clone")
+	}
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func readFixture(t *testing.T, name string) string {
