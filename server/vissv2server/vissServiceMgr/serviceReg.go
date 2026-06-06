@@ -342,13 +342,19 @@ func buildTreeFromSignature(path string, sig map[string]interface{}) *utils.Node
 	if sig != nil {
 		if inputMap, ok := sig["input"].(map[string]interface{}); ok {
 			for paramName, dt := range inputMap {
-				dtStr, _ := dt.(string)
+				dtStr, ok2 := dt.(string)
+				if !ok2 || dtStr == "" {
+					dtStr = "string"
+				}
 				inputChildren = append(inputChildren, utils.NewPropertyNode(paramName, dtStr, ""))
 			}
 		}
 		if outputMap, ok := sig["output"].(map[string]interface{}); ok {
 			for paramName, dt := range outputMap {
-				dtStr, _ := dt.(string)
+				dtStr, ok2 := dt.(string)
+				if !ok2 || dtStr == "" {
+					dtStr = "string"
+				}
 				outputChildren = append(outputChildren, utils.NewPropertyNode(paramName, dtStr, ""))
 			}
 		}

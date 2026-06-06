@@ -198,6 +198,10 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
 	tDChanIndex := extractRouterIndex(requestMap)
+	if tDChanIndex < 0 || tDChanIndex >= len(backendChans) {
+		utils.Error.Printf("vissServiceMgr: HandleInvoke: routerIndex %d out of range (%d chans)", tDChanIndex, len(backendChans))
+		return
+	}
 	bc := backendChans[tDChanIndex]
 
 	node := utils.SetRootNodePointer(path)
@@ -278,6 +282,10 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
 	tDChanIndex := extractRouterIndex(requestMap)
+	if tDChanIndex < 0 || tDChanIndex >= len(backendChans) {
+		utils.Error.Printf("vissServiceMgr: HandleMonitor: routerIndex %d out of range (%d chans)", tDChanIndex, len(backendChans))
+		return
+	}
 	bc := backendChans[tDChanIndex]
 
 	node := utils.SetRootNodePointer(path)
@@ -409,7 +417,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 
 // HandleDiscover processes a "discover" action per VISSv3.2 §6.4.
 // The response includes live serviceStatus and activeInvocations for each
-// procedure node (VISSv3.3 §8 / §24).
+// procedure node (VISSv3.3 §25).
 func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)

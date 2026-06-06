@@ -155,7 +155,9 @@ implementation uses 30 seconds. If no timeout is specified in the request the de
 
 <p>A client MAY include a <code>"timeout"</code> field in an <code>invokeRequest</code> to override
 the default. The value is a non-negative integer representing milliseconds. A value of zero means
-no timeout (the invocation runs until it terminates naturally or is cancelled).</p>
+no timeout (the invocation runs until it terminates naturally or is cancelled). An absent or
+omitted <code>timeout</code> field is distinct from zero: the server MUST apply the default
+timeout when the field is absent.</p>
 
 <table>
 <thead><tr><th>Object Name</th><th>Attribute</th><th>Type</th><th>Required</th></tr></thead>
@@ -268,7 +270,9 @@ with status FAILED.</p>
 (SUCCESSFUL, CANCELED, FAILED) unless the procedure signature declares no output parameters.</p>
 
 <p>The server MUST fan out monitoring events to all subscribed clients when it receives a progress
-update, subject to each session's filter settings (see VISSv3.2 §7).</p>
+update, subject to each session's filter settings. Filter variants are inherited from VISSv3.2 §7:
+<code>all</code>, <code>status</code>, <code>timebased</code>, and <code>none</code>. All four
+variants are valid for service monitor sessions.</p>
 
 <p>Terminal status values (SUCCESSFUL, CANCELED, FAILED) MUST be sent at most once per
 sessionId. After sending a terminal update the service process MUST NOT send further messages
@@ -286,7 +290,9 @@ to distinguish error types (see §20). A successful ONGOING or terminal update M
 
 <p>The server MUST then mark all ONGOING invocations for the procedure path as FAILED, issue
 the appropriate terminal events to monitoring clients, and remove the procedure from the HIM
-forest. The server closes the connection after processing the deregistration.</p>
+forest. The server closes the connection after processing the deregistration. The server sends
+no explicit acknowledgment message for a deregister request; connection closure is the implicit
+acknowledgment.</p>
 
 <p>If the TCP connection is lost without a deregister message, the server MUST apply the same
 cleanup procedure as for explicit deregistration.</p>

@@ -481,6 +481,142 @@ func isServiceActionStr(a string) bool {
 	return false
 }
 
+// ---- startTimeoutWatchdog --------------------------------------------------
+
+// TestTimeoutWatchdog_FiresOnExpiry verifies that an ONGOING invocation is
+// transitioned to FAILED after its deadline passes.
+func TestTimeoutWatchdog_FiresOnExpiry(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	inv := &invocationState{
+		serviceId: "tw-1",
+		path:      "S.Tw",
+		status:    StatusOngoing,
+		deadline:  time.Now().Add(20 * time.Millisecond),
+	}
+	invocations["tw-1"] = inv
+	sessions["tw-s1"] = &monitorSession{sessionId: "tw-s1", serviceId: "tw-1",
+		routerIndex: 0, filterKind: "all"}
+
+	inv.cancelFn = startTimeoutWatchdog(inv, bcs)
+
+	select {
+	case event := <-ch:
+		if event["status"] != "FAILED" {
+			t.Errorf("want FAILED from timeout, got %v", event["status"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout watchdog did not fire")
+	}
+
+	// Invocation must be removed on terminal status.
+	mu.Lock()
+	_, still := invocations["tw-1"]
+	mu.Unlock()
+	if still {
+		t.Error("invocation should be removed after timeout")
+	}
+}
+
+// TestTimeoutWatchdog_CancelPreventsExpiry verifies that calling the cancel
+// function stops the watchdog before it fires.
+func TestTimeoutWatchdog_CancelPreventsExpiry(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	inv := &invocationState{
+		serviceId: "tw-2",
+		path:      "S.Tw2",
+		status:    StatusOngoing,
+		deadline:  time.Now().Add(50 * time.Millisecond),
+	}
+	invocations["tw-2"] = inv
+
+	cancel := startTimeoutWatchdog(inv, bcs)
+	cancel() // stop before deadline
+
+	select {
+	case <-ch:
+		t.Error("watchdog fired after cancel")
+	case <-time.After(100 * time.Millisecond):
+		// correct: no event after cancel
+	}
+}
+
+// ---- Concurrent invocation isolation ----------------------------------------
+
+// TestConcurrentInvocations_IndependentState verifies that two concurrent
+// invocations of the same procedure maintain independent state (VISSv3.3 §10).
+func TestConcurrentInvocations_IndependentState(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 8)
+	bcs := []chan map[string]interface{}{ch}
+
+	// Two concurrent invocations of the same path.
+	invocations["ci-1"] = &invocationState{serviceId: "ci-1", path: "S.PC", status: StatusOngoing,
+		startedAt: time.Now().Add(-time.Millisecond)}
+	invocations["ci-2"] = &invocationState{serviceId: "ci-2", path: "S.PC", status: StatusOngoing,
+		startedAt: time.Now()}
+	sessions["cs-1"] = &monitorSession{sessionId: "cs-1", serviceId: "ci-1", routerIndex: 0, filterKind: "all"}
+	sessions["cs-2"] = &monitorSession{sessionId: "cs-2", serviceId: "ci-2", routerIndex: 0, filterKind: "all"}
+
+	// Only terminate ci-1 successfully.
+	UpdateServiceState("ci-1", StatusSuccessful, map[string]interface{}{"r": "ok"}, nil, bcs)
+
+	// ci-2 must still be ONGOING.
+	mu.Lock()
+	ci2, ok := invocations["ci-2"]
+	mu.Unlock()
+	if !ok || ci2.status != StatusOngoing {
+		t.Error("ci-2 should remain ONGOING after ci-1 terminates")
+	}
+
+	// Only one event should have been delivered (for cs-1).
+	select {
+	case event := <-ch:
+		if event["serviceId"] != "cs-1" {
+			t.Errorf("expected cs-1 event, got serviceId=%v", event["serviceId"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected one monitoring event")
+	}
+	select {
+	case extra := <-ch:
+		t.Errorf("unexpected second event: %v", extra)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+// ---- HandleInvoke/HandleMonitor bounds guard --------------------------------
+
+func TestHandleInvoke_BadRouterIndex_DoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("HandleInvoke panicked with bad routerIndex: %v", r)
+		}
+	}()
+	resetState()
+	// routerIndex 99 is way out of range for a 1-channel slice.
+	req := map[string]interface{}{"path": "S.P", "requestId": "r1", "routerIndex": 99}
+	bcs := []chan map[string]interface{}{make(chan map[string]interface{}, 4)}
+	HandleInvoke(req, bcs)
+}
+
+func TestHandleMonitor_BadRouterIndex_DoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("HandleMonitor panicked with bad routerIndex: %v", r)
+		}
+	}()
+	resetState()
+	req := map[string]interface{}{"path": "S.P", "requestId": "r2", "routerIndex": 99}
+	bcs := []chan map[string]interface{}{make(chan map[string]interface{}, 4)}
+	HandleMonitor(req, bcs)
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
