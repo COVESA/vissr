@@ -1,6 +1,8 @@
 package vissServiceMgr
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -299,7 +301,7 @@ func TestUpdateServiceState_FanOut(t *testing.T) {
 	sessions["sid-3"] = &monitorSession{sessionId: "sid-3", serviceId: "inv-3",
 		routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("inv-3", StatusSuccessful, map[string]interface{}{"x": "1"}, bcs)
+	UpdateServiceState("inv-3", StatusSuccessful, map[string]interface{}{"x": "1"}, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -328,7 +330,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 		routerIndex: 0, filterKind: "status"}
 
 	// Status unchanged → should NOT deliver.
-	UpdateServiceState("inv-4", StatusOngoing, nil, bcs)
+	UpdateServiceState("inv-4", StatusOngoing, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("status filter should not deliver when status unchanged")
@@ -336,7 +338,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 	}
 
 	// Status changed → SHOULD deliver.
-	UpdateServiceState("inv-4", StatusSuccessful, nil, bcs)
+	UpdateServiceState("inv-4", StatusSuccessful, nil, nil, bcs)
 	select {
 	case <-ch:
 	case <-time.After(time.Second):
@@ -353,7 +355,7 @@ func TestUpdateServiceState_NoneFilterNeverDelivers(t *testing.T) {
 	sessions["sid-5"] = &monitorSession{sessionId: "sid-5", serviceId: "inv-5",
 		routerIndex: 0, filterKind: "none"}
 
-	UpdateServiceState("inv-5", StatusSuccessful, nil, bcs)
+	UpdateServiceState("inv-5", StatusSuccessful, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("'none' filter should never deliver events")
@@ -366,11 +368,93 @@ func TestUpdateServiceState_UnknownInvocationIsNoop(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
 	bcs := []chan map[string]interface{}{ch}
 
-	UpdateServiceState("does-not-exist", StatusFailed, nil, bcs)
+	UpdateServiceState("does-not-exist", StatusFailed, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("unknown invocation should not produce events")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestUpdateServiceState_ServiceErrorIncludedInEvent verifies that a non-nil
+// ServiceError is included in monitoring events as {"error":{"code":...,"message":...}}.
+func TestUpdateServiceState_ServiceErrorIncludedInEvent(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["inv-e"] = &invocationState{serviceId: "inv-e", path: "S.PE", status: StatusOngoing}
+	sessions["sid-e"] = &monitorSession{sessionId: "sid-e", serviceId: "inv-e",
+		routerIndex: 0, filterKind: "all"}
+
+	svcErr := &ServiceError{Code: "MOTOR_STALL", Message: "seat motor stalled"}
+	UpdateServiceState("inv-e", StatusFailed, nil, svcErr, bcs)
+
+	select {
+	case event := <-ch:
+		errField, ok := event["error"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("event missing 'error' field: %v", event)
+		}
+		if errField["code"] != "MOTOR_STALL" {
+			t.Errorf("wrong error code: %v", errField["code"])
+		}
+		if errField["message"] != "seat motor stalled" {
+			t.Errorf("wrong error message: %v", errField["message"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for error event")
+	}
+}
+
+// ---- FormatAsSSE -----------------------------------------------------------
+
+func TestFormatAsSSE_ValidJSON(t *testing.T) {
+	event := map[string]interface{}{
+		"action": "monitoring",
+		"status": "ONGOING",
+		"ts":     "2026-01-01T00:00:00Z",
+	}
+	got, err := FormatAsSSE(event)
+	if err != nil {
+		t.Fatalf("FormatAsSSE error: %v", err)
+	}
+	if !strings.HasPrefix(got, "data: ") {
+		t.Errorf("SSE frame must start with 'data: ', got %q", got[:min(20, len(got))])
+	}
+	if !strings.HasSuffix(got, "\n\n") {
+		t.Errorf("SSE frame must end with double newline, got %q", got[max(0, len(got)-4):])
+	}
+	// The JSON payload inside must be valid.
+	payload := strings.TrimPrefix(strings.TrimSuffix(got, "\n\n"), "data: ")
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Errorf("SSE payload is not valid JSON: %v", err)
+	}
+	if decoded["action"] != "monitoring" {
+		t.Errorf("wrong action in SSE payload: %v", decoded["action"])
+	}
+}
+
+func TestFormatAsSSE_EmptyEvent(t *testing.T) {
+	got, err := FormatAsSSE(map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "data: {}\n\n" {
+		t.Errorf("unexpected output for empty event: %q", got)
+	}
+}
+
+// ---- StartServiceRegServerTLS ----------------------------------------------
+
+func TestStartServiceRegServerTLS_InvalidCertReturnsError(t *testing.T) {
+	err := StartServiceRegServerTLS(nil, "/nonexistent/cert.pem", "/nonexistent/key.pem")
+	if err == nil {
+		t.Fatal("expected error for missing TLS certificate files")
+	}
+	if !strings.Contains(err.Error(), "load TLS") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
@@ -395,4 +479,18 @@ func isServiceActionStr(a string) bool {
 		return true
 	}
 	return false
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

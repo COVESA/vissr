@@ -8,8 +8,9 @@
 *   1. Creates a Service via NewService.
 *   2. Declares its procedure signature via WithInput / WithOutput.
 *   3. Registers an invocation handler via OnInvoke.
-*   4. Calls Register() to connect to the VISS server.
-*   5. Uses ReportProgress() to push state updates during execution.
+*   4. Optionally enables auto-reconnect via WithReconnect.
+*   5. Calls Register() to connect to the VISS server.
+*   6. Uses ReportProgress() or ReportError() to push state updates.
 *
 * Example:
 *
@@ -17,8 +18,9 @@
 *       WithInput("SeatId", "string").
 *       WithInput("Position", "uint8").
 *       WithOutput("Position", "uint8").
+*       WithReconnect(5, time.Second).
 *       OnInvoke(func(ctx *vissServiceSDK.InvokeContext) {
-*           // ...move the seat...
+*           // ctx.Authorization carries the client auth token (may be empty)
 *           ctx.ReportProgress("ONGOING", map[string]interface{}{"Position": "25"})
 *           ctx.ReportProgress("SUCCESSFUL", map[string]interface{}{"Position": "40"})
 *       }).
@@ -36,6 +38,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // InvokeHandler is called for each incoming invoke request.
@@ -44,16 +47,41 @@ type InvokeHandler func(ctx *InvokeContext)
 // InvokeContext carries the parameters for one invocation and provides methods
 // to report progress back to the VISS server.
 type InvokeContext struct {
-	SessionId string
-	Input     map[string]interface{}
-	svc       *Service
+	SessionId     string
+	Input         map[string]interface{}
+	Authorization string // forwarded client auth token (VISSv3.3 §21); may be empty
+	svc           *Service
 }
 
 // ReportProgress sends a status update to the VISS server.
 // status must be one of: "ONGOING", "SUCCESSFUL", "CANCELED", "FAILED".
 // output may be nil for intermediate progress reports.
 func (ctx *InvokeContext) ReportProgress(status string, output map[string]interface{}) error {
-	return ctx.svc.sendProgress(ctx.SessionId, status, output)
+	msg := map[string]interface{}{
+		"sessionId": ctx.SessionId,
+		"status":    status,
+	}
+	if output != nil {
+		msg["output"] = output
+	}
+	return ctx.svc.sendJSON(msg)
+}
+
+// ReportError sends a FAILED status with a structured error payload to the
+// VISS server (VISSv3.3 §20). output may be nil.
+func (ctx *InvokeContext) ReportError(code, message string, output map[string]interface{}) error {
+	msg := map[string]interface{}{
+		"sessionId": ctx.SessionId,
+		"status":    "FAILED",
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	}
+	if output != nil {
+		msg["output"] = output
+	}
+	return ctx.svc.sendJSON(msg)
 }
 
 // Service represents a registered VISS service procedure.
@@ -64,8 +92,12 @@ type Service struct {
 	handler    InvokeHandler
 	conn       net.Conn
 	writer     *bufio.Writer
+	scanner    *bufio.Scanner
 	mu         sync.Mutex
 	stopCh     chan struct{}
+	reconnect  bool
+	maxRetries int
+	retryDelay time.Duration
 }
 
 // NewService creates a new service bound to the given procedure path.
@@ -100,22 +132,44 @@ func (s *Service) OnInvoke(h InvokeHandler) *Service {
 	return s
 }
 
+// WithReconnect enables automatic reconnect on connection loss (VISSv3.3 §24).
+// maxRetries is the maximum number of reconnect attempts (0 = unlimited).
+// initialDelay is the starting backoff; it doubles on each failure, capped at 2 min.
+func (s *Service) WithReconnect(maxRetries int, initialDelay time.Duration) *Service {
+	s.reconnect = true
+	s.maxRetries = maxRetries
+	if initialDelay <= 0 {
+		initialDelay = time.Second
+	}
+	s.retryDelay = initialDelay
+	return s
+}
+
 // Register connects to the VISS server and sends the registration message.
 // Returns the connected service ready for Run(), or an error.
 func (s *Service) Register() (*Service, error) {
 	if s.handler == nil {
 		return nil, fmt.Errorf("vissServiceSDK: OnInvoke handler must be set before Register")
 	}
+	if err := s.connect(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
+// connect establishes (or re-establishes) the TCP connection and completes
+// the registration handshake. It stores the resulting conn, writer, and scanner.
+func (s *Service) connect() error {
 	conn, err := net.Dial("tcp", s.serverAddr)
 	if err != nil {
-		return nil, fmt.Errorf("vissServiceSDK: connect to %s: %w", s.serverAddr, err)
+		return fmt.Errorf("vissServiceSDK: connect to %s: %w", s.serverAddr, err)
 	}
 
 	s.conn = conn
 	s.writer = bufio.NewWriter(conn)
+	s.scanner = bufio.NewScanner(conn)
 
-	// Convert signature to JSON-compatible nested map.
+	// Build registration message.
 	sig := map[string]interface{}{}
 	for side, params := range s.signature {
 		if len(params) > 0 {
@@ -126,7 +180,6 @@ func (s *Service) Register() (*Service, error) {
 			sig[side] = m
 		}
 	}
-
 	regMsg := map[string]interface{}{
 		"action":    "register",
 		"path":      s.path,
@@ -134,54 +187,102 @@ func (s *Service) Register() (*Service, error) {
 	}
 	if err := s.sendJSON(regMsg); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("vissServiceSDK: send register: %w", err)
+		return fmt.Errorf("vissServiceSDK: send register: %w", err)
 	}
 
-	// Read ack.
-	scanner := bufio.NewScanner(conn)
-	if !scanner.Scan() {
+	// Read ack from the same scanner we'll reuse in Run().
+	if !s.scanner.Scan() {
 		conn.Close()
-		return nil, fmt.Errorf("vissServiceSDK: no ack from server")
+		return fmt.Errorf("vissServiceSDK: no ack from server")
 	}
 	var ack map[string]interface{}
-	if err := json.Unmarshal(scanner.Bytes(), &ack); err != nil || ack["registered"] != true {
+	if err := json.Unmarshal(s.scanner.Bytes(), &ack); err != nil || ack["registered"] != true {
 		conn.Close()
 		reason, _ := ack["reason"].(string)
-		return nil, fmt.Errorf("vissServiceSDK: registration rejected: %s", reason)
+		return fmt.Errorf("vissServiceSDK: registration rejected: %s", reason)
 	}
-
-	return s, nil
+	return nil
 }
 
-// Run blocks, reading invoke messages from the server and dispatching them to
-// the registered handler. Returns when the connection is closed or Close() is called.
+// Run blocks, reading messages from the server and dispatching invocations to
+// the registered handler. If WithReconnect was called, it automatically
+// re-registers on connection loss with exponential backoff (VISSv3.3 §24).
 func (s *Service) Run() {
-	scanner := bufio.NewScanner(s.conn)
+	retries := 0
+	for {
+		s.runLoop()
+
+		select {
+		case <-s.stopCh:
+			return
+		default:
+		}
+		if !s.reconnect {
+			return
+		}
+		if s.maxRetries > 0 && retries >= s.maxRetries {
+			return
+		}
+
+		delay := s.retryDelay
+		for i := 0; i < retries; i++ {
+			delay *= 2
+			if delay > 2*time.Minute {
+				delay = 2 * time.Minute
+				break
+			}
+		}
+
+		select {
+		case <-time.After(delay):
+		case <-s.stopCh:
+			return
+		}
+
+		if err := s.connect(); err != nil {
+			retries++
+			continue
+		}
+		retries = 0
+	}
+}
+
+// runLoop reads and dispatches messages until the connection closes or stopCh fires.
+func (s *Service) runLoop() {
 	for {
 		select {
 		case <-s.stopCh:
 			return
 		default:
 		}
-		if !scanner.Scan() {
+		if !s.scanner.Scan() {
 			return
 		}
 		var msg map[string]interface{}
-		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+		if err := json.Unmarshal(s.scanner.Bytes(), &msg); err != nil {
 			continue
 		}
 		action, _ := msg["action"].(string)
-		if action != "invoke" {
-			continue
+		switch action {
+		case "invoke":
+			sessionId, _ := msg["sessionId"].(string)
+			input, _ := msg["input"].(map[string]interface{})
+			authToken, _ := msg["authorization"].(string)
+			ctx := &InvokeContext{
+				SessionId:     sessionId,
+				Input:         input,
+				Authorization: authToken,
+				svc:           s,
+			}
+			go s.handler(ctx)
+		case "ping":
+			// Heartbeat: respond with pong (VISSv3.3 §19).
+			s.sendJSON(map[string]interface{}{"action": "pong"}) //nolint:errcheck
 		}
-		sessionId, _ := msg["sessionId"].(string)
-		input, _ := msg["input"].(map[string]interface{})
-		ctx := &InvokeContext{SessionId: sessionId, Input: input, svc: s}
-		go s.handler(ctx)
 	}
 }
 
-// Close deregisters from the server and closes the connection.
+// Close deregisters from the server and closes the connection. Idempotent.
 func (s *Service) Close() {
 	select {
 	case <-s.stopCh:
@@ -192,17 +293,6 @@ func (s *Service) Close() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
-}
-
-func (s *Service) sendProgress(sessionId, status string, output map[string]interface{}) error {
-	msg := map[string]interface{}{
-		"sessionId": sessionId,
-		"status":    status,
-	}
-	if output != nil {
-		msg["output"] = output
-	}
-	return s.sendJSON(msg)
 }
 
 func (s *Service) sendJSON(v interface{}) error {

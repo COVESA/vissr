@@ -79,6 +79,13 @@ proposals subject to change before ratification.
   <li><a href="#sdk">§16. Service Software Development Kit</a></li>
   <li><a href="#him-config">§17. HIM Service Tree Configuration</a></li>
   <li><a href="#instantaneous">§18. Instantaneous Service Behaviour</a></li>
+  <li><a href="#heartbeat">§19. Heartbeat Protocol</a></li>
+  <li><a href="#service-error">§20. Structured Error Payload on FAILED</a></li>
+  <li><a href="#auth-passthrough">§21. Authorization Pass-Through</a></li>
+  <li><a href="#tls-regport">§22. TLS on Service Registration Port</a></li>
+  <li><a href="#sse-binding">§23. Server-Sent Events Binding</a></li>
+  <li><a href="#sdk-reconnect">§24. Service SDK: Auto-Reconnect</a></li>
+  <li><a href="#discover-enrichment">§25. Discover Response Enrichment</a></li>
 </ul>
 </nav>
 
@@ -101,6 +108,13 @@ normative text remains in force unless explicitly overridden below.</p>
 <tr><td>§16</td><td>Service SDK</td><td>Normative interface for the reference Go SDK.</td></tr>
 <tr><td>§17</td><td>HIM Service Tree Configuration</td><td>viss.him format for declaring service trees; dynamic registration as an alternative to binary trees.</td></tr>
 <tr><td>§18</td><td>Instantaneous Service Behaviour</td><td>Normative clarification of response content when service completes before the response is sent.</td></tr>
+<tr><td>§19</td><td>Heartbeat Protocol</td><td>Ping/pong exchange to detect dead service connections.</td></tr>
+<tr><td>§20</td><td>Structured Error Payload on FAILED</td><td><code>{"code":"...","message":"..."}</code> field in FAILED progress updates and monitoring events.</td></tr>
+<tr><td>§21</td><td>Authorization Pass-Through</td><td>Client auth token forwarded to service process in invoke message.</td></tr>
+<tr><td>§22</td><td>TLS on Service Registration Port</td><td>Optional TLS wrapping for the registration protocol.</td></tr>
+<tr><td>§23</td><td>Server-Sent Events Binding</td><td>SSE frame format for HTTP monitoring event streaming.</td></tr>
+<tr><td>§24</td><td>Service SDK: Auto-Reconnect</td><td><code>WithReconnect</code> builder method with exponential backoff.</td></tr>
+<tr><td>§25</td><td>Discover Response Enrichment</td><td>Live <code>serviceStatus</code> and <code>activeInvocations</code> per procedure in discover response.</td></tr>
 </tbody>
 </table>
 
@@ -468,6 +482,238 @@ call, the server receives the terminal status before dispatching the response.</
   "requestId": "8756",
   "ts": "2026-01-15T10:00:01Z"
 }</pre>
+
+<h2 id="heartbeat">§19. Heartbeat Protocol <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A service process may be killed (SIGKILL, crash) without closing its TCP connection. Without a
+keepalive mechanism, the server has no way to detect the dead connection until the OS eventually
+times out the TCP session, which can take several minutes.</p>
+
+<p>VISSv3.3 requires a heartbeat protocol on the registration port:</p>
+
+<ul>
+  <li>The server MUST send a ping message periodically (default interval: 15 seconds).</li>
+  <li>The service process MUST reply with a pong message within <code>HeartbeatTimeout</code>
+    seconds (default: 5 seconds).</li>
+  <li>If no pong is received within the timeout, the server MUST close the connection and apply
+    the standard disconnect-cleanup procedure (mark ONGOING invocations FAILED, remove the
+    procedure from the HIM forest).</li>
+</ul>
+
+<h3>19.1 Ping Message (server → service)</h3>
+
+<pre>{"action": "ping"}</pre>
+
+<h3>19.2 Pong Message (service → server)</h3>
+
+<pre>{"action": "pong"}</pre>
+
+<p>Service SDK implementations MUST handle incoming <code>{"action":"ping"}</code> messages in
+the read loop and reply with <code>{"action":"pong"}</code>. The reference Go SDK does this
+automatically in <code>Run()</code>.</p>
+
+<h2 id="service-error">§20. Structured Error Payload on FAILED <span class="new">[NEW in 3.3]</span></h2>
+
+<p>When a service process reports a FAILED status, it SHOULD include a structured error payload
+so that clients can distinguish error types without parsing free-form strings.</p>
+
+<h3>20.1 Error in Progress Update (service → server)</h3>
+
+<pre>{
+  "sessionId": "123456",
+  "status": "FAILED",
+  "error": {
+    "code":    "MOTOR_STALL",
+    "message": "Seat motor stalled at position 35 — obstruction detected."
+  }
+}</pre>
+
+<p>The <code>error</code> field is OPTIONAL on ONGOING updates and RECOMMENDED on FAILED
+terminal updates. It MUST NOT appear on SUCCESSFUL or CANCELED updates.</p>
+
+<h3>20.2 Error in Monitoring Event (server → client)</h3>
+
+<p>When the server fans out a FAILED terminal event, it MUST include the <code>error</code>
+field from the service progress update verbatim:</p>
+
+<pre>{
+  "action":    "monitoring",
+  "path":      "VehicleService.Seating.MoveSeat",
+  "serviceId": "789",
+  "status":    "FAILED",
+  "error": {
+    "code":    "MOTOR_STALL",
+    "message": "Seat motor stalled at position 35 — obstruction detected."
+  },
+  "ts":        "2026-01-15T10:00:31Z"
+}</pre>
+
+<h3>20.3 SDK ReportError Method</h3>
+
+<p>The reference Go SDK provides <code>InvokeContext.ReportError</code> as a convenience
+method that sends a FAILED message with a structured error:</p>
+
+<pre>ctx.ReportError("MOTOR_STALL", "Seat motor stalled at position 35", nil)</pre>
+
+<p>Error codes SHOULD follow SCREAMING_SNAKE_CASE convention and be documented in the service's
+HIM tree description field.</p>
+
+<h2 id="auth-passthrough">§21. Authorization Pass-Through <span class="new">[NEW in 3.3]</span></h2>
+
+<p>VISSv3.2 §8 defines an <code>authorization</code> field in service requests. In VISSv3.3,
+the server MUST forward this token to the service process in the invoke message so that service
+implementations can perform their own access checks.</p>
+
+<h3>21.1 Invoke Message with Authorization (server → service)</h3>
+
+<pre>{
+  "action":        "invoke",
+  "sessionId":     "123456",
+  "input":         {"SeatId": "Row1-DriverSide", "Position": "40"},
+  "authorization": "Bearer eyJhbGciOiJSUzI1NiJ9..."
+}</pre>
+
+<p>The <code>authorization</code> field is OPTIONAL; it is omitted if the original client request
+carried no authorization token.</p>
+
+<h3>21.2 Service SDK Authorization Field</h3>
+
+<p>The reference Go SDK exposes the token as <code>InvokeContext.Authorization string</code>
+(empty string if no token was provided). Service implementations MAY use this field to validate
+the client's identity before processing the invocation.</p>
+
+<h2 id="tls-regport">§22. TLS Transport for the Service Registration Port <span class="new">[NEW in 3.3]</span></h2>
+
+<p>Plain TCP on port 8300 is acceptable in trusted deployment environments (localhost, private
+LAN). For production deployments where service processes may connect over untrusted networks,
+TLS MUST be used.</p>
+
+<p>A VISSv3.3 server SHOULD support an opt-in TLS mode on <code>ServiceRegPort</code>.
+When TLS is enabled:</p>
+
+<ul>
+  <li>The server presents a certificate signed by a CA trusted by service processes.</li>
+  <li>The minimum TLS version is 1.2. TLS 1.3 is RECOMMENDED.</li>
+  <li>Client certificate authentication (mTLS) MAY be required by server policy.</li>
+  <li>Plain TCP and TLS MUST NOT run on the same port simultaneously; choose one per deployment.</li>
+</ul>
+
+<p>The reference Go implementation provides <code>StartServiceRegServerTLS(backendChans, certFile,
+keyFile)</code> as an alternative to <code>StartServiceRegServer</code>. The wire protocol is
+identical to plain TCP; only the transport is wrapped in TLS.</p>
+
+<h2 id="sse-binding">§23. Server-Sent Events Binding for HTTP Monitoring <span class="new">[NEW in 3.3]</span></h2>
+
+<p>§15 defines the HTTP method binding for service operations. Monitoring events for long-running
+invocations cannot be delivered in the synchronous HTTP response body. VISSv3.3 defines a
+Server-Sent Events (SSE) binding for this purpose.</p>
+
+<h3>23.1 SSE Endpoint</h3>
+
+<p>A client that invokes a procedure via HTTP and wishes to receive monitoring events MUST open a
+persistent GET connection to:</p>
+
+<pre>GET /viss/service/{path}/events/{serviceId}
+Accept: text/event-stream</pre>
+
+<p>The server MUST keep this connection open and write each monitoring event as an SSE data
+frame:</p>
+
+<pre>data: {"action":"monitoring","path":"VehicleService.Seating.MoveSeat","serviceId":"789","status":"ONGOING","outdata":{"output":{"Position":"25"},"ts":"2026-01-15T10:00:10Z"},"ts":"2026-01-15T10:00:10Z"}
+
+data: {"action":"monitoring","path":"VehicleService.Seating.MoveSeat","serviceId":"789","status":"SUCCESSFUL","outdata":{"output":{"Position":"40"},"ts":"2026-01-15T10:00:15Z"},"ts":"2026-01-15T10:00:15Z"}
+
+</pre>
+
+<p>Each SSE frame consists of a <code>data:</code> prefix, the JSON payload, and a double newline
+to signal end-of-event. The server MUST close the SSE connection after writing a terminal event
+(SUCCESSFUL, CANCELED, or FAILED).</p>
+
+<h3>23.2 SSE Helper</h3>
+
+<p>The reference Go implementation provides <code>vissServiceMgr.FormatAsSSE(event)</code> which
+formats a monitoring event map as a ready-to-write SSE data frame string.</p>
+
+<h2 id="sdk-reconnect">§24. Service SDK: Auto-Reconnect <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A service process that loses its connection to the VISS server (network hiccup, server restart)
+must re-register before it can accept new invocations. The reference Go SDK provides an optional
+automatic reconnect mechanism.</p>
+
+<h3>24.1 WithReconnect Builder Method</h3>
+
+<pre>svc, err := vissServiceSDK.NewService("localhost:8300", "VehicleService.Seating.MoveSeat").
+    WithInput("Position", "uint8").
+    WithOutput("Position", "uint8").
+    OnInvoke(handleMoveSeat).
+    WithReconnect(5, time.Second).  // max 5 retries, starting backoff 1 s
+    Register()
+if err != nil { log.Fatal(err) }
+defer svc.Close()
+svc.Run() // reconnects automatically on disconnect</pre>
+
+<h3>24.2 Reconnect Behaviour</h3>
+
+<table>
+<thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>maxRetries</td><td>int</td><td>Maximum reconnect attempts. 0 = unlimited.</td></tr>
+<tr><td>initialDelay</td><td>time.Duration</td><td>Starting backoff interval. Doubles on each failure, capped at 2 min.</td></tr>
+</tbody>
+</table>
+
+<p>When the connection drops, <code>Run()</code>:</p>
+<ol>
+  <li>Detects the connection close (scanner returns false).</li>
+  <li>Checks whether <code>Close()</code> was called — exits if so.</li>
+  <li>Applies exponential backoff, then calls <code>Register()</code> internally to reconnect
+    and re-register the service signature.</li>
+  <li>Resumes the read loop. Any invocations that arrived during the disconnect cannot be
+    replayed; the server will have marked them FAILED via its heartbeat/disconnect logic.</li>
+</ol>
+
+<p>If <code>WithReconnect</code> is not called (the default), <code>Run()</code> exits
+immediately when the connection closes.</p>
+
+<h2 id="discover-enrichment">§25. Discover Response Enrichment <span class="new">[NEW in 3.3]</span></h2>
+
+<p>In addition to the HIM tree structure, the discover response in VISSv3.3 includes two
+live-status fields for each procedure node:</p>
+
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Values</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>serviceStatus</td><td>string</td><td>"registered" | "disconnected"</td><td>Whether a service process is currently connected and registered for this path.</td></tr>
+<tr><td>activeInvocations</td><td>integer</td><td>≥ 0</td><td>Number of ONGOING invocations for this path at the time of the discover request.</td></tr>
+</tbody>
+</table>
+
+<p>Example discover response for a procedure with a connected service and two active
+invocations:</p>
+
+<pre>{
+  "action": "discover",
+  "metadata": {
+    "MoveSeat": {
+      "type": "procedure",
+      "serviceStatus": "registered",
+      "activeInvocations": 2,
+      "Input": {
+        "SeatId":   {"type": 6, "datatype": "string"},
+        "Position": {"type": 6, "datatype": "uint8"}
+      },
+      "Output": {
+        "Position": {"type": 6, "datatype": "uint8"}
+      }
+    }
+  },
+  "requestId": "9001",
+  "ts": "2026-01-15T10:00:05Z"
+}</pre>
+
+<p>Clients SHOULD use <code>serviceStatus</code> to determine whether an invocation is likely to
+succeed before sending it. A <code>"disconnected"</code> status indicates the server will
+immediately return FAILED for any invoke targeting that path.</p>
 
 <hr>
 <p><em>This document is the VISSv3.3-Services alpha specification.

@@ -11,7 +11,7 @@
 *   invoke   – execute a service procedure (concurrent invocations supported)
 *   monitor  – attach to an ongoing invocation
 *   cancel   – cancel an invoke or monitor session
-*   discover – retrieve service tree metadata
+*   discover – retrieve service tree metadata (includes live service status)
 *
 * V3.3 additions over v3.2:
 *   - Concurrent invocations: each invoke gets its own invocationState keyed
@@ -22,12 +22,18 @@
 *     the requested period while always forwarding status-change events.
 *   - Service registration: service processes connect via TCP and declare
 *     the procedure paths they implement (see serviceReg.go).
+*   - Structured error payload on FAILED: service processes may include an
+*     error code and message; fans out in monitoring events.
+*   - Authorization pass-through: client auth token forwarded to service.
+*   - Discover enrichment: live serviceStatus and activeInvocations counts.
+*   - SSE helper: FormatAsSSE encodes a monitoring event for HTTP streaming.
 **/
 
 package vissServiceMgr
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -52,16 +58,24 @@ const (
 // "timeout" field (milliseconds).
 const DefaultTimeout = 30 * time.Second
 
+// ServiceError carries a structured error code and message on a FAILED update.
+// It is included in monitoring events as {"error":{"code":"...","message":"..."}}
+// (VISSv3.3 §20).
+type ServiceError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // invocationState tracks one active procedure invocation.
 type invocationState struct {
-	serviceId   string
-	path        string
-	status      ServiceStatus
-	indata      map[string]interface{}
-	outdata     map[string]interface{}
-	startedAt   time.Time
-	deadline    time.Time
-	cancelFn    func() // stops the timeout watchdog
+	serviceId string
+	path      string
+	status    ServiceStatus
+	indata    map[string]interface{}
+	outdata   map[string]interface{}
+	startedAt time.Time
+	deadline  time.Time
+	cancelFn  func() // stops the timeout watchdog
 }
 
 // monitorSession represents one client watching an invocation.
@@ -129,7 +143,7 @@ func startTimeoutWatchdog(inv *invocationState, backendChans []chan map[string]i
 				return
 			}
 			mu.Unlock()
-			UpdateServiceState(inv.serviceId, StatusFailed, nil, backendChans)
+			UpdateServiceState(inv.serviceId, StatusFailed, nil, nil, backendChans)
 		case <-stopCh:
 		}
 	}()
@@ -200,7 +214,8 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 		return
 	}
 
-	// Compute timeout: optional "timeout" key in ms, else DefaultTimeout.
+	authToken, _ := requestMap["authorization"].(string)
+
 	deadline := time.Now().Add(timeoutFromRequest(requestMap))
 
 	mu.Lock()
@@ -240,8 +255,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	inv.cancelFn = startTimeoutWatchdog(inv, backendChans)
 	mu.Unlock()
 
-	// Forward to registered service process (no-op if not registered).
-	forwardInvokeToService(path, serviceId, inputParams)
+	forwardInvokeToService(path, serviceId, inputParams, authToken)
 
 	response := map[string]interface{}{
 		"action":    "invoke",
@@ -394,6 +408,8 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 }
 
 // HandleDiscover processes a "discover" action per VISSv3.2 §6.4.
+// The response includes live serviceStatus and activeInvocations for each
+// procedure node (VISSv3.3 §8 / §24).
 func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
@@ -412,7 +428,7 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 		return
 	}
 
-	metadata := buildServiceMetadata(node)
+	metadata := buildServiceMetadata(node, path)
 	ts := getTimestamp()
 	response := map[string]interface{}{
 		"action":    "discover",
@@ -428,8 +444,12 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 // serviceReg.go) to report execution progress. It updates the invocation
 // state and fans out monitoring events to all watching sessions, respecting
 // each session's filter settings.
+//
+// svcErr, when non-nil, is included in monitoring events as
+// {"error":{"code":"...","message":"..."}} (VISSv3.3 §20).
 func UpdateServiceState(serviceId string, status ServiceStatus,
-	outdata map[string]interface{}, backendChans []chan map[string]interface{}) {
+	outdata map[string]interface{}, svcErr *ServiceError,
+	backendChans []chan map[string]interface{}) {
 
 	ts := getTimestamp()
 	var outdataWrapped map[string]interface{}
@@ -451,7 +471,6 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 
 	statusChanged := prevStatus != status
 
-	// Collect sessions watching this invocation.
 	type eventTarget struct {
 		sess          *monitorSession
 		shouldDeliver bool
@@ -469,8 +488,7 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 		case "all":
 			deliver = true
 		case "timebased":
-			// timebased ticker goroutine handles delivery; we only
-			// deliver here on status change so it's never suppressed.
+			// timebased ticker handles delivery; only deliver here on status change.
 			deliver = statusChanged
 		case "none":
 			deliver = false
@@ -510,15 +528,35 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 		if outdataWrapped != nil {
 			event["outdata"] = outdataWrapped
 		}
+		if svcErr != nil {
+			event["error"] = map[string]interface{}{
+				"code":    svcErr.Code,
+				"message": svcErr.Message,
+			}
+		}
 		if t.sess.routerIndex < len(backendChans) {
 			backendChans[t.sess.routerIndex] <- event
 		}
 	}
 }
 
+// FormatAsSSE encodes a monitoring event as a Server-Sent Events data frame
+// for use in HTTP streaming responses (VISSv3.3 §23).
+// The returned string is ready to write directly to an http.ResponseWriter.
+func FormatAsSSE(event map[string]interface{}) (string, error) {
+	b, err := json.Marshal(event)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("data: %s\n\n", b), nil
+}
+
 // ---- tree helpers ----------------------------------------------------------
 
-func buildServiceMetadata(node *utils.Node_t) map[string]interface{} {
+// buildServiceMetadata walks the HIM tree rooted at node, returning a metadata
+// map. basePath is the dot-separated path of node in the service tree (used to
+// look up live registration and invocation status per procedure).
+func buildServiceMetadata(node *utils.Node_t, basePath string) map[string]interface{} {
 	result := map[string]interface{}{}
 	numChildren := utils.VSSgetNumOfChildren(node)
 	for i := 0; i < numChildren; i++ {
@@ -527,17 +565,21 @@ func buildServiceMetadata(node *utils.Node_t) map[string]interface{} {
 			continue
 		}
 		childName := utils.VSSgetName(child)
+		childPath := basePath + "." + childName
 		switch utils.VSSgetType(child) {
 		case utils.PROCEDURE:
-			result[childName] = buildProcedureMetadata(child)
+			result[childName] = buildProcedureMetadata(child, childPath)
 		case utils.BRANCH:
-			result[childName] = buildServiceMetadata(child)
+			result[childName] = buildServiceMetadata(child, childPath)
 		}
 	}
 	return result
 }
 
-func buildProcedureMetadata(node *utils.Node_t) map[string]interface{} {
+// buildProcedureMetadata returns HIM metadata for a procedure node, enriched
+// with live serviceStatus ("registered" | "disconnected") and activeInvocations
+// count (VISSv3.3 §24).
+func buildProcedureMetadata(node *utils.Node_t, path string) map[string]interface{} {
 	meta := map[string]interface{}{"type": "procedure"}
 	numChildren := utils.VSSgetNumOfChildren(node)
 	for i := 0; i < numChildren; i++ {
@@ -549,6 +591,28 @@ func buildProcedureMetadata(node *utils.Node_t) map[string]interface{} {
 			meta[utils.VSSgetName(child)] = buildIoStructMetadata(child)
 		}
 	}
+
+	// Live service status from registrations (serviceReg.go, same package).
+	regMu.Lock()
+	_, connected := registrations[path]
+	regMu.Unlock()
+	if connected {
+		meta["serviceStatus"] = "registered"
+	} else {
+		meta["serviceStatus"] = "disconnected"
+	}
+
+	// Count ONGOING invocations for this path.
+	mu.Lock()
+	count := 0
+	for _, inv := range invocations {
+		if inv.path == path && inv.status == StatusOngoing {
+			count++
+		}
+	}
+	mu.Unlock()
+	meta["activeInvocations"] = count
+
 	return meta
 }
 
