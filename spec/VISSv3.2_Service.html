@@ -774,8 +774,23 @@ lead to that a monitoring session is started. This session can be canceled by th
 <p><strong>Successful response:</strong></p>
 <pre>{
     "action": "discover",
-    "metadata": {"Seating":{"MoveSeat": {"type": "procedure"},
- "ActivateMassage": {"type": "procedure"}}},
+    "metadata": {
+        "MoveSeat": {
+            "type": "procedure",
+            "Input": {
+                "SeatId":   {"type": 4, "datatype": "uint8"},
+                "Position": {"type": 4, "datatype": "uint8"}
+            },
+            "Output": {
+                "Position": {"type": 4, "datatype": "uint8"}
+            }
+        },
+        "ActivateMassage": {
+            "type": "procedure",
+            "Input":  {"Intensity": {"type": 4, "datatype": "uint8"}},
+            "Output": {}
+        }
+    },
     "requestId": "5687",
     "ts":"2025-04-15T13:37:05Z"
 }</pre>

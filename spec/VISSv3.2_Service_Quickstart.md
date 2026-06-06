@@ -236,3 +236,30 @@ All four actions return a consistent error object on failure:
 ```
 
 Common error numbers: `400` (bad request), `404` (path not found), `503` (service unavailable).
+
+---
+
+## Running the test suite
+
+Unit tests (with race detector) for the service manager:
+
+```bash
+go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
+```
+
+MQTT integration tests require the mosquitto broker container running locally.
+Use `docker-compose.test.yml` at the repo root:
+
+```bash
+# Start broker (first-time: trust the CA cert — see docker-compose.test.yml header)
+docker compose -f docker-compose.test.yml up -d
+
+# Run MQTT tests
+go test -v -count=1 ./paho-mqtt/...
+
+# Tear down
+docker compose -f docker-compose.test.yml down
+```
+
+CI runs all of the above automatically on every push/PR via
+`.github/workflows/test.yml`.
