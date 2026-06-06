@@ -25,9 +25,12 @@
 package atServer
 
 import (
+	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/covesa/vissr/utils"
 )
@@ -212,3 +215,984 @@ func TestInitGatingId_InRange(t *testing.T) {
 		t.Errorf("initGatingId produced %d distinct values over 10 calls; helper may be constant", len(seen))
 	}
 }
+
+// --------------------------------------------------------------------------
+// Helper: build a minimal signed JWT for testing validateTokenExpiry
+// --------------------------------------------------------------------------
+
+// makeTestToken builds a real HS256-signed JWT with the given iat and exp
+// Unix timestamps using the utils JWT machinery. The token uses the package-
+// level theAtSecret so validateTokenExpiry can find it via ExtractFromToken.
+func makeTestToken(iat, exp int64) string {
+	var jwt utils.JsonWebToken
+	jwt.SetHeader("HS256")
+	jwt.AddClaim("iat", strconv.FormatInt(iat, 10))
+	jwt.AddClaim("exp", strconv.FormatInt(exp, 10))
+	jwt.AddClaim("scp", "test-purpose")
+	jwt.AddClaim("aud", AT_AUDIENCE)
+	jwt.AddClaim("iss", atIssuer)
+	jwt.Encode()
+	jwt.SymmSign(theAtSecret)
+	return jwt.GetFullToken()
+}
+
+// --------------------------------------------------------------------------
+// validateTokenExpiry
+// --------------------------------------------------------------------------
+
+func TestValidateTokenExpiry_ValidToken(t *testing.T) {
+	now := time.Now().Unix()
+	token := makeTestToken(now-10, now+3600) // issued 10s ago, expires in 1h
+	if got := validateTokenExpiry(token); got != 0 {
+		t.Errorf("valid token: got %d; want 0", got)
+	}
+}
+
+func TestValidateTokenExpiry_ExpiredToken(t *testing.T) {
+	now := time.Now().Unix()
+	token := makeTestToken(now-7200, now-3600) // issued 2h ago, expired 1h ago
+	if got := validateTokenExpiry(token); got != 16 {
+		t.Errorf("expired token: got %d; want 16", got)
+	}
+}
+
+func TestValidateTokenExpiry_FutureIat(t *testing.T) {
+	now := time.Now().Unix()
+	token := makeTestToken(now+7200, now+14400) // iat is in the future
+	if got := validateTokenExpiry(token); got != 11 {
+		t.Errorf("future iat: got %d; want 11", got)
+	}
+}
+
+func TestValidateTokenExpiry_MalformedIat(t *testing.T) {
+	// A token where ExtractFromToken("iat") returns a non-numeric string.
+	// We can build such a token by not setting iat at all.
+	var jwt utils.JsonWebToken
+	jwt.SetHeader("HS256")
+	jwt.AddClaim("exp", "9999999999")
+	// no iat claim
+	jwt.Encode()
+	jwt.SymmSign(theAtSecret)
+	token := jwt.GetFullToken()
+	if got := validateTokenExpiry(token); got != 10 {
+		t.Errorf("missing iat: got %d; want 10", got)
+	}
+}
+
+func TestValidateTokenExpiry_MalformedExp(t *testing.T) {
+	var jwt utils.JsonWebToken
+	jwt.SetHeader("HS256")
+	jwt.AddClaim("iat", strconv.FormatInt(time.Now().Unix()-10, 10))
+	// no exp claim — ExtractFromToken will return ""
+	jwt.Encode()
+	jwt.SymmSign(theAtSecret)
+	token := jwt.GetFullToken()
+	if got := validateTokenExpiry(token); got != 15 {
+		t.Errorf("missing exp: got %d; want 15", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// validateTokenTimestamps
+// --------------------------------------------------------------------------
+
+func TestValidateTokenTimestamps_Valid(t *testing.T) {
+	now := time.Now().Unix()
+	if !validateTokenTimestamps(int(now-10), int(now+3600)) {
+		t.Errorf("valid timestamps should return true")
+	}
+}
+
+func TestValidateTokenTimestamps_FutureIat(t *testing.T) {
+	now := time.Now().Unix()
+	if validateTokenTimestamps(int(now+1000), int(now+7200)) {
+		t.Errorf("future iat should return false")
+	}
+}
+
+func TestValidateTokenTimestamps_Expired(t *testing.T) {
+	now := time.Now().Unix()
+	if validateTokenTimestamps(int(now-7200), int(now-3600)) {
+		t.Errorf("expired token should return false")
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractSignature
+// --------------------------------------------------------------------------
+
+func TestExtractSignature_HappyPath(t *testing.T) {
+	token := "header.payload.signature"
+	got := extractSignature(token)
+	if got != "signature" {
+		t.Errorf("got %q; want signature", got)
+	}
+}
+
+func TestExtractSignature_NoSignature(t *testing.T) {
+	token := "no-dots-here"
+	got := extractSignature(token)
+	if got != "" {
+		t.Errorf("got %q; want empty string for no dots", got)
+	}
+}
+
+func TestExtractSignature_EmptyString(t *testing.T) {
+	got := extractSignature("")
+	if got != "" {
+		t.Errorf("got %q; want empty string", got)
+	}
+}
+
+func TestExtractSignature_OnlyDot(t *testing.T) {
+	got := extractSignature(".")
+	if got != "" {
+		t.Errorf("got %q; want empty string for dot at end", got)
+	}
+}
+
+func TestExtractSignature_MultipleDots(t *testing.T) {
+	got := extractSignature("a.b.c.d")
+	if got != "d" {
+		t.Errorf("got %q; want d (last segment)", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// getPathLen
+// --------------------------------------------------------------------------
+
+func TestGetPathLen_NullTerminated(t *testing.T) {
+	path := "hello\x00\x00\x00"
+	if got := getPathLen(path); got != 5 {
+		t.Errorf("got %d; want 5", got)
+	}
+}
+
+func TestGetPathLen_NoNullTerminator(t *testing.T) {
+	path := "hello"
+	if got := getPathLen(path); got != 5 {
+		t.Errorf("got %d; want 5", got)
+	}
+}
+
+func TestGetPathLen_EmptyString(t *testing.T) {
+	if got := getPathLen(""); got != 0 {
+		t.Errorf("got %d; want 0", got)
+	}
+}
+
+func TestGetPathLen_AllNulls(t *testing.T) {
+	path := "\x00\x00\x00"
+	if got := getPathLen(path); got != 0 {
+		t.Errorf("got %d; want 0", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractAtValidatePayloadLevel1
+// --------------------------------------------------------------------------
+
+func TestExtractAtValidatePayloadLevel1_StringFields(t *testing.T) {
+	m := map[string]interface{}{
+		"token":      "tok-123",
+		"action":     "get",
+		"validation": "0",
+		"paths":      "Vehicle.Speed",
+	}
+	var payload AtValidatePayload
+	extractAtValidatePayloadLevel1(m, &payload)
+	if payload.Token != "tok-123" {
+		t.Errorf("Token = %q; want tok-123", payload.Token)
+	}
+	if payload.Action != "get" {
+		t.Errorf("Action = %q; want get", payload.Action)
+	}
+	if payload.Validation != "0" {
+		t.Errorf("Validation = %q; want 0", payload.Validation)
+	}
+	if len(payload.Paths) != 1 || payload.Paths[0] != "Vehicle.Speed" {
+		t.Errorf("Paths = %v; want [Vehicle.Speed]", payload.Paths)
+	}
+}
+
+func TestExtractAtValidatePayloadLevel1_ArrayPaths(t *testing.T) {
+	m := map[string]interface{}{
+		"token": "tok-456",
+		"paths": []interface{}{"Vehicle.Speed", "Vehicle.Acceleration"},
+	}
+	var payload AtValidatePayload
+	extractAtValidatePayloadLevel1(m, &payload)
+	if payload.Token != "tok-456" {
+		t.Errorf("Token = %q; want tok-456", payload.Token)
+	}
+	if len(payload.Paths) != 2 {
+		t.Errorf("Paths len = %d; want 2", len(payload.Paths))
+	}
+}
+
+func TestExtractAtValidatePayloadLevel1_UnknownTypeIgnored(t *testing.T) {
+	m := map[string]interface{}{
+		"token":   "tok-789",
+		"unknown": 42, // not string or []interface{}
+	}
+	var payload AtValidatePayload
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked on unknown type: %v", r)
+		}
+	}()
+	extractAtValidatePayloadLevel1(m, &payload)
+	if payload.Token != "tok-789" {
+		t.Errorf("Token = %q; want tok-789", payload.Token)
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractAtValidatePayloadLevel2
+// --------------------------------------------------------------------------
+
+func TestExtractAtValidatePayloadLevel2_StringPaths(t *testing.T) {
+	pathList := []interface{}{"Vehicle.Speed", "Vehicle.Acceleration"}
+	var payload AtValidatePayload
+	extractAtValidatePayloadLevel2(pathList, &payload)
+	if len(payload.Paths) != 2 {
+		t.Errorf("Paths len = %d; want 2", len(payload.Paths))
+	}
+	if payload.Paths[0] != "Vehicle.Speed" {
+		t.Errorf("Paths[0] = %q; want Vehicle.Speed", payload.Paths[0])
+	}
+}
+
+func TestExtractAtValidatePayloadLevel2_MixedTypes(t *testing.T) {
+	pathList := []interface{}{"Vehicle.Speed", 42, "Vehicle.Acceleration"}
+	var payload AtValidatePayload
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked on mixed types: %v", r)
+		}
+	}()
+	extractAtValidatePayloadLevel2(pathList, &payload)
+	// Paths[1] will be "" (zero value for non-string), Paths[0] and [2] valid
+	if len(payload.Paths) != 3 {
+		t.Errorf("Paths len = %d; want 3", len(payload.Paths))
+	}
+}
+
+// --------------------------------------------------------------------------
+// newGatingId
+// --------------------------------------------------------------------------
+
+func TestNewGatingId_Increments(t *testing.T) {
+	saved := GatingId
+	defer func() { GatingId = saved }()
+	GatingId = 1000
+	id1 := newGatingId()
+	id2 := newGatingId()
+	if id1 != 1001 || id2 != 1002 {
+		t.Errorf("got id1=%d id2=%d; want 1001,1002", id1, id2)
+	}
+}
+
+func TestNewGatingId_WrapsAt9999(t *testing.T) {
+	saved := GatingId
+	defer func() { GatingId = saved }()
+	// newGatingId does (GatingId + 1) % 9999, so 9998 → 0 (wraps)
+	GatingId = 9997
+	id := newGatingId()
+	if id != 9998 {
+		t.Errorf("got %d; want 9998 one before wrap", id)
+	}
+	id = newGatingId()
+	if id != 0 {
+		t.Errorf("got %d; want 0 after (9998+1)%%9999", id)
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractGatingId
+// --------------------------------------------------------------------------
+
+func TestExtractGatingId_ValidSessionId(t *testing.T) {
+	input := `{"sessionId":"42","other":"x"}`
+	if got := extractGatingId(input); got != 42 {
+		t.Errorf("got %d; want 42", got)
+	}
+}
+
+func TestExtractGatingId_MissingSessionId(t *testing.T) {
+	input := `{"other":"42"}`
+	if got := extractGatingId(input); got != -1 {
+		t.Errorf("got %d; want -1 for missing sessionId", got)
+	}
+}
+
+func TestExtractGatingId_NonNumericSessionId(t *testing.T) {
+	input := `{"sessionId":"notanumber"}`
+	if got := extractGatingId(input); got != -1 {
+		t.Errorf("got %d; want -1 for non-numeric sessionId", got)
+	}
+}
+
+func TestExtractGatingId_MalformedJSON(t *testing.T) {
+	if got := extractGatingId(`not json`); got != -1 {
+		t.Errorf("got %d; want -1 for malformed JSON", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// checkVin
+// --------------------------------------------------------------------------
+
+func TestCheckVin_EmptyVin(t *testing.T) {
+	if !checkVin("") {
+		t.Errorf("empty VIN should return true (not checked)")
+	}
+}
+
+func TestCheckVin_NonEmptyVin(t *testing.T) {
+	if !checkVin("ABC123") {
+		t.Errorf("non-empty VIN should return true (TODO)")
+	}
+}
+
+// --------------------------------------------------------------------------
+// initLists / removeFromPendingList / removeFromActiveList
+// --------------------------------------------------------------------------
+
+func TestInitLists_AllocatesAndInitializes(t *testing.T) {
+	saved := pendingList
+	savedActive := activeList
+	defer func() {
+		pendingList = saved
+		activeList = savedActive
+	}()
+
+	initLists()
+
+	if len(pendingList) != LISTSIZE {
+		t.Errorf("pendingList len = %d; want %d", len(pendingList), LISTSIZE)
+	}
+	if len(activeList) != LISTSIZE {
+		t.Errorf("activeList len = %d; want %d", len(activeList), LISTSIZE)
+	}
+	for i := 0; i < LISTSIZE; i++ {
+		if pendingList[i].GatingId != -1 {
+			t.Errorf("pendingList[%d].GatingId = %d; want -1", i, pendingList[i].GatingId)
+			break
+		}
+		if pendingList[i].Consent != "NOT_SET" {
+			t.Errorf("pendingList[%d].Consent = %q; want NOT_SET", i, pendingList[i].Consent)
+			break
+		}
+		if activeList[i].GatingId != -1 {
+			t.Errorf("activeList[%d].GatingId = %d; want -1", i, activeList[i].GatingId)
+			break
+		}
+	}
+}
+
+func TestRemoveFromPendingList_ResetsSlot(t *testing.T) {
+	saved := pendingList[0]
+	defer func() { pendingList[0] = saved }()
+
+	pendingList[0] = PendingListElem{
+		GatingId: 42,
+		Consent:  "YES",
+	}
+	removed := removeFromPendingList(0)
+	_ = removed
+	if pendingList[0].GatingId != -1 {
+		t.Errorf("GatingId = %d; want -1", pendingList[0].GatingId)
+	}
+	if pendingList[0].Consent != "NOT_SET" {
+		t.Errorf("Consent = %q; want NOT_SET", pendingList[0].Consent)
+	}
+}
+
+func TestRemoveFromActiveList_ResetsGatingId(t *testing.T) {
+	saved := activeList[0]
+	defer func() { activeList[0] = saved }()
+
+	activeList[0] = ActiveListElem{GatingId: 99, Atoken: "tok"}
+	removeFromActiveList(0)
+	if activeList[0].GatingId != -1 {
+		t.Errorf("GatingId = %d; want -1", activeList[0].GatingId)
+	}
+}
+
+// --------------------------------------------------------------------------
+// generateParentResponse — router for noScope vs validation
+// --------------------------------------------------------------------------
+
+func TestGenerateParentResponse_NoScopeRoute(t *testing.T) {
+	// JSON with "context" keyword routes to noScopeResponse
+	resp := generateParentResponse(`{"context":"user+app+device"}`)
+	if !strings.Contains(resp, "no_access") {
+		t.Errorf("expected no_access in response; got %q", resp)
+	}
+}
+
+func TestGenerateParentResponse_ValidationRoute(t *testing.T) {
+	// JSON without "context" routes to tokenValidationResponse
+	resp := generateParentResponse(`{"token":"invalid","action":"get","paths":["Vehicle.Speed"]}`)
+	// tokenValidationResponse will fail (bad token) but not panic
+	if !strings.Contains(resp, "validation") {
+		t.Errorf("expected validation field in response; got %q", resp)
+	}
+}
+
+// --------------------------------------------------------------------------
+// generateClientResponse — router for at-request vs at-inquiry
+// --------------------------------------------------------------------------
+
+func TestGenerateClientResponse_AtRequestRoute(t *testing.T) {
+	ecfChan := make(chan string, 1)
+	resp := generateClientResponse(`{"at-request":"malformed"}`, ecfChan, false)
+	// Will fail parsing or AGT decode, but returns a known error shape
+	if !strings.Contains(resp, "at-request") && !strings.Contains(resp, "error") {
+		t.Errorf("expected at-request response; got %q", resp)
+	}
+}
+
+func TestGenerateClientResponse_UnknownRoute(t *testing.T) {
+	ecfChan := make(chan string, 1)
+	resp := generateClientResponse(`{"unknown":"field"}`, ecfChan, false)
+	if !strings.Contains(resp, "401") {
+		t.Errorf("expected 401 for unknown action; got %q", resp)
+	}
+}
+
+// --------------------------------------------------------------------------
+// generateEcfResponse — router for consent-reply vs consent-cancel
+// --------------------------------------------------------------------------
+
+func TestGenerateEcfResponse_ConsentReplyRoute(t *testing.T) {
+	ch := make(chan string, 1)
+	resp := generateEcfResponse(`{"action":"consent-reply","messageId":"42","consent":"YES"}`, ch)
+	if !strings.Contains(resp, "consent-reply") {
+		t.Errorf("expected consent-reply in response; got %q", resp)
+	}
+}
+
+func TestGenerateEcfResponse_ConsentCancelRoute(t *testing.T) {
+	ch := make(chan string, 1)
+	resp := generateEcfResponse(`{"action":"consent-cancel","messageId":"42"}`, ch)
+	if !strings.Contains(resp, "consent-cancel") {
+		t.Errorf("expected consent-cancel in response; got %q", resp)
+	}
+}
+
+func TestGenerateEcfResponse_UnknownRoute(t *testing.T) {
+	ch := make(chan string, 1)
+	resp := generateEcfResponse(`{"action":"something-else"}`, ch)
+	if !strings.Contains(resp, "401") {
+		t.Errorf("expected 401 for unknown action; got %q", resp)
+	}
+}
+
+// --------------------------------------------------------------------------
+// noScopeResponse — JSON parsing and delegation to getNoAccessScope
+// --------------------------------------------------------------------------
+
+func TestNoScopeResponse_MalformedJSON(t *testing.T) {
+	resp := noScopeResponse(`{not json`)
+	if !strings.Contains(resp, "no_access") {
+		t.Errorf("expected no_access in error response; got %q", resp)
+	}
+}
+
+func TestNoScopeResponse_ValidJSON(t *testing.T) {
+	// With an empty sList (no scope definitions), getNoAccessScope returns ""
+	saved := sList
+	sList = nil
+	defer func() { sList = saved }()
+
+	resp := noScopeResponse(`{"context":"user+app+device"}`)
+	if !strings.Contains(resp, "no_access") {
+		t.Errorf("expected no_access in response; got %q", resp)
+	}
+}
+
+// --------------------------------------------------------------------------
+// synthesizeNoScope / matchingContext / getNoAccessScope
+// --------------------------------------------------------------------------
+
+func TestSynthesizeNoScope_SingleEntry(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = []ScopeElement{
+		{NoAccess: []string{"Vehicle.Private.Data"}},
+	}
+	got := synthesizeNoScope(0)
+	if got != `"Vehicle.Private.Data"` {
+		t.Errorf("got %q; want %q", got, `"Vehicle.Private.Data"`)
+	}
+}
+
+func TestSynthesizeNoScope_MultipleEntries(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = []ScopeElement{
+		{NoAccess: []string{"Vehicle.Private.A", "Vehicle.Private.B"}},
+	}
+	got := synthesizeNoScope(0)
+	if !strings.HasPrefix(got, "[") || !strings.HasSuffix(got, "]") {
+		t.Errorf("multiple entries should return JSON array; got %q", got)
+	}
+	if !strings.Contains(got, "Vehicle.Private.A") || !strings.Contains(got, "Vehicle.Private.B") {
+		t.Errorf("missing paths; got %q", got)
+	}
+}
+
+func TestMatchingContext_MatchFound(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	// Build a scope element where Actor[0].Role=["user"], Actor[1].Role=["app"], Actor[2].Role=["device"]
+	sList = []ScopeElement{
+		{
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"user"}},
+						{Role: []string{"app"}},
+						{Role: []string{"device"}},
+					},
+				},
+			},
+			NoAccess: []string{"Vehicle.Private.X"},
+		},
+	}
+	if !matchingContext(0, "user+app+device") {
+		t.Errorf("matching context should return true")
+	}
+}
+
+func TestMatchingContext_NoMatch(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = []ScopeElement{
+		{
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"admin"}},
+						{Role: []string{"app"}},
+						{Role: []string{"device"}},
+					},
+				},
+			},
+			NoAccess: []string{"Vehicle.Private.X"},
+		},
+	}
+	if matchingContext(0, "user+app+device") {
+		t.Errorf("non-matching context should return false")
+	}
+}
+
+func TestGetNoAccessScope_MatchFound(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = []ScopeElement{
+		{
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"user"}},
+						{Role: []string{"myapp"}},
+						{Role: []string{"mydevice"}},
+					},
+				},
+			},
+			NoAccess: []string{"Vehicle.Private.Secret"},
+		},
+	}
+	got := getNoAccessScope("user+myapp+mydevice")
+	if got != `"Vehicle.Private.Secret"` {
+		t.Errorf("got %q; want Vehicle.Private.Secret", got)
+	}
+}
+
+func TestGetNoAccessScope_NoMatch(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = nil // empty list
+	got := getNoAccessScope("user+app+device")
+	if got != `""` {
+		t.Errorf("got %q; want empty no-access", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// validatePurposeAndAccessPermission / validatePurpose / checkAuthorization
+// --------------------------------------------------------------------------
+
+func TestValidatePurposeAndAccessPermission_PermissionGranted(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{
+			Short: "fuel-status",
+			Access: []AccessElement{
+				{Path: "Vehicle.FuelLevel", Permission: "read-only"},
+			},
+		},
+	}
+	// get action with read-only permission → allowed
+	if got := validatePurposeAndAccessPermission("fuel-status", "get", "Vehicle.FuelLevel"); got != 0 {
+		t.Errorf("got %d; want 0 (allowed)", got)
+	}
+}
+
+func TestValidatePurposeAndAccessPermission_SetOnReadOnly(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{
+			Short: "fuel-status",
+			Access: []AccessElement{
+				{Path: "Vehicle.FuelLevel", Permission: "read-only"},
+			},
+		},
+	}
+	if got := validatePurposeAndAccessPermission("fuel-status", "set", "Vehicle.FuelLevel"); got != 61 {
+		t.Errorf("got %d; want 61 (set on read-only)", got)
+	}
+}
+
+func TestValidatePurposeAndAccessPermission_PurposeNotFound(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{Short: "fuel-status", Access: []AccessElement{{Path: "Vehicle.FuelLevel", Permission: "read-only"}}},
+	}
+	if got := validatePurposeAndAccessPermission("unknown-purpose", "get", "Vehicle.FuelLevel"); got != 60 {
+		t.Errorf("got %d; want 60 (purpose not found)", got)
+	}
+}
+
+func TestValidatePurposeAndAccessPermission_PathNotInPurpose(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{Short: "fuel-status", Access: []AccessElement{{Path: "Vehicle.FuelLevel", Permission: "read-only"}}},
+	}
+	if got := validatePurposeAndAccessPermission("fuel-status", "get", "Vehicle.Speed"); got != 60 {
+		t.Errorf("got %d; want 60 (path not in purpose)", got)
+	}
+}
+
+func TestCheckAuthorization_Match(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{
+			Short: "fuel-status",
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"Independent"}},
+						{Role: []string{"OEM"}},
+						{Role: []string{"Cloud"}},
+					},
+				},
+			},
+		},
+	}
+	if !checkAuthorization(0, "Independent+OEM+Cloud") {
+		t.Errorf("matching context should return true")
+	}
+}
+
+func TestCheckAuthorization_NoMatch(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{
+			Short: "fuel-status",
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"Admin"}},
+						{Role: []string{"OEM"}},
+						{Role: []string{"Cloud"}},
+					},
+				},
+			},
+		},
+	}
+	if checkAuthorization(0, "Independent+OEM+Cloud") {
+		t.Errorf("non-matching context should return false")
+	}
+}
+
+func TestValidatePurpose_Match(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = []PurposeElement{
+		{
+			Short: "fuel-status",
+			Context: []ContextElement{
+				{
+					Actor: [3]RoleElement{
+						{Role: []string{"Independent"}},
+						{Role: []string{"OEM"}},
+						{Role: []string{"Cloud"}},
+					},
+				},
+			},
+		},
+	}
+	if !validatePurpose("fuel-status", "Independent+OEM+Cloud") {
+		t.Errorf("matching purpose+context should return true")
+	}
+}
+
+func TestValidatePurpose_NoMatch(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = nil
+	if validatePurpose("anything", "user+app+device") {
+		t.Errorf("empty pList should return false")
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractPurposeElementsLevel1/2/3 — JSON extraction helpers
+// --------------------------------------------------------------------------
+
+func TestExtractPurposeElementsLevel1_ArrayTopLevel(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+
+	// Top-level is an array of purpose elements
+	var purposeMap map[string]interface{}
+	data := `{"purposes":[{"short":"fuel-status","long":"Fuel Status","contexts":{"user":"Independent","app":"OEM","device":"Cloud"},"signals":[{"path":"Vehicle.FuelLevel","access":"read-only"}]}]}`
+	if err := json.Unmarshal([]byte(data), &purposeMap); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	extractPurposeElementsLevel1(purposeMap)
+	// pList should be populated (len depends on parsing)
+}
+
+func TestExtractPurposeElementsLevel2_PopulatesList(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+
+	raw := []interface{}{
+		map[string]interface{}{
+			"short": "test-purpose",
+			"long":  "Test Purpose",
+		},
+	}
+	extractPurposeElementsLevel2(raw)
+	if len(pList) != 1 {
+		t.Errorf("pList len = %d; want 1", len(pList))
+	}
+	if pList[0].Short != "test-purpose" {
+		t.Errorf("Short = %q; want test-purpose", pList[0].Short)
+	}
+}
+
+func TestExtractPurposeElementsLevel3_StringFields(t *testing.T) {
+	saved := pList
+	defer func() { pList = saved }()
+	pList = make([]PurposeElement, 1)
+
+	elem := map[string]interface{}{
+		"short": "my-purpose",
+		"long":  "My Long Purpose Name",
+	}
+	extractPurposeElementsLevel3(0, elem)
+	if pList[0].Short != "my-purpose" {
+		t.Errorf("Short = %q; want my-purpose", pList[0].Short)
+	}
+	if pList[0].Long != "My Long Purpose Name" {
+		t.Errorf("Long = %q; want My Long Purpose Name", pList[0].Long)
+	}
+}
+
+// --------------------------------------------------------------------------
+// extractScopeElementsLevel1/2/3 — JSON extraction helpers
+// --------------------------------------------------------------------------
+
+func TestExtractScopeElementsLevel2_PopulatesList(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+
+	raw := []interface{}{
+		map[string]interface{}{
+			"no_access": "Vehicle.Private.Data",
+			"contexts": map[string]interface{}{
+				"user": "admin",
+				"app":  "OEM",
+			},
+		},
+	}
+	extractScopeElementsLevel2(raw)
+	if len(sList) != 1 {
+		t.Errorf("sList len = %d; want 1", len(sList))
+	}
+}
+
+func TestExtractScopeElementsLevel3_StringNoAccess(t *testing.T) {
+	saved := sList
+	defer func() { sList = saved }()
+	sList = make([]ScopeElement, 1)
+
+	elem := map[string]interface{}{
+		"no_access": "Vehicle.Private.Secret",
+	}
+	extractScopeElementsLevel3(0, elem)
+	if len(sList[0].NoAccess) != 1 || sList[0].NoAccess[0] != "Vehicle.Private.Secret" {
+		t.Errorf("NoAccess = %v; want [Vehicle.Private.Secret]", sList[0].NoAccess)
+	}
+}
+
+// --------------------------------------------------------------------------
+// purgeLists — pending and active list expiry
+// --------------------------------------------------------------------------
+
+func TestPurgeLists_EmptyListsReturnEmpty(t *testing.T) {
+	saved := pendingList
+	savedActive := activeList
+	defer func() {
+		pendingList = saved
+		activeList = savedActive
+	}()
+	initLists()
+	got := purgeLists()
+	if got != "" {
+		t.Errorf("empty lists: got %q; want empty", got)
+	}
+}
+
+func TestPurgeLists_ExpiredPendingRemoved(t *testing.T) {
+	saved := pendingList
+	savedActive := activeList
+	savedTicker := expiryTicker
+	defer func() {
+		pendingList = saved
+		activeList = savedActive
+		expiryTicker = savedTicker
+	}()
+	initLists()
+	// Create a ticker so setExpiryTicker doesn't nil-deref
+	expiryTicker = time.NewTicker(24 * time.Hour)
+
+	// Set a pending entry with past expiry
+	pendingList[0].GatingId = 42
+	pendingList[0].AgtExpiryTime = "1" // Unix timestamp 1 = far in the past
+
+	got := purgeLists()
+	if got != "" {
+		t.Errorf("expired pending: got %q; want empty (pending doesn't need cancel)", got)
+	}
+	if pendingList[0].GatingId != -1 {
+		t.Errorf("expired pending should be cleared; GatingId = %d", pendingList[0].GatingId)
+	}
+}
+
+func TestPurgeLists_ExpiredActiveReturnsGatingId(t *testing.T) {
+	saved := pendingList
+	savedActive := activeList
+	savedTicker := expiryTicker
+	defer func() {
+		pendingList = saved
+		activeList = savedActive
+		expiryTicker = savedTicker
+	}()
+	initLists()
+	expiryTicker = time.NewTicker(24 * time.Hour)
+
+	// Set an active entry with past expiry
+	activeList[0].GatingId = 77
+	activeList[0].AtExpiryTime = "1" // past expiry
+
+	got := purgeLists()
+	if got != "77" {
+		t.Errorf("expired active: got %q; want \"77\"", got)
+	}
+	if activeList[0].GatingId != -1 {
+		t.Errorf("expired active should be cleared; GatingId = %d", activeList[0].GatingId)
+	}
+}
+
+func TestPurgeLists_BadExpiryReturnsEmpty(t *testing.T) {
+	saved := pendingList
+	savedActive := activeList
+	savedTicker := expiryTicker
+	defer func() {
+		pendingList = saved
+		activeList = savedActive
+		expiryTicker = savedTicker
+	}()
+	initLists()
+	expiryTicker = time.NewTicker(24 * time.Hour)
+
+	// Malformed expiry time
+	pendingList[0].GatingId = 5
+	pendingList[0].AgtExpiryTime = "not-a-number"
+
+	got := purgeLists()
+	if got != "" {
+		t.Errorf("bad expiry: got %q; want empty", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// writeToActiveList / writeToPendingList
+// --------------------------------------------------------------------------
+
+func TestWriteToActiveList_HappyPath(t *testing.T) {
+	saved := activeList
+	savedTicker := expiryTicker
+	defer func() {
+		activeList = saved
+		expiryTicker = savedTicker
+	}()
+	initLists()
+	expiryTicker = time.NewTicker(24 * time.Hour)
+
+	now := time.Now().Unix()
+	// Build a token with an exp claim so ExtractFromToken works
+	var jwt utils.JsonWebToken
+	jwt.SetHeader("HS256")
+	jwt.AddClaim("exp", strconv.FormatInt(now+3600, 10))
+	jwt.Encode()
+	jwt.SymmSign(theAtSecret)
+	token := jwt.GetFullToken()
+
+	writeToActiveList(99, token)
+	if activeList[0].GatingId != 99 {
+		t.Errorf("GatingId = %d; want 99", activeList[0].GatingId)
+	}
+	if activeList[0].Atoken != token {
+		t.Errorf("Atoken mismatch")
+	}
+	// AtokenHandle should be the signature (last segment)
+	if activeList[0].AtokenHandle != extractSignature(token) {
+		t.Errorf("AtokenHandle = %q; want signature segment", activeList[0].AtokenHandle)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Integration-only functions in atServer — documented as such (not unit-tested)
+//
+//   - AtServerInit          binds HTTP/WS listeners, calls os.Exit on failure
+//   - initClientComm        calls http.ListenAndServe (blocks forever)
+//   - initEcfComm           calls http.ListenAndServeTLS (blocks forever)
+//   - makeEcfHandler        spawns goroutines for WS connections
+//   - ecfReceiver/ecfSender websocket goroutines, block on conn.ReadMessage
+//   - accessTokenResponse   requires a live RSA AGT key for signature verify
+//   - consentInquiryResponse references pendingList in an unbounded loop
+//   - validateRequest        requires RSA public key and real JWT
+//   - validatePop            requires real RSA keypair
+//   - checkifConsent         requires live VSS tree via utils.SetRootNodePointer
+//   - generateAt             requires uuid.NewRandom (non-pure)
+//   - initAgtKey             reads from filesystem
+//   - initPurposelist        reads from filesystem (os.Exit on failure)
+//   - initScopeList          reads from filesystem (os.Exit on failure)
+//   - setExpiryTicker        mutates live expiryTicker (tested via purgeLists)
+//   - deleteJti              blocks for (GAP+LIFETIME+5) seconds
+// --------------------------------------------------------------------------
