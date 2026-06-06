@@ -113,6 +113,15 @@ func TestGetValueForKey_EmptyMessage(t *testing.T) {
 	}
 }
 
+func TestGetValueForKey_ValueStartAtEnd(t *testing.T) {
+	// When the opening quote of the value is the last character, valueStart
+	// points past the end of the string → return "".
+	// Input: `"action":"` (len=10), key `"action"` → valueStart=10 == len(10).
+	if got := getValueForKey(`"action":"`, `"action"`); got != "" {
+		t.Errorf("got %q; want \"\"", got)
+	}
+}
+
 // --------------------------------------------------------------------------
 // signedTimeDiff — pre-fix would panic on empty diffMsStr via diffMsStr[1:].
 // --------------------------------------------------------------------------
@@ -1104,6 +1113,104 @@ func TestErrorResponseMap_FinalizeIsValidJSON(t *testing.T) {
 	}
 	if parsed["error"] == nil {
 		t.Errorf("missing error key: %s", out)
+	}
+}
+
+// --------------------------------------------------------------------------
+// checkCompressionRequest — responseHandling variants 2, 3, 4
+// --------------------------------------------------------------------------
+
+func TestCheckCompressionRequest_Handling2_GetWithPaths(t *testing.T) {
+	initDcCache()
+	// singleResponse=true (get), singlePath=false (paths array) → handling=2
+	req := `{"action":"get","paths":["A","B"],"requestId":"r-h2","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h2")
+	if idx == -1 {
+		t.Fatal("not cached for handling-2")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 2 {
+		t.Errorf("got handling=%d; want 2", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+func TestCheckCompressionRequest_Handling3_SubscribeSinglePath(t *testing.T) {
+	initDcCache()
+	// singleResponse=false (subscribe), singlePath=true → handling=3
+	req := `{"action":"subscribe","path":"A","requestId":"r-h3","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h3")
+	if idx == -1 {
+		t.Fatal("not cached for handling-3")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 3 {
+		t.Errorf("got handling=%d; want 3", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+func TestCheckCompressionRequest_Handling4_SubscribeMultiplePaths(t *testing.T) {
+	initDcCache()
+	// singleResponse=false (subscribe), singlePath=false (paths) → handling=4
+	req := `{"action":"subscribe","paths":["A","B"],"requestId":"r-h4","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h4")
+	if idx == -1 {
+		t.Fatal("not cached for handling-4")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 4 {
+		t.Errorf("got handling=%d; want 4", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+// --------------------------------------------------------------------------
+// replaceTs — happy path (actual timestamp replacement)
+// --------------------------------------------------------------------------
+
+func TestReplaceTs_SingleBracePreIndexPath(t *testing.T) {
+	// When the messageTs position has only 1 '{' before it (top-level ts),
+	// the preIndex path is taken.  The inner timestamp should be replaced.
+	refTs := "2024-01-01T10:00:01Z"
+	innerTs := "2024-01-01T10:00:00Z" // 1000ms before refTs
+	// Single '{' before refTs position (it's right after the first '{').
+	msg := `{"ts":"` + refTs + `","dp":"100","innerTs":"` + innerTs + `"}`
+	got := replaceTs(msg, refTs, []string{innerTs})
+	// The inner ts should have been replaced with a diff (not the original ISO string).
+	if strings.Contains(got, innerTs) {
+		t.Errorf("inner ts was not replaced; got: %s", got)
+	}
+}
+
+func TestReplaceTs_MultipleOpenBracesPostIndexPath(t *testing.T) {
+	// When multiple '{' appear before the messageTs position (nested ts),
+	// the postIndex path is taken.  The inner timestamp should be replaced.
+	refTs := "2024-01-01T10:00:01Z"
+	innerTs := "2024-01-01T10:00:00Z"
+	// Two '{' before refTs (outer object + nested data object).
+	msg := `{"data":[{"ts":"` + innerTs + `","v":"50"}],"ts":"` + refTs + `"}`
+	got := replaceTs(msg, refTs, []string{innerTs})
+	if strings.Contains(got, innerTs) {
+		t.Errorf("inner ts was not replaced in postIndex path; got: %s", got)
+	}
+}
+
+func TestReplaceTs_BadTsListEntrySkipped(t *testing.T) {
+	// Bad format in tsList[i] → parse error → continue; message unchanged.
+	refTs := "2024-01-01T10:00:01Z"
+	msg := `{"ts":"` + refTs + `","v":"50","bad":"not-a-ts"}`
+	got := replaceTs(msg, refTs, []string{"not-a-ts"})
+	if !strings.Contains(got, "not-a-ts") {
+		t.Errorf("bad tsList entry should not be removed; got: %s", got)
+	}
+}
+
+func TestReplaceTs_LargeOffsetKeptAsISO(t *testing.T) {
+	// When |diffMs| > 999_999_999, the timestamp is kept as the original ISO string.
+	refTs := "2024-01-01T10:00:00Z"
+	farTs := "2020-01-01T00:00:00Z" // ~4 years gap >> 999_999_999 ms
+	msg := `{"ts":"` + refTs + `","old":"` + farTs + `"}`
+	got := replaceTs(msg, refTs, []string{farTs})
+	if !strings.Contains(got, farTs) {
+		t.Errorf("large-offset ts should NOT be replaced; got: %s", got)
 	}
 }
 
