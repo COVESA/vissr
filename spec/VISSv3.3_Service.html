@@ -239,14 +239,17 @@ construct a HIM service tree node for the procedure (see §17).</p>
 process, the server forwards the invocation:</p>
 
 <pre>{
-  "action": "invoke",
+  "action":    "invoke",
   "sessionId": "123456",
-  "input": {"SeatId": "Row1-DriverSide", "Position": "40"}
+  "input":     {"SeatId": "Row1-DriverSide", "Position": "40"}
 }</pre>
 
 <p>The <code>sessionId</code> is the server-assigned invocation identifier (same value as the
 <code>serviceId</code> returned to the client). The service process uses this identifier in all
 subsequent progress messages for this invocation.</p>
+
+<p>If the original client request included an <code>authorization</code> token, the server MUST
+include it in this message as well (see §21).</p>
 
 <p>If no service process is registered for a procedure path, the server MAY either reject the
 invoke with a 503 error or maintain the invocation in ONGOING state and wait for a service
@@ -270,6 +273,10 @@ update, subject to each session's filter settings (see VISSv3.2 §7).</p>
 <p>Terminal status values (SUCCESSFUL, CANCELED, FAILED) MUST be sent at most once per
 sessionId. After sending a terminal update the service process MUST NOT send further messages
 for that sessionId.</p>
+
+<p>A FAILED progress update SHOULD include a structured <code>error</code> field to allow clients
+to distinguish error types (see §20). A successful ONGOING or terminal update MUST NOT include an
+<code>error</code> field.</p>
 
 <h3 id="ssp-deregistration">12.6 Deregistration</h3>
 
@@ -376,21 +383,32 @@ WithOutput(name, datatype string) *Service
 // Register the handler called for each incoming invocation.
 OnInvoke(handler func(ctx *InvokeContext)) *Service
 
+// Enable automatic reconnect on connection loss (§24).
+// maxRetries: max attempts (0 = unlimited). initialDelay: starting backoff.
+WithReconnect(maxRetries int, initialDelay time.Duration) *Service
+
 // Connect to the server, send the registration message, and return the
 // registered service. Returns an error if connection or registration fails.
 Register() (*Service, error)
 
-// Block, reading and dispatching invoke messages. Returns when the
-// connection is closed or Close() is called.
+// Block, reading and dispatching invoke/ping messages. If WithReconnect
+// was called, re-registers automatically on connection loss (§24).
+// Returns when the connection is permanently closed or Close() is called.
 Run()
 
 // Deregister and close the connection. Idempotent.
 Close()
 
-// InvokeContext methods:
-//   SessionId  string                     — the invocation identifier
-//   Input      map[string]interface{}     — the input parameters
+// InvokeContext fields and methods:
+//   SessionId     string                      — the invocation identifier
+//   Input         map[string]interface{}      — the input parameters
+//   Authorization string                      — forwarded client auth token (§21); may be empty
+//
 //   ReportProgress(status string, output map[string]interface{}) error
+//       — send ONGOING / SUCCESSFUL / CANCELED with optional output
+//
+//   ReportError(code, message string, output map[string]interface{}) error
+//       — send FAILED with a structured error payload (§20)
 </pre>
 
 <h3 id="sdk-example">16.2 SDK Usage Example</h3>
@@ -560,9 +578,9 @@ HIM tree description field.</p>
 
 <h2 id="auth-passthrough">§21. Authorization Pass-Through <span class="new">[NEW in 3.3]</span></h2>
 
-<p>VISSv3.2 §8 defines an <code>authorization</code> field in service requests. In VISSv3.3,
-the server MUST forward this token to the service process in the invoke message so that service
-implementations can perform their own access checks.</p>
+<p>VISSv3.2 §6.1 and §6.2 define an optional <code>authorization</code> field in invoke and
+monitor requests. In VISSv3.3, the server MUST forward this token to the service process in the
+invoke message (§12.4) so that service implementations can perform their own access checks.</p>
 
 <h3>21.1 Invoke Message with Authorization (server → service)</h3>
 
