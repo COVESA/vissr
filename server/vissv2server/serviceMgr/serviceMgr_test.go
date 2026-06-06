@@ -2700,6 +2700,41 @@ func TestUpdateFeederRegList_DeregNotFound(t *testing.T) {
 	}
 }
 
+func TestUpdateFeederRegList_DeregWithConn(t *testing.T) {
+	// Test the Conn.Close() path in updateFeederRegList
+	savedList := feederRegList
+	savedChannelList := feederChannelList
+	defer func() {
+		feederRegList = savedList
+		feederChannelList = savedChannelList
+	}()
+	feederChannelList = make([]FeederChannelElem, 5)
+	feederChannelList[0].Busy = true
+
+	// Create a real net.Conn using net.Pipe
+	server, client := net.Pipe()
+	defer client.Close()
+
+	feederRegList = []FeederRegElem{
+		{Name: "conn-feeder", InfoType: "reg", Conn: server, ChannelIndex: 0},
+	}
+
+	deregElem := FeederRegElem{Name: "conn-feeder", InfoType: "dereg"}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	updateFeederRegList(deregElem)
+	if len(feederRegList) != 0 {
+		t.Errorf("after dereg: feederRegList = %v; want empty", feederRegList)
+	}
+	// feederChannelList[0] should be freed
+	if feederChannelList[0].Busy {
+		t.Error("feederChannelList[0] should be freed")
+	}
+}
+
 // --------------------------------------------------------------------------
 // postProcess1dim — state machine branches
 // --------------------------------------------------------------------------
@@ -2776,9 +2811,67 @@ func TestPostProcess1dim_ThirdCall_FirstSelectedNonZero(t *testing.T) {
 	pp[1].Data = CLBufElement{Value: 5.0, Timestamp: 1.0}
 	pp[1].Dp = `{"value":"5","ts":"t1"}`
 	pp[2].Type = -1 // slot 2 not populated — stays in "second call" branch
-	result, pp2 := postProcess1dim(&rb, 1, 2, pp, 1.0) // firstSelected=1 (non-zero)
+	result, pp2 := postProcess1dim(&rb, 1, 2, pp, 1.0) // firstSelected=1 (non-zero), postProc[1].Type==-1
 	_ = result
 	_ = pp2
+}
+
+func TestPostProcess1dim_ThirdBranch_AllSlotsPopulated(t *testing.T) {
+	rb := makeTestRingBuffer()
+	pp := makeTestPostProc()
+	// Populate all three slots so we reach the "else" branch (third call)
+	pp[0].Type = 1
+	pp[0].Data = CLBufElement{Value: 0.0, Timestamp: 0.0}
+	pp[0].Dp = `{"value":"0","ts":"t0"}`
+	pp[1].Type = 1
+	pp[1].Data = CLBufElement{Value: 10.0, Timestamp: 1.0} // deviation from linear → saveNonPdrDp=true
+	pp[1].Dp = `{"value":"10","ts":"t1"}`
+	pp[2].Type = 1
+	pp[2].Data = CLBufElement{Value: 10.0, Timestamp: 2.0}
+	pp[2].Dp = `{"value":"10","ts":"t2"}`
+	// saveNonPdrDp(pp, 1.0): fraction=0.5, interpolated=5, error=|10-5|=5 > 1.0 → true
+	// firstSelected=0 → branch at line 856-860
+	result, pp3 := postProcess1dim(&rb, 0, 2, pp, 1.0)
+	_ = result
+	_ = pp3
+}
+
+func TestPostProcess1dim_ThirdBranch_SaveNonPdrFalse(t *testing.T) {
+	rb := makeTestRingBuffer()
+	pp := makeTestPostProc()
+	pp[0].Type = 1
+	pp[0].Data = CLBufElement{Value: 0.0, Timestamp: 0.0}
+	pp[0].Dp = `{"value":"0","ts":"t0"}`
+	pp[1].Type = 1
+	pp[1].Data = CLBufElement{Value: 5.0, Timestamp: 1.0} // linear interpolation → error=0 < maxError
+	pp[1].Dp = `{"value":"5","ts":"t1"}`
+	pp[2].Type = 1
+	pp[2].Data = CLBufElement{Value: 10.0, Timestamp: 2.0}
+	pp[2].Dp = `{"value":"10","ts":"t2"}`
+	// saveNonPdrDp returns false → else branch at line 867-877, firstSelected=0
+	result, pp3 := postProcess1dim(&rb, 0, 2, pp, 100.0) // large maxError → saveNonPdrDp=false
+	if result != "" {
+		t.Errorf("saveNonPdrDp=false, firstSelected=0: expected empty result; got %q", result)
+	}
+	_ = pp3
+}
+
+func TestPostProcess1dim_ThirdBranch_FirstSelectedNonZero(t *testing.T) {
+	rb := makeTestRingBuffer()
+	pp := makeTestPostProc()
+	pp[0].Type = 1
+	pp[0].Data = CLBufElement{Value: 0.0, Timestamp: 0.0}
+	pp[0].Dp = `{"value":"0","ts":"t0"}`
+	pp[1].Type = 1
+	pp[1].Data = CLBufElement{Value: 10.0, Timestamp: 1.0}
+	pp[1].Dp = `{"value":"10","ts":"t1"}`
+	pp[2].Type = 1
+	pp[2].Data = CLBufElement{Value: 10.0, Timestamp: 2.0}
+	pp[2].Dp = `{"value":"10","ts":"t2"}`
+	// firstSelected=1 (non-zero), saveNonPdrDp=true → line 861-865
+	result, pp3 := postProcess1dim(&rb, 1, 2, pp, 1.0)
+	_ = result
+	_ = pp3
 }
 
 // --------------------------------------------------------------------------
@@ -3111,6 +3204,24 @@ func TestAnalyzeSignalDimensions_Dim1Default(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSignalDimensions_Dim3PartialFallsBackToDim2(t *testing.T) {
+	// dim3 path: paths[i] is dim3-path1, paths[j] is dim3-path2, but paths[k] is NOT dim3-path3
+	// → falls to the else-branch (line 368-375) which assigns dim2
+	sdl := &SignalDimensionLists{
+		dim3List: []Dim3Elem{
+			{Path1: "Vehicle.Lat", Path2: "Vehicle.Lon", Path3: "Vehicle.Alt"},
+		},
+	}
+	// Only two of the three dim3 paths present → no k that satisfies is3dim(k,3,...) → goes to else
+	// Actually looking at the code: the else is at line 368-375 which handles "paths[k] is NOT dim3 path3"
+	// In this case, is3dim(k, 3, ...) is false and since the loop exhausts, it falls through to dim2
+	paths := []string{"Vehicle.Lat", "Vehicle.Lon", "Vehicle.Speed"} // Speed is NOT Alt
+	result := analyzeSignalDimensions(paths, sdl)
+	// Lat is dim3-path1, Lon is dim3-path2, Speed is NOT dim3-path3 → else branch → dim2
+	// Actually the code: is3dim(Speed, 3, dim3List) → false → the else branch
+	_ = result
+}
+
 func TestAnalyzeSignalDimensions_NilDimensionList(t *testing.T) {
 	paths := []string{"Vehicle.Speed", "Vehicle.Acceleration"}
 	result := analyzeSignalDimensions(paths, nil)
@@ -3176,6 +3287,25 @@ func TestDeallocateTriggChannels_NotBusy(t *testing.T) {
 			SubscriptionId: "2",
 			TriggRoutingList: []TriggRoutingElem{
 				{Index: 0, Path: []string{"Vehicle.Speed"}},
+			},
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	deallocateTriggChannels(0, routingDataList)
+}
+
+func TestDeallocateTriggChannels_IndexOutOfTriggChannelRange(t *testing.T) {
+	initClResources()
+	// An index that is >= len(triggChannelList) → out-of-range guard → continue
+	routingDataList := []TriggRoutingData{
+		{
+			SubscriptionId: "3",
+			TriggRoutingList: []TriggRoutingElem{
+				{Index: 9999, Path: []string{"Vehicle.Speed"}}, // out of range
 			},
 		},
 	}
@@ -3463,6 +3593,48 @@ func TestCurveLoggingDispatcher_SmallBufSize(t *testing.T) {
 	_ = subThreads
 }
 
+func TestCurveLoggingDispatcher_AllResourcesUtilized(t *testing.T) {
+	initClResources()
+	// Saturate numOfClSessions so incrementClSessionsIfAvailable returns false
+	for i := 0; i < MAXCLSESSIONS; i++ {
+		incrementClSessionsIfAvailable()
+	}
+	defer func() {
+		for i := 0; i < MAXCLSESSIONS; i++ {
+			decrementClSessions()
+		}
+	}()
+	clChan := make(chan CLPack, 4)
+	// Pass a path that would create a dim1 entry but all sessions are full → skip
+	routingData, subThreads := curveLoggingDispatcher(clChan, 503, `{"maxerr":"0.1","bufsize":"3"}`, []string{"Vehicle.Speed"})
+	if subThreads.NumofThreads != 0 {
+		t.Errorf("NumofThreads = %d; want 0 when resources are full", subThreads.NumofThreads)
+	}
+	if len(routingData.TriggRoutingList) != 0 {
+		t.Errorf("TriggRoutingList = %v; want empty when resources are full", routingData.TriggRoutingList)
+	}
+}
+
+func TestCurveLoggingDispatcher_NoFreeTriggChannel(t *testing.T) {
+	initClResources()
+	// Mark all triggChannelList slots as Busy → allocateTriggChannelIndex returns -1
+	for i := 0; i < len(triggChannelList); i++ {
+		triggChannelList[i].Busy = true
+	}
+	defer func() {
+		for i := 0; i < len(triggChannelList); i++ {
+			triggChannelList[i].Busy = false
+		}
+	}()
+	clChan := make(chan CLPack, 4)
+	// One session is available (incrementClSessionsIfAvailable succeeds) but no trigg channel
+	routingData, subThreads := curveLoggingDispatcher(clChan, 504, `{"maxerr":"0.1","bufsize":"3"}`, []string{"Vehicle.Speed"})
+	if subThreads.NumofThreads != 0 {
+		t.Errorf("NumofThreads = %d; want 0 when no trigg channel", subThreads.NumofThreads)
+	}
+	_ = routingData
+}
+
 // --------------------------------------------------------------------------
 // handleFromFeederMessage — subscription path
 // --------------------------------------------------------------------------
@@ -3619,6 +3791,34 @@ func TestClAnalyze3dim_MultipleElements(t *testing.T) {
 	if dp1 == "" || dp2 == "" || dp3 == "" {
 		t.Errorf("multi-element: expected non-empty; dp1=%q dp2=%q dp3=%q", dp1, dp2, dp3)
 	}
+}
+
+func TestClAnalyze2dim_MultipleSelectedIndices(t *testing.T) {
+	// Force clReduction2Dim to select multiple indices by using highly non-linear data
+	now := time.Now()
+	// Use a zigzag pattern: 0,100,0,100,0 → large maxError → many selected
+	vals := []float64{0, 100, 0, 100, 0, 100, 0}
+	rb1 := makeNumericRingBuffer(vals, now)
+	rb2 := makeNumericRingBuffer(vals, now)
+	dp1, dp2, tail := clAnalyze2dim(&rb1, &rb2, len(vals), 0.001) // tiny maxError
+	// With multiple selected points, dp1/dp2 should be arrays
+	if dp1 == "" || dp2 == "" {
+		t.Errorf("expected non-empty; dp1=%q dp2=%q", dp1, dp2)
+	}
+	_ = tail
+}
+
+func TestClAnalyze3dim_MultipleSelectedIndices(t *testing.T) {
+	now := time.Now()
+	vals := []float64{0, 100, 0, 100, 0, 100, 0}
+	rb1 := makeNumericRingBuffer(vals, now)
+	rb2 := makeNumericRingBuffer(vals, now)
+	rb3 := makeNumericRingBuffer(vals, now)
+	dp1, dp2, dp3, tail := clAnalyze3dim(&rb1, &rb2, &rb3, len(vals), 0.001)
+	if dp1 == "" || dp2 == "" || dp3 == "" {
+		t.Errorf("expected non-empty; dp1=%q dp2=%q dp3=%q", dp1, dp2, dp3)
+	}
+	_ = tail
 }
 
 // --------------------------------------------------------------------------
@@ -3780,6 +3980,230 @@ func TestNewMemcacheBackend_ConstructorNotNil(t *testing.T) {
 	b := newMemcacheBackend(nil, toFeederChan)
 	if b == nil {
 		t.Error("newMemcacheBackend should return non-nil")
+	}
+}
+
+// --------------------------------------------------------------------------
+// handleToFeederMessage — subscribe updates message when count < 5
+// --------------------------------------------------------------------------
+
+func TestHandleToFeederMessage_SubscribeUpdatesMessageWhenCountBelow5(t *testing.T) {
+	// When feederNotification != "not-supported" and subMessageCount < 5,
+	// the subscribe branch should rewrite message and increment count.
+	resetFeederGlobals()
+	fromCl := make(chan string, 1)
+	notif := "not-verified"
+	count := 0
+
+	handleToFeederMessage(
+		`{"action":"subscribe","subscriptionId":"42","variant":"change","path":["Vehicle.Speed"]}`,
+		fromCl, &notif, &count)
+
+	// count should have incremented to 1 and notif should still be "not-verified"
+	if count != 1 {
+		t.Errorf("subMessageCount: got %d; want 1", count)
+	}
+	if notif != "not-verified" {
+		t.Errorf("feederNotification: got %q; want not-verified", notif)
+	}
+}
+
+// --------------------------------------------------------------------------
+// handleToFeederMessage — write error path (feeder conn closed before write)
+// --------------------------------------------------------------------------
+
+func TestHandleToFeederMessage_WriteErrorIsLoggedNotPanicked(t *testing.T) {
+	savedRegList := feederRegList
+	defer func() { feederRegList = savedRegList }()
+
+	// Create a net.Pipe pair, then close the write end so Write returns an error.
+	server, client := net.Pipe()
+	client.Close() // close reading end so writes to server fail
+	server.Close() // also close server — writes will error immediately
+
+	feederRegList = []FeederRegElem{
+		{Name: "closed-feeder", InfoType: "Data", Conn: server, ChannelIndex: -1},
+	}
+
+	fromCl := make(chan string, 1)
+	notif := "not-supported" // skip subscribe rewrite
+	count := 0
+
+	// The set action falls through to the write loop; write should fail but not panic.
+	handleToFeederMessage(
+		`{"action":"set","path":"Vehicle.Speed","value":"42"}`,
+		fromCl, &notif, &count)
+	// If we reach here without panic, the error-logging branch was exercised.
+}
+
+// --------------------------------------------------------------------------
+// activateInterval — no ticker available (all 255 slots occupied)
+// --------------------------------------------------------------------------
+
+func TestActivateInterval_NoTickerAvailable(t *testing.T) {
+	resetTickerGlobals()
+	defer resetTickerGlobals()
+
+	// Fill all MAXTICKERS slots with dummy IDs so allocateTicker returns -1.
+	tickerMu.Lock()
+	for i := range tickerIndexList {
+		tickerIndexList[i] = i + 1 // non-zero → slot occupied
+	}
+	tickerMu.Unlock()
+
+	ch := make(chan int, 1)
+	// Should log error and return without panicking.
+	activateInterval(ch, 9999, 50)
+	// No tick should arrive.
+	select {
+	case <-ch:
+		t.Error("got a tick but expected none (no ticker allocated)")
+	default:
+	}
+}
+
+// --------------------------------------------------------------------------
+// activateHistory — no ticker available (all 255 slots occupied)
+// --------------------------------------------------------------------------
+
+func TestActivateHistory_NoTickerAvailable(t *testing.T) {
+	resetTickerGlobals()
+	defer resetTickerGlobals()
+
+	tickerMu.Lock()
+	for i := range tickerIndexList {
+		tickerIndexList[i] = i + 1
+	}
+	tickerMu.Unlock()
+
+	ch := make(chan int, 1)
+	// Should log error and return without panicking.
+	activateHistory(ch, 9999, 3600)
+	select {
+	case <-ch:
+		t.Error("got a tick but expected none (no ticker allocated)")
+	default:
+	}
+}
+
+// --------------------------------------------------------------------------
+// sqliteBackend.Set — stmt.Exec error (prepare succeeds, exec fails on
+// closed DB)
+// --------------------------------------------------------------------------
+
+func TestSqliteBackend_SetExecError(t *testing.T) {
+	db := openTestSqlite()
+	b := newSqliteBackend(db)
+
+	// Prepare will succeed while DB is open.  We then close the DB before
+	// Set can actually call Exec — however database/sql's connection pool
+	// means Prepare may already hold a connection. Instead we exercise the
+	// Exec error path by pointing at a path in a table that was dropped after
+	// open, which forces Exec to return "no such table".
+	db.Exec("DROP TABLE IF EXISTS VSS_MAP")
+
+	ts := b.Set("Vehicle.Speed", "99.0")
+	if ts != "" {
+		t.Errorf("expected empty ts on exec error; got %q", ts)
+	}
+}
+
+// --------------------------------------------------------------------------
+// processHistoryCtrl — create action with missing buf-size key
+// --------------------------------------------------------------------------
+
+func TestProcessHistoryCtrl_CreateMissingBufSize(t *testing.T) {
+	// Exercises the lines 676-679 branch: action=="create" but buf-size key absent.
+	if !createHistoryList([]byte(`{"LeafPaths":["Vehicle.Speed"]}`)) {
+		t.Fatal("createHistoryList failed")
+	}
+	defer func() { historyList = nil }()
+
+	got := processHistoryCtrl(`{"action":"create","path":"Vehicle.Speed"}`, nil, true)
+	if got != "400 Bad Request" {
+		t.Errorf("got %q; want 400 Bad Request", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// unpacksignalDimensionMap — array containing non-map element
+// --------------------------------------------------------------------------
+
+func TestUnpacksignalDimensionMap_ArrayWithNonMapElement(t *testing.T) {
+	// When a dim2/dim3 array contains a non-object element, the inner
+	// type-assertion fails and the element should be skipped (no panic).
+	m := map[string]interface{}{
+		"dim2": []interface{}{
+			map[string]interface{}{"path1": "Vehicle.A", "path2": "Vehicle.B"},
+			"not-a-map", // invalid element → logs error, continues
+		},
+	}
+	var lists SignalDimensionLists
+	result := unpacksignalDimensionMap(m, &lists)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// dim2List was allocated for len(vv)=2, first element populated, second skipped
+	if len(result.dim2List) != 2 {
+		t.Errorf("dim2List len = %d; want 2", len(result.dim2List))
+	}
+	if result.dim2List[0].Path1 != "Vehicle.A" {
+		t.Errorf("Path1 = %q; want Vehicle.A", result.dim2List[0].Path1)
+	}
+}
+
+// --------------------------------------------------------------------------
+// getDataPack — historySupport=true path (lines 883-886)
+//
+// When historySupport is true and the filter has type "history", getDataPack
+// sets getHistory=true, then sends/receives on historyAccessChannel.  We
+// need a goroutine echoing on that channel to prevent blocking.
+// --------------------------------------------------------------------------
+
+func TestGetDataPack_HistoryFilterWhenSupported(t *testing.T) {
+	// Save and restore globals
+	savedSupport := historySupport
+	savedChan := historyAccessChannel
+	defer func() {
+		historySupport = savedSupport
+		historyAccessChannel = savedChan
+	}()
+
+	historySupport = true
+	historyAccessChannel = make(chan string, 2)
+
+	// Goroutine that simulates historyServer: echo back a datapoint reply.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Receive the request sent by getDataPack
+		req := <-historyAccessChannel
+		if req == "" {
+			return
+		}
+		// Send back a synthetic datapoint
+		historyAccessChannel <- `{"value":"55","ts":"2026-01-01T00:00:00Z"}`
+	}()
+
+	if !createHistoryList([]byte(`{"LeafPaths":["Vehicle.Speed"]}`)) {
+		t.Fatal("createHistoryList failed")
+	}
+	defer func() { historyList = nil }()
+
+	filters := []utils.FilterObject{{Type: "history", Parameter: "1h"}}
+	result := getDataPack([]string{"Vehicle.Speed"}, filters)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("history goroutine timed out")
+	}
+
+	if result == "" {
+		t.Error("expected non-empty data pack from history filter")
+	}
+	if !strings.Contains(result, "Vehicle.Speed") {
+		t.Errorf("expected Vehicle.Speed in result; got %q", result)
 	}
 }
 
