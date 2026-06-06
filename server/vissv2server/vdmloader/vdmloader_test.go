@@ -3,6 +3,7 @@ package vdmloader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/covesa/vissr/utils"
@@ -799,6 +800,326 @@ func TestDeepClone_IsIndependent(t *testing.T) {
 	}
 	if clone.Child[0].Parent != clone {
 		t.Error("clone child Parent does not point to clone")
+	}
+}
+
+// ── Coverage gap tests ────────────────────────────────────────────────────────
+
+func TestScreaming2Pascal_EmptySegment(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"DOUBLE__UNDER", "DoubleUnder"},
+		{"TRAILING_", "Trailing"},
+		{"_LEADING", "Leading"},
+	}
+	for _, tc := range cases {
+		if got := screaming2Pascal(tc.in); got != tc.want {
+			t.Errorf("screaming2Pascal(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMapElement_AllCases(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"SENSOR", utils.SENSOR},
+		{"ACTUATOR", utils.ACTUATOR},
+		{"ATTRIBUTE", utils.ATTRIBUTE},
+		{"BRANCH", utils.BRANCH},
+		{"BOGUS", utils.ATTRIBUTE},
+		{"", utils.ATTRIBUTE},
+	}
+	for _, tc := range cases {
+		if got := mapElement(tc.in); got != tc.want {
+			t.Errorf("mapElement(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestAddClonedToMap_Recursive(t *testing.T) {
+	parent := utils.NewBranchNode("Parent")
+	child := utils.NewBranchNode("Child")
+	grandchild := utils.NewSignalNode("Signal", utils.SENSOR, "float", "", "", "", "")
+	appendChild(child, grandchild)
+	appendChild(parent, child)
+
+	fqnMap := make(map[string]*utils.Node_t)
+	addClonedToMap(fqnMap, parent, "Root.Parent")
+
+	for _, want := range []string{"Root.Parent", "Root.Parent.Child", "Root.Parent.Child.Signal"} {
+		if _, ok := fqnMap[want]; !ok {
+			t.Errorf("fqnMap missing %q", want)
+		}
+	}
+}
+
+func TestDeepClone_Grandchildren(t *testing.T) {
+	root := utils.NewBranchNode("Root")
+	mid := utils.NewBranchNode("Mid")
+	leaf := utils.NewSignalNode("Leaf", utils.SENSOR, "float", "desc", "0", "100", "km/h")
+	appendChild(mid, leaf)
+	appendChild(root, mid)
+
+	clone := deepClone(root)
+
+	if len(clone.Child) != 1 {
+		t.Fatalf("clone.Child length = %d, want 1", len(clone.Child))
+	}
+	midClone := clone.Child[0]
+	if midClone == mid {
+		t.Error("mid clone is same pointer as original")
+	}
+	if midClone.Parent != clone {
+		t.Error("midClone.Parent != clone root")
+	}
+	if len(midClone.Child) != 1 {
+		t.Fatalf("midClone.Child length = %d, want 1", len(midClone.Child))
+	}
+	leafClone := midClone.Child[0]
+	if leafClone == leaf {
+		t.Error("leaf clone is same pointer as original")
+	}
+	if leafClone.Parent != midClone {
+		t.Error("leafClone.Parent != midClone")
+	}
+}
+
+func TestDeepClone_AllowedDef(t *testing.T) {
+	gear := utils.NewSignalNode("Gear", utils.SENSOR, "string", "", "", "", "")
+	gear.AllowedDef = []string{"Park", "Reverse", "Neutral"}
+	clone := deepClone(gear)
+
+	if len(clone.AllowedDef) != 3 {
+		t.Fatalf("clone.AllowedDef length = %d, want 3", len(clone.AllowedDef))
+	}
+	clone.AllowedDef[0] = "MODIFIED"
+	if gear.AllowedDef[0] != "Park" {
+		t.Error("original AllowedDef was mutated through clone slice")
+	}
+}
+
+func TestLoadDir_SkipsNonGraphQL(t *testing.T) {
+	// ReadDir returns entries in alpha order. Name non-.graphql files before any .graphql
+	// so the skip-continue branch fires before ParseSDL is reached.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "00_readme.txt"), []byte("ignore me"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "01_subdir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	minimalSDL := `
+type VehicleNGQ @vspec(element: BRANCH, fqn: "VehicleNGQ") {
+  speed: Float @vspec(element: SENSOR, fqn: "VehicleNGQ.Speed")
+}`
+	if err := os.WriteFile(filepath.Join(dir, "vehicle.graphql"), []byte(minimalSDL), 0644); err != nil {
+		t.Fatal(err)
+	}
+	n, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if n == 0 {
+		t.Error("expected at least one tree registered")
+	}
+}
+
+func TestLoadDir_InvalidSDLReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.graphql"), []byte("not valid SDL !!!"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDir(dir)
+	if err == nil {
+		t.Error("expected error for invalid SDL file, got nil")
+	}
+}
+
+func TestLoadDir_DuplicateSkipped(t *testing.T) {
+	dir := t.TempDir()
+	minimalSDL := `
+type VehicleDD @vspec(element: BRANCH, fqn: "VehicleDD") {
+  speed: Float @vspec(element: SENSOR, fqn: "VehicleDD.Speed")
+}`
+	if err := os.WriteFile(filepath.Join(dir, "dd.graphql"), []byte(minimalSDL), 0644); err != nil {
+		t.Fatal(err)
+	}
+	n1, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("first LoadDir: %v", err)
+	}
+	if n1 == 0 {
+		t.Fatal("expected at least one tree registered on first LoadDir")
+	}
+	n2, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("second LoadDir: %v", err)
+	}
+	if n2 != 0 {
+		t.Errorf("second LoadDir registered %d trees, want 0 (already registered)", n2)
+	}
+}
+
+func TestOriginalName_VspecWithoutOriginalNameArg(t *testing.T) {
+	// Enum value has @vspec but no originalName arg — inner loop exhausts, falls back to screaming2Pascal.
+	sdl := `
+type VehicleON @vspec(element: BRANCH, fqn: "VehicleON") {
+  gear: GearPosON @vspec(element: SENSOR, fqn: "VehicleON.Gear")
+}
+enum GearPosON {
+  PARK @vspec(fqn: "GearPosON.PARK")
+  REVERSE
+}`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	gear := findNode(roots[0], "Gear")
+	if gear == nil {
+		t.Fatal("Gear not found")
+	}
+	found := false
+	for _, v := range gear.AllowedDef {
+		if v == "Park" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("AllowedDef = %v, expected 'Park' (screaming2Pascal fallback for @vspec without originalName)", gear.AllowedDef)
+	}
+}
+
+func TestOriginalName_NonVspecDirectiveSkipped(t *testing.T) {
+	// Enum value has @deprecated (non-vspec directive) — outer loop hits continue, then falls back.
+	sdl := `
+type VehicleND @vspec(element: BRANCH, fqn: "VehicleND") {
+  gear: GearPosND @vspec(element: SENSOR, fqn: "VehicleND.Gear")
+}
+enum GearPosND {
+  PARK
+  REVERSE @deprecated
+}`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	gear := findNode(roots[0], "Gear")
+	if gear == nil {
+		t.Fatal("Gear not found")
+	}
+	found := false
+	for _, v := range gear.AllowedDef {
+		if v == "Reverse" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("AllowedDef = %v, expected 'Reverse' (non-vspec directive skipped, screaming2Pascal fallback)", gear.AllowedDef)
+	}
+}
+
+func TestExpandInstanceTags_AutoCreateMissingBase(t *testing.T) {
+	// InstanceTag's baseFQN is not declared as a BRANCH type — expandInstanceTags must auto-create it.
+	sdl := `
+type VehicleAC @vspec(element: BRANCH, fqn: "VehicleAC") {
+  cabin: VehicleACCabin @vspec(element: BRANCH, fqn: "VehicleAC.Cabin")
+}
+type VehicleACCabin @vspec(element: BRANCH, fqn: "VehicleAC.Cabin") {
+  dummy: Boolean @vspec(element: ATTRIBUTE, fqn: "VehicleAC.Cabin.Dummy")
+}
+
+type VehicleACCabinSeat_InstanceTag @vspec(fqn: "VehicleAC.Cabin.Seat") @instanceTag {
+  dimension1: SeatRowAutoEnum
+}
+enum SeatRowAutoEnum { ROW1 ROW2 }
+`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	seat := findNode(roots[0], "Seat")
+	if seat == nil {
+		t.Fatal("Seat not found — auto-create base branch failed")
+	}
+	if seat.NodeType != utils.BRANCH {
+		t.Errorf("Seat.NodeType = %q, want branch", seat.NodeType)
+	}
+	if int(seat.Children) != 2 {
+		t.Errorf("Seat.Children = %d, want 2 (Row1, Row2)", seat.Children)
+	}
+}
+
+func TestUnitFromDirectives_NoUnit(t *testing.T) {
+	// Field with no unit directive at all — covers the empty-string return path.
+	sdl := `
+type VehicleNU @vspec(element: BRANCH, fqn: "VehicleNU") {
+  flag: Boolean @vspec(element: SENSOR, fqn: "VehicleNU.Flag")
+}`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	flag := findNode(roots[0], "Flag")
+	if flag == nil {
+		t.Fatal("Flag not found")
+	}
+	if flag.Unit != "" {
+		t.Errorf("Unit = %q, want empty for field with no unit directive", flag.Unit)
+	}
+}
+
+func TestUnitFromDirectives_AtUnitForm(t *testing.T) {
+	// @unit(value: "KM_PER_HOUR") form — covers the first loop in unitFromDirectives.
+	sdl := `
+type VehicleU @vspec(element: BRANCH, fqn: "VehicleU") {
+  speed: Float @vspec(element: SENSOR, fqn: "VehicleU.Speed") @unit(value: "KM_PER_HOUR")
+}`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	speed := findNode(roots[0], "Speed")
+	if speed == nil {
+		t.Fatal("Speed not found")
+	}
+	if speed.Unit != "km/h" {
+		t.Errorf("Speed.Unit = %q, want km/h (via @unit directive)", speed.Unit)
+	}
+}
+
+func TestCollectDimensions_NonEnumBreaks(t *testing.T) {
+	// dimension1 typed as scalar (String) → collectDimensions breaks, no expansion.
+	sdl := `
+type VehicleCNE @vspec(element: BRANCH, fqn: "VehicleCNE") {
+  dummy: Boolean @vspec(element: ATTRIBUTE, fqn: "VehicleCNE.Dummy")
+}
+
+type VehicleCNE_InstanceTag @vspec(fqn: "VehicleCNE") @instanceTag {
+  dimension1: String
+}
+`
+	roots, _, err := ParseSDL(sdl)
+	if err != nil {
+		t.Fatalf("ParseSDL: %v", err)
+	}
+	if len(roots) == 0 {
+		t.Fatal("expected at least one root")
+	}
+	var cne *utils.Node_t
+	for _, r := range roots {
+		if r.Name == "VehicleCNE" {
+			cne = r
+			break
+		}
+	}
+	if cne == nil {
+		t.Fatal("VehicleCNE root not found")
+	}
+	// No instance branches (Row1/Row2) should have been added — only the Dummy attribute.
+	for _, child := range cne.Child {
+		if strings.HasPrefix(child.Name, "Row") || child.Name == "ROW1" || child.Name == "ROW2" {
+			t.Errorf("unexpected instance branch %q — collectDimensions should have broken on non-enum type", child.Name)
+		}
 	}
 }
 

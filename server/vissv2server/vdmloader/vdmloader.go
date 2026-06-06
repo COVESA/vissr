@@ -264,6 +264,13 @@ func expandInstanceTags(schema *ast.Schema, fqnMap map[string]*utils.Node_t) {
 			// create it now so the expansion has somewhere to attach.
 			baseNode = utils.NewBranchNode(lastSegment(baseFQN))
 			fqnMap[baseFQN] = baseNode
+			// Parent-child linking already ran; wire up the new node manually.
+			if pFQN := parentOf(baseFQN); pFQN != "" {
+				if pNode, pOk := fqnMap[pFQN]; pOk {
+					appendChild(pNode, baseNode)
+					baseNode.Parent = pNode
+				}
+			}
 		}
 
 		dims := collectDimensions(schema, t)
