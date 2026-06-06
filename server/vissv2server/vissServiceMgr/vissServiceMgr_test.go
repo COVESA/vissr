@@ -135,6 +135,22 @@ func TestPeriodFromFilter_InvalidFallsBack(t *testing.T) {
 	}
 }
 
+func TestPeriodFromFilter_ZeroPeriodFallsBack(t *testing.T) {
+	// err==nil but ms<=0 → the second branch of the compound condition
+	f := map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "0"}}
+	if p := periodFromFilter(f); p != time.Second {
+		t.Fatalf("want 1s for zero period, got %v", p)
+	}
+}
+
+func TestPeriodFromFilter_ParamNilFallsBack(t *testing.T) {
+	// "parameter" key missing → param==nil → return time.Second
+	f := map[string]interface{}{"variant": "timebased"}
+	if p := periodFromFilter(f); p != time.Second {
+		t.Fatalf("want 1s when no parameter key, got %v", p)
+	}
+}
+
 // ---- timeoutFromRequest ----------------------------------------------------
 
 func TestTimeoutFromRequest_MsInt(t *testing.T) {
@@ -365,6 +381,28 @@ func TestUpdateServiceState_NoneFilterNeverDelivers(t *testing.T) {
 	case <-ch:
 		t.Error("'none' filter should never deliver events")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestUpdateServiceState_WithProgress(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["inv-p"] = &invocationState{serviceId: "inv-p", path: "S.P", status: StatusOngoing}
+	sessions["sid-p"] = &monitorSession{sessionId: "sid-p", serviceId: "inv-p",
+		routerIndex: 0, filterKind: "all"}
+
+	pct := 50
+	UpdateServiceState("inv-p", StatusOngoing, nil, nil, &pct, bcs)
+
+	select {
+	case event := <-ch:
+		if _, ok := event["progress"]; !ok {
+			t.Errorf("progress field missing from event: %v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for progress event")
 	}
 }
 
