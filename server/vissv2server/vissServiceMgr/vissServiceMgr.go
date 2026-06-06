@@ -76,6 +76,7 @@ type invocationState struct {
 	startedAt time.Time
 	deadline  time.Time
 	cancelFn  func() // stops the timeout watchdog
+	progress  *int   // latest progress percentage 0-100 (§28); nil until first report
 }
 
 // monitorSession represents one client watching an invocation.
@@ -99,6 +100,20 @@ var (
 
 	// sessions maps sessionId → monitorSession.
 	sessions = map[string]*monitorSession{}
+)
+
+// pathMetrics accumulates per-path invocation statistics (VISSv3.3 §31).
+type pathMetrics struct {
+	total      int64
+	successes  int64
+	cancels    int64
+	failures   int64
+	totalDurMs int64
+}
+
+var (
+	metricsMu sync.Mutex
+	metrics   = map[string]*pathMetrics{}
 )
 
 // generateId produces a unique random numeric string.
@@ -143,7 +158,7 @@ func startTimeoutWatchdog(inv *invocationState, backendChans []chan map[string]i
 				return
 			}
 			mu.Unlock()
-			UpdateServiceState(inv.serviceId, StatusFailed, nil, nil, backendChans)
+			UpdateServiceState(inv.serviceId, StatusFailed, nil, nil, nil, backendChans)
 		case <-stopCh:
 		}
 	}()
@@ -212,9 +227,8 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	}
 
 	inputParams, _ := requestMap["input"].(map[string]interface{})
-	if !validateInputSignature(node, inputParams) {
-		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
-			"400", "bad_request", "input does not conform to service signature")
+	if ok, missingFields := validateInputSignature(node, inputParams); !ok {
+		sendValidationError(bc, "invoke", requestId, missingFields)
 		return
 	}
 
@@ -379,6 +393,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	delete(sessions, serviceId)
 
 	var outdataCopy map[string]interface{}
+	var cancelPath, cancelInvId string
 	if sess.isInvoke {
 		inv, invOk := invocations[sess.serviceId]
 		if invOk {
@@ -386,6 +401,8 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 				inv.cancelFn()
 			}
 			outdataCopy = copyMap(inv.outdata)
+			cancelPath = inv.path
+			cancelInvId = inv.serviceId
 			inv.status = StatusCanceled
 			// Remove all other sessions watching this invocation.
 			for id, s := range sessions {
@@ -400,6 +417,11 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 		}
 	}
 	mu.Unlock()
+
+	// Forward cancel to the service process so it can stop cleanly (VISSv3.3 §26).
+	if cancelPath != "" {
+		forwardCancelToService(cancelPath, cancelInvId)
+	}
 
 	ts := getTimestamp()
 	response := map[string]interface{}{
@@ -455,8 +477,11 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 //
 // svcErr, when non-nil, is included in monitoring events as
 // {"error":{"code":"...","message":"..."}} (VISSv3.3 §20).
+//
+// progress, when non-nil, stores the completion percentage (0-100) and is
+// included in ONGOING monitoring events (VISSv3.3 §28).
 func UpdateServiceState(serviceId string, status ServiceStatus,
-	outdata map[string]interface{}, svcErr *ServiceError,
+	outdata map[string]interface{}, svcErr *ServiceError, progress *int,
 	backendChans []chan map[string]interface{}) {
 
 	ts := getTimestamp()
@@ -475,6 +500,22 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 	inv.status = status
 	if outdataWrapped != nil {
 		inv.outdata = outdataWrapped
+	}
+	if progress != nil {
+		inv.progress = progress
+	}
+
+	// Snapshot progress and terminal-status data before releasing the lock.
+	var progressVal *int
+	if inv.progress != nil {
+		v := *inv.progress
+		progressVal = &v
+	}
+	var termPath string
+	var termDur time.Duration
+	if status != StatusOngoing {
+		termPath = inv.path
+		termDur = time.Since(inv.startedAt)
 	}
 
 	statusChanged := prevStatus != status
@@ -522,6 +563,27 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 	}
 	mu.Unlock()
 
+	// Update per-path observability counters for terminal transitions (§31).
+	if termPath != "" {
+		metricsMu.Lock()
+		pm := metrics[termPath]
+		if pm == nil {
+			pm = &pathMetrics{}
+			metrics[termPath] = pm
+		}
+		pm.total++
+		pm.totalDurMs += termDur.Milliseconds()
+		switch status {
+		case StatusSuccessful:
+			pm.successes++
+		case StatusCanceled:
+			pm.cancels++
+		case StatusFailed:
+			pm.failures++
+		}
+		metricsMu.Unlock()
+	}
+
 	for _, t := range targets {
 		if !t.shouldDeliver {
 			continue
@@ -541,6 +603,10 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 				"code":    svcErr.Code,
 				"message": svcErr.Message,
 			}
+		}
+		// Include progress percentage in ONGOING events only (§28).
+		if status == StatusOngoing && progressVal != nil {
+			event["progress"] = *progressVal
 		}
 		if t.sess.routerIndex < len(backendChans) {
 			backendChans[t.sess.routerIndex] <- event
@@ -600,12 +666,38 @@ func buildProcedureMetadata(node *utils.Node_t, path string) map[string]interfac
 		}
 	}
 
-	// Live service status from registrations (serviceReg.go, same package).
+	// Snapshot registration, version, and health fields under regMu.
+	// sc.mu is taken briefly while regMu is held; no other code takes regMu
+	// while holding sc.mu, so there is no deadlock risk.
 	regMu.Lock()
-	_, connected := registrations[path]
+	sc := registrations[path]
+	var connected bool
+	var version, healthDetail string
+	var healthy bool
+	var healthUpdatedAt time.Time
+	if sc != nil {
+		connected = true
+		version = sc.version
+		sc.mu.Lock()
+		healthy = sc.healthy
+		healthDetail = sc.healthDetail
+		healthUpdatedAt = sc.healthUpdatedAt
+		sc.mu.Unlock()
+	}
 	regMu.Unlock()
+
 	if connected {
 		meta["serviceStatus"] = "registered"
+		if version != "" {
+			meta["version"] = version
+		}
+		if !healthUpdatedAt.IsZero() {
+			meta["serviceHealth"] = map[string]interface{}{
+				"healthy":   healthy,
+				"detail":    healthDetail,
+				"updatedAt": healthUpdatedAt.UTC().Format(time.RFC3339),
+			}
+		}
 	} else {
 		meta["serviceStatus"] = "disconnected"
 	}
@@ -620,6 +712,22 @@ func buildProcedureMetadata(node *utils.Node_t, path string) map[string]interfac
 	}
 	mu.Unlock()
 	meta["activeInvocations"] = count
+
+	// Observability counters (§31).
+	metricsMu.Lock()
+	pm := metrics[path]
+	var pmTotal, pmSuccesses, pmTotalDurMs int64
+	if pm != nil {
+		pmTotal = pm.total
+		pmSuccesses = pm.successes
+		pmTotalDurMs = pm.totalDurMs
+	}
+	metricsMu.Unlock()
+	meta["totalInvocations"] = pmTotal
+	if pmTotal > 0 {
+		meta["successRate"] = float64(pmSuccesses) / float64(pmTotal)
+		meta["avgDurationMs"] = pmTotalDurMs / pmTotal
+	}
 
 	return meta
 }
@@ -640,7 +748,9 @@ func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 	return params
 }
 
-func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]interface{}) bool {
+// validateInputSignature checks that all required Input fields are present.
+// Returns (true, nil) when valid; (false, missingFields) when fields are absent.
+func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]interface{}) (bool, []string) {
 	numChildren := utils.VSSgetNumOfChildren(procedureNode)
 	for i := 0; i < numChildren; i++ {
 		child := utils.VSSgetChild(procedureNode, i)
@@ -651,21 +761,23 @@ func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]
 			return validateIoParams(child, inputParams)
 		}
 	}
-	return true
+	return true, nil // no Input iostruct means no input required
 }
 
-func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{}) bool {
+func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{}) (bool, []string) {
+	var missing []string
 	numChildren := utils.VSSgetNumOfChildren(iostructNode)
 	for i := 0; i < numChildren; i++ {
 		child := utils.VSSgetChild(iostructNode, i)
 		if child == nil {
 			continue
 		}
-		if _, ok := params[utils.VSSgetName(child)]; !ok {
-			return false
+		name := utils.VSSgetName(child)
+		if _, ok := params[name]; !ok {
+			missing = append(missing, name)
 		}
 	}
-	return true
+	return len(missing) == 0, missing
 }
 
 // ---- filter helpers --------------------------------------------------------
@@ -753,6 +865,28 @@ func copyMap(src map[string]interface{}) map[string]interface{} {
 		dst[k] = v
 	}
 	return dst
+}
+
+// sendValidationError sends a 400 error that lists the missing input field
+// names, providing callers with actionable detail (VISSv3.3 §29).
+func sendValidationError(backendChan chan map[string]interface{},
+	action, requestId string, missingFields []string) {
+
+	errMap := map[string]interface{}{
+		"action": action,
+		"status": string(StatusFailed),
+		"error": map[string]interface{}{
+			"number":      "400",
+			"reason":      "bad_request",
+			"description": "input does not conform to service signature",
+			"fields":      missingFields,
+		},
+		"ts": getTimestamp(),
+	}
+	if requestId != "" {
+		errMap["requestId"] = requestId
+	}
+	backendChan <- errMap
 }
 
 func sendServiceError(backendChan chan map[string]interface{},

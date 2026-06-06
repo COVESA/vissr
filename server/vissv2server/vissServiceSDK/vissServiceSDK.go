@@ -51,6 +51,13 @@ type InvokeContext struct {
 	Input         map[string]interface{}
 	Authorization string // forwarded client auth token (VISSv3.3 §21); may be empty
 	svc           *Service
+	doneCh        chan struct{} // closed when server cancels this invocation (§26)
+}
+
+// Done returns a channel that is closed when the server cancels this invocation
+// (VISSv3.3 §26). Handlers should select on Done() to stop early.
+func (ctx *InvokeContext) Done() <-chan struct{} {
+	return ctx.doneCh
 }
 
 // ReportProgress sends a status update to the VISS server.
@@ -60,6 +67,26 @@ func (ctx *InvokeContext) ReportProgress(status string, output map[string]interf
 	msg := map[string]interface{}{
 		"sessionId": ctx.SessionId,
 		"status":    status,
+	}
+	if output != nil {
+		msg["output"] = output
+	}
+	return ctx.svc.sendJSON(msg)
+}
+
+// ReportProgressPct sends an ONGOING status update with a completion percentage
+// (0-100) in the "progress" field (VISSv3.3 §28). Values outside [0,100] are
+// clamped. output may be nil.
+func (ctx *InvokeContext) ReportProgressPct(pct int, status string, output map[string]interface{}) error {
+	if pct < 0 {
+		pct = 0
+	} else if pct > 100 {
+		pct = 100
+	}
+	msg := map[string]interface{}{
+		"sessionId": ctx.SessionId,
+		"status":    status,
+		"progress":  pct,
 	}
 	if output != nil {
 		msg["output"] = output
@@ -98,6 +125,9 @@ type Service struct {
 	reconnect  bool
 	maxRetries int
 	retryDelay time.Duration
+	version    string                    // optional version declaration (§27)
+	activeCtxs map[string]*InvokeContext // live invocation contexts keyed by sessionId (§26)
+	ctxMu      sync.Mutex
 }
 
 // NewService creates a new service bound to the given procedure path.
@@ -110,7 +140,8 @@ func NewService(serverAddr, path string) *Service {
 			"input":  {},
 			"output": {},
 		},
-		stopCh: make(chan struct{}),
+		stopCh:     make(chan struct{}),
+		activeCtxs: make(map[string]*InvokeContext),
 	}
 }
 
@@ -129,6 +160,13 @@ func (s *Service) WithOutput(name, datatype string) *Service {
 // OnInvoke registers the handler that is called for each incoming invocation.
 func (s *Service) OnInvoke(h InvokeHandler) *Service {
 	s.handler = h
+	return s
+}
+
+// WithVersion declares the service implementation version, included in the
+// registration message and discover responses (VISSv3.3 §27).
+func (s *Service) WithVersion(v string) *Service {
+	s.version = v
 	return s
 }
 
@@ -185,6 +223,9 @@ func (s *Service) connect() error {
 		"path":      s.path,
 		"signature": sig,
 	}
+	if s.version != "" {
+		regMsg["version"] = s.version
+	}
 	if err := s.sendJSON(regMsg); err != nil {
 		conn.Close()
 		return fmt.Errorf("vissServiceSDK: send register: %w", err)
@@ -201,6 +242,12 @@ func (s *Service) connect() error {
 		reason, _ := ack["reason"].(string)
 		return fmt.Errorf("vissServiceSDK: registration rejected: %s", reason)
 	}
+	// Auto-report healthy status after successful registration (§30).
+	s.sendJSON(map[string]interface{}{ //nolint:errcheck
+		"action":  "health",
+		"healthy": true,
+		"detail":  "running",
+	})
 	return nil
 }
 
@@ -273,8 +320,29 @@ func (s *Service) runLoop() {
 				Input:         input,
 				Authorization: authToken,
 				svc:           s,
+				doneCh:        make(chan struct{}),
 			}
-			go s.handler(ctx)
+			s.ctxMu.Lock()
+			s.activeCtxs[sessionId] = ctx
+			s.ctxMu.Unlock()
+			go func() {
+				s.handler(ctx)
+				s.ctxMu.Lock()
+				delete(s.activeCtxs, sessionId)
+				s.ctxMu.Unlock()
+			}()
+		case "cancel":
+			// Close the done channel for the matching invocation context (§26).
+			sessionId, _ := msg["sessionId"].(string)
+			s.ctxMu.Lock()
+			if ctx, ok := s.activeCtxs[sessionId]; ok {
+				select {
+				case <-ctx.doneCh:
+				default:
+					close(ctx.doneCh)
+				}
+			}
+			s.ctxMu.Unlock()
 		case "ping":
 			// Heartbeat: respond with pong (VISSv3.3 §19).
 			s.sendJSON(map[string]interface{}{"action": "pong"}) //nolint:errcheck
@@ -293,6 +361,17 @@ func (s *Service) Close() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
+}
+
+// ReportHealth sends a health status update to the VISS server (VISSv3.3 §30).
+// A healthy:true report is sent automatically after Register(); call this to
+// update the status at any time (e.g., to report degraded health).
+func (s *Service) ReportHealth(healthy bool, detail string) error {
+	return s.sendJSON(map[string]interface{}{
+		"action":  "health",
+		"healthy": healthy,
+		"detail":  detail,
+	})
 }
 
 func (s *Service) sendJSON(v interface{}) error {

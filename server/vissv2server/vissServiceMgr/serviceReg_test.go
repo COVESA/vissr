@@ -338,6 +338,215 @@ func TestForwardInvokeToService_NoAuthWhenEmpty(t *testing.T) {
 
 // ---- startHeartbeat --------------------------------------------------------
 
+// ---- forwardCancelToService (§26) ------------------------------------------
+
+func TestForwardCancelToService_DeliversMessage(t *testing.T) {
+	const cancelPath = "Test.CancelProc"
+
+	srvConn, cliConn := net.Pipe()
+	defer srvConn.Close()
+	defer cliConn.Close()
+
+	sc := &serviceConn{
+		path:   cancelPath,
+		conn:   srvConn,
+		writer: bufio.NewWriter(srvConn),
+	}
+	regMu.Lock()
+	registrations[cancelPath] = sc
+	regMu.Unlock()
+	defer cleanReg(cancelPath)
+
+	readCli := jsonRead(cliConn)
+	msgCh := make(chan map[string]interface{}, 1)
+	go func() { msgCh <- readCli() }()
+
+	forwardCancelToService(cancelPath, "inv-cancel-1")
+
+	select {
+	case msg := <-msgCh:
+		if msg == nil {
+			t.Fatal("no message received by service")
+		}
+		if msg["action"] != "cancel" {
+			t.Errorf("want action=cancel, got %v", msg["action"])
+		}
+		if msg["sessionId"] != "inv-cancel-1" {
+			t.Errorf("wrong sessionId: %v", msg["sessionId"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for cancel message")
+	}
+}
+
+func TestForwardCancelToService_NoRegistration(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("panic: %v", r)
+		}
+	}()
+	forwardCancelToService("No.Such.Path", "inv-x")
+}
+
+// ---- handleHealth (§30) ----------------------------------------------------
+
+func TestHandleHealth_UpdatesFields(t *testing.T) {
+	sc := &serviceConn{path: "Test.HealthProc"}
+
+	handleHealth(map[string]interface{}{
+		"action":  "health",
+		"healthy": true,
+		"detail":  "all systems go",
+	}, sc)
+
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if !sc.healthy {
+		t.Error("healthy should be true")
+	}
+	if sc.healthDetail != "all systems go" {
+		t.Errorf("wrong detail: %q", sc.healthDetail)
+	}
+	if sc.healthUpdatedAt.IsZero() {
+		t.Error("healthUpdatedAt should be non-zero after update")
+	}
+}
+
+func TestHandleHealth_UnhealthyState(t *testing.T) {
+	sc := &serviceConn{path: "Test.HealthProc2", healthy: true}
+
+	handleHealth(map[string]interface{}{
+		"action":  "health",
+		"healthy": false,
+		"detail":  "motor overheated",
+	}, sc)
+
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.healthy {
+		t.Error("healthy should be false after unhealthy report")
+	}
+	if sc.healthDetail != "motor overheated" {
+		t.Errorf("wrong detail: %q", sc.healthDetail)
+	}
+}
+
+// ---- handleRegister version (§27) ------------------------------------------
+
+func TestHandleRegister_StoresVersion(t *testing.T) {
+	const vPath = "Test.VersionedProc"
+	defer cleanReg(vPath)
+
+	ackCh := runHandleRegister(t, map[string]interface{}{
+		"path":    vPath,
+		"version": "2.1.0",
+	}, nil)
+
+	select {
+	case ack := <-ackCh:
+		if reg, _ := ack["registered"].(bool); !reg {
+			t.Fatalf("registration failed: %v", ack)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+
+	regMu.Lock()
+	sc := registrations[vPath]
+	regMu.Unlock()
+	if sc == nil {
+		t.Fatal("no serviceConn found")
+	}
+	if sc.version != "2.1.0" {
+		t.Errorf("want version 2.1.0, got %q", sc.version)
+	}
+}
+
+func TestHandleRegister_EmptyVersionAccepted(t *testing.T) {
+	const nvPath = "Test.NoVersionProc"
+	defer cleanReg(nvPath)
+
+	ackCh := runHandleRegister(t, map[string]interface{}{
+		"path": nvPath,
+	}, nil)
+
+	select {
+	case ack := <-ackCh:
+		if reg, _ := ack["registered"].(bool); !reg {
+			t.Fatalf("registration failed: %v", ack)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+
+	regMu.Lock()
+	sc := registrations[nvPath]
+	regMu.Unlock()
+	if sc == nil {
+		t.Fatal("no serviceConn found")
+	}
+	if sc.version != "" {
+		t.Errorf("version should be empty, got %q", sc.version)
+	}
+}
+
+// ---- handleProgress with progress field (§28) ------------------------------
+
+func TestHandleProgress_WithProgressField(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["prog-pct"] = &invocationState{serviceId: "prog-pct", path: "S.PCT", status: StatusOngoing}
+	sessions["ps-pct"] = &monitorSession{sessionId: "ps-pct", serviceId: "prog-pct", routerIndex: 0, filterKind: "all"}
+
+	handleProgress(map[string]interface{}{
+		"sessionId": "prog-pct",
+		"status":    "ONGOING",
+		"progress":  float64(75),
+		"output":    map[string]interface{}{"pos": "75"},
+	}, bcs)
+
+	select {
+	case event := <-ch:
+		got, ok := event["progress"]
+		if !ok {
+			t.Fatal("progress field missing from event")
+		}
+		if got != 75 {
+			t.Errorf("want progress=75, got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+func TestHandleProgress_OutOfRangeProgressIgnored(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["prog-oob"] = &invocationState{serviceId: "prog-oob", path: "S.OOB", status: StatusOngoing}
+	sessions["ps-oob"] = &monitorSession{sessionId: "ps-oob", serviceId: "prog-oob", routerIndex: 0, filterKind: "all"}
+
+	handleProgress(map[string]interface{}{
+		"sessionId": "prog-oob",
+		"status":    "ONGOING",
+		"progress":  float64(150),
+	}, bcs)
+
+	select {
+	case event := <-ch:
+		if _, ok := event["progress"]; ok {
+			t.Error("out-of-range progress should not be included in event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// ---- startHeartbeat --------------------------------------------------------
+
 func TestStartHeartbeat_ClosesOnMissedPong(t *testing.T) {
 	// Use tight timers. Override globals before goroutines start; restore after
 	// all goroutines that read them are guaranteed to have finished.

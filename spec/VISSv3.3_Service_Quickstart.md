@@ -24,6 +24,12 @@ unchanged. This guide focuses on the v3.3 additions.
 | **SSE helper** | HTTP monitoring can use Server-Sent Events |
 | **Auto-reconnect SDK** | SDK reconnects on connection loss with exponential backoff |
 | **Discover enrichment** | Discover responses include live `serviceStatus` and `activeInvocations` |
+| **Cancel propagation** | Server forwards cancel to service process; SDK exposes `ctx.Done()` |
+| **Service versioning** | Services declare a `version` string; appears in discover responses |
+| **Progress percentage** | ONGOING updates carry optional `progress` 0-100 field |
+| **Structured validation errors** | Missing Input fields listed by name on invoke failure |
+| **Service health reporting** | Services report health status; shown in discover responses |
+| **Observability metrics** | Per-path counters (`totalInvocations`, `successRate`, `avgDurationMs`) in discover |
 
 ---
 
@@ -285,6 +291,113 @@ Each SSE frame is `data: <json>\n\n`.
 | TLS on service channel | No | Yes (port 8300 TLS) |
 | Heartbeat | No | Ping every 15s, pong within 5s |
 | Auto-reconnect | No | SDK built-in with backoff |
+| Cancel propagation | No | Server forwards cancel; `ctx.Done()` in SDK |
+| Service versioning | No | `WithVersion()` + shows in discover |
+| Progress percentage | No | `ReportProgressPct()` + `progress` 0-100 field |
+| Validation error details | Generic string | `fields` array with missing field names |
+| Health reporting | No | `ReportHealth()` + `serviceHealth` in discover |
+| Observability metrics | No | `totalInvocations`, `successRate`, `avgDurationMs` in discover |
+
+---
+
+## Part 6: New features in detail (§26–§31)
+
+### 6.1 Cancel propagation (§26)
+
+When a client cancels an invocation, the server notifies your service process.
+Listen on `ctx.Done()` to stop early:
+
+```go
+OnInvoke(func(ctx *vissServiceSDK.InvokeContext) {
+    for i := 0; i < 100; i++ {
+        select {
+        case <-ctx.Done():
+            return // client cancelled — stop immediately
+        default:
+        }
+        time.Sleep(100 * time.Millisecond)
+        ctx.ReportProgressPct(i, "ONGOING", nil)
+    }
+    ctx.ReportProgress("SUCCESSFUL", map[string]interface{}{"done": true})
+})
+```
+
+### 6.2 Service versioning (§27)
+
+Declare a version to make upgrades visible in discover responses:
+
+```go
+vissServiceSDK.NewService(serverAddr, "Root.Proc").
+    WithVersion("2.1.0").
+    OnInvoke(handler).
+    Register()
+```
+
+Clients see `"version":"2.1.0"` in the discover response alongside
+`serviceStatus`, allowing them to validate compatibility before invoking.
+
+### 6.3 Progress percentage (§28)
+
+Report granular progress with `ReportProgressPct`:
+
+```go
+ctx.ReportProgressPct(25, "ONGOING", map[string]interface{}{"phase": "init"})
+ctx.ReportProgressPct(75, "ONGOING", map[string]interface{}{"phase": "executing"})
+ctx.ReportProgress("SUCCESSFUL", finalResult)
+```
+
+Monitoring clients receive `"progress": 25` and `"progress": 75` in events.
+Values outside [0, 100] are silently clamped.
+
+### 6.4 Structured validation errors (§29)
+
+If an invoke request is missing required Input fields the server now returns
+the field names, not just a generic string:
+
+```json
+{
+  "action": "invoke",
+  "status": "FAILED",
+  "error": {
+    "number": "400",
+    "reason": "bad_request",
+    "description": "input does not conform to service signature",
+    "fields": ["SeatId", "Position"]
+  }
+}
+```
+
+### 6.5 Health reporting (§30)
+
+The SDK automatically sends `healthy:true` after registration. Update health
+status at any time:
+
+```go
+svc.ReportHealth(false, "seat motor overheated — maintenance required")
+```
+
+Clients see this in discover:
+
+```json
+"serviceHealth": {
+  "healthy": false,
+  "detail": "seat motor overheated — maintenance required",
+  "updatedAt": "2026-01-15T10:03:00Z"
+}
+```
+
+### 6.6 Observability metrics (§31)
+
+After the service has processed some requests, discover shows cumulative stats:
+
+```json
+"totalInvocations": 124,
+"successRate": 0.98,
+"avgDurationMs": 1240
+```
+
+These reset when the server restarts. Use them to surface dashboards or
+orchestration health checks without a separate metrics endpoint.
 
 ---
 

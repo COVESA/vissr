@@ -86,6 +86,12 @@ proposals subject to change before ratification.
   <li><a href="#sse-binding">§23. Server-Sent Events Binding</a></li>
   <li><a href="#sdk-reconnect">§24. Service SDK: Auto-Reconnect</a></li>
   <li><a href="#discover-enrichment">§25. Discover Response Enrichment</a></li>
+  <li><a href="#cancel-propagation">§26. Cancel Propagation to Service Process</a></li>
+  <li><a href="#service-versioning">§27. Service Versioning</a></li>
+  <li><a href="#progress-percentage">§28. Progress Percentage Field</a></li>
+  <li><a href="#structured-validation-errors">§29. Structured Input Validation Errors</a></li>
+  <li><a href="#service-health">§30. Service Health Reporting</a></li>
+  <li><a href="#observability-metrics">§31. Observability Metrics in Discover</a></li>
 </ul>
 </nav>
 
@@ -115,6 +121,12 @@ normative text remains in force unless explicitly overridden below.</p>
 <tr><td>§23</td><td>Server-Sent Events Binding</td><td>SSE frame format for HTTP monitoring event streaming.</td></tr>
 <tr><td>§24</td><td>Service SDK: Auto-Reconnect</td><td><code>WithReconnect</code> builder method with exponential backoff.</td></tr>
 <tr><td>§25</td><td>Discover Response Enrichment</td><td>Live <code>serviceStatus</code> and <code>activeInvocations</code> per procedure in discover response.</td></tr>
+<tr><td>§26</td><td>Cancel Propagation to Service Process</td><td>Server forwards <code>cancel</code> to service process; SDK exposes <code>ctx.Done()</code> channel.</td></tr>
+<tr><td>§27</td><td>Service Versioning</td><td>Optional <code>version</code> field in registration; surfaced in discover response.</td></tr>
+<tr><td>§28</td><td>Progress Percentage Field</td><td>Optional 0-100 <code>progress</code> integer in ONGOING updates; fanned out in monitoring events.</td></tr>
+<tr><td>§29</td><td>Structured Input Validation Errors</td><td>Validation failures include a <code>fields</code> array naming each missing Input parameter.</td></tr>
+<tr><td>§30</td><td>Service Health Reporting</td><td>Service sends health status; server exposes <code>serviceHealth</code> in discover response; SDK auto-sends on register.</td></tr>
+<tr><td>§31</td><td>Observability Metrics in Discover</td><td>Per-path counters: <code>totalInvocations</code>, <code>successRate</code>, <code>avgDurationMs</code> in discover response.</td></tr>
 </tbody>
 </table>
 
@@ -738,6 +750,194 @@ invocations:</p>
 <p>Clients SHOULD use <code>serviceStatus</code> to determine whether an invocation is likely to
 succeed before sending it. A <code>"disconnected"</code> status indicates the server will
 immediately return FAILED for any invoke targeting that path.</p>
+
+<h2 id="cancel-propagation">§26. Cancel Propagation to Service Process <span class="new">[NEW in 3.3]</span></h2>
+
+<p>When a client sends a <code>cancel</code> request and the cancellation terminates an ONGOING
+invocation, the server forwards a cancel notification to the registered service
+process so it can stop execution cleanly:</p>
+
+<pre>Server → Service  cancel:  {"action":"cancel","sessionId":"&lt;invocationId&gt;"}</pre>
+
+<p>The service process SHOULD stop processing the named invocation and release any
+associated resources. Sending a terminal progress update (CANCELED) after receiving
+a cancel is permitted but not required; the server has already marked the invocation
+CANCELED from the client's perspective.</p>
+
+<p>The SDK exposes this via <code>InvokeContext.Done()</code>, a channel that is closed when the
+server sends a cancel:</p>
+
+<pre>func (ctx *InvokeContext) Done() &lt;-chan struct{}</pre>
+
+<p>Handlers SHOULD select on <code>ctx.Done()</code> to detect and honour cancellation:</p>
+
+<pre>OnInvoke(func(ctx *vissServiceSDK.InvokeContext) {
+    for step := 0; step &lt; 100; step++ {
+        select {
+        case &lt;-ctx.Done():
+            return // server cancelled — stop early
+        default:
+        }
+        doWork(step)
+    }
+    ctx.ReportProgress("SUCCESSFUL", result)
+})</pre>
+
+<h2 id="service-versioning">§27. Service Versioning <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A service process MAY declare a version string during registration:</p>
+
+<pre>{"action":"register","path":"Root.Proc","version":"1.2.0","signature":{...}}</pre>
+
+<p>The server stores this version and includes it in the discover response:</p>
+
+<pre>"MoveSeat": {
+  "type": "procedure",
+  "version": "1.2.0",
+  ...
+}</pre>
+
+<p>The version string is opaque to the server; it is copied verbatim into discover
+responses. The RECOMMENDED format is <a href="https://semver.org/">Semantic Versioning</a>
+(<em>MAJOR.MINOR.PATCH</em>). If the field is absent the server MUST NOT include
+<code>"version"</code> in the discover response.</p>
+
+<p>SDK usage:</p>
+
+<pre>vissServiceSDK.NewService(serverAddr, "Root.Proc").
+    WithVersion("1.2.0").
+    OnInvoke(handler).
+    Register()</pre>
+
+<h2 id="progress-percentage">§28. Progress Percentage Field <span class="new">[NEW in 3.3]</span></h2>
+
+<p>ONGOING progress updates from a service process MAY include a <code>progress</code> integer
+in the range 0–100 representing the estimated completion percentage:</p>
+
+<pre>{"sessionId":"xxx","status":"ONGOING","progress":45,"output":{...}}</pre>
+
+<p>The server stores the latest progress value and fans it out in monitoring events
+to all watching sessions:</p>
+
+<pre>{
+  "action": "monitoring",
+  "path": "Root.Proc",
+  "serviceId": "543210",
+  "status": "ONGOING",
+  "progress": 45,
+  "outdata": {...},
+  "ts": "2026-01-15T10:00:02Z"
+}</pre>
+
+<p>Rules:</p>
+<ul>
+  <li>The <code>progress</code> field is OPTIONAL. Its absence does not indicate an error.</li>
+  <li>Values outside [0, 100] MUST be rejected by the server (the field is dropped).</li>
+  <li>The <code>progress</code> field MUST NOT appear in terminal (SUCCESSFUL, CANCELED, FAILED) events.</li>
+  <li>The server stores only the latest progress value; clients receive it in the next fan-out cycle.</li>
+</ul>
+
+<p>SDK usage:</p>
+
+<pre>ctx.ReportProgressPct(45, "ONGOING", map[string]interface{}{"phase": "scanning"})</pre>
+
+<h2 id="structured-validation-errors">§29. Structured Input Validation Errors <span class="new">[NEW in 3.3]</span></h2>
+
+<p>When an invoke request fails input validation (missing or incorrect fields relative
+to the procedure's Input iostruct), the server MUST return a structured error that
+names the missing fields:</p>
+
+<pre>{
+  "action": "invoke",
+  "status": "FAILED",
+  "error": {
+    "number": "400",
+    "reason": "bad_request",
+    "description": "input does not conform to service signature",
+    "fields": ["SeatId", "Position"]
+  },
+  "requestId": "abc-123",
+  "ts": "2026-01-15T10:00:00Z"
+}</pre>
+
+<p>The <code>fields</code> array lists the names of the Input parameters that were absent from
+the invoke request. This is a strict superset of the v3.2 error response, which
+carried only the <code>description</code> string. Clients SHOULD inspect <code>fields</code> to provide
+actionable feedback to users or to retry with corrected input.</p>
+
+<h2 id="service-health">§30. Service Health Reporting <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A service process MAY send a health status message to the server at any time:</p>
+
+<pre>Service → Server  health:  {"action":"health","healthy":true,"detail":"running normally"}</pre>
+
+<p>The <code>healthy</code> field (boolean, required) indicates operational status. The <code>detail</code>
+field (string, optional) provides a human-readable description of the current state.</p>
+
+<p>The server stores the latest health report per connection and includes it in discover
+responses when at least one health report has been received:</p>
+
+<pre>"MoveSeat": {
+  "type": "procedure",
+  "serviceStatus": "registered",
+  "serviceHealth": {
+    "healthy": true,
+    "detail": "running normally",
+    "updatedAt": "2026-01-15T10:00:01Z"
+  },
+  ...
+}</pre>
+
+<p>The SDK automatically sends <code>{"action":"health","healthy":true,"detail":"running"}</code>
+immediately after successful registration. Services MAY call <code>ReportHealth</code> at any
+time to update the server's view:</p>
+
+<pre>svc.ReportHealth(false, "seat motor overheated")</pre>
+
+<p>If no health report has been received, <code>serviceHealth</code> is absent from the discover
+response (rather than <code>null</code>). Clients SHOULD treat absence as "unknown" rather
+than "unhealthy".</p>
+
+<h2 id="observability-metrics">§31. Observability Metrics in Discover <span class="new">[NEW in 3.3]</span></h2>
+
+<p>The server accumulates per-path invocation counters and exposes them in the discover
+response. Counters are maintained in memory and reset when the server restarts.</p>
+
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>totalInvocations</td><td>integer</td><td>Total number of invocations that reached a terminal status (SUCCESSFUL, CANCELED, or FAILED).</td></tr>
+<tr><td>successRate</td><td>float (0.0–1.0)</td><td>Fraction of terminal invocations that ended SUCCESSFUL. Absent when <code>totalInvocations</code> is 0.</td></tr>
+<tr><td>avgDurationMs</td><td>integer</td><td>Average invocation duration in milliseconds from invoke to terminal event. Absent when <code>totalInvocations</code> is 0.</td></tr>
+</tbody>
+</table>
+
+<p>Example discover response with observability metrics:</p>
+
+<pre>{
+  "action": "discover",
+  "metadata": {
+    "MoveSeat": {
+      "type": "procedure",
+      "version": "1.2.0",
+      "serviceStatus": "registered",
+      "serviceHealth": {"healthy": true, "detail": "running", "updatedAt": "2026-01-15T10:00:01Z"},
+      "activeInvocations": 1,
+      "totalInvocations": 124,
+      "successRate": 0.98,
+      "avgDurationMs": 1240,
+      "Input": {...},
+      "Output": {...}
+    }
+  },
+  "requestId": "disc-2",
+  "ts": "2026-01-15T10:05:00Z"
+}</pre>
+
+<p>Client-side behaviour: <code>totalInvocations == 0</code> indicates the procedure has never
+been invoked since the server started (or since the path was last registered). In
+this case <code>successRate</code> and <code>avgDurationMs</code> are absent and clients MUST NOT
+interpret their absence as failure.</p>
 
 <hr>
 <p><em>This document is the VISSv3.3-Services alpha specification.

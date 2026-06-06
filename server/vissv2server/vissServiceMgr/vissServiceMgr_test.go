@@ -15,6 +15,9 @@ import (
 func resetState() {
 	invocations = map[string]*invocationState{}
 	sessions = map[string]*monitorSession{}
+	metricsMu.Lock()
+	metrics = map[string]*pathMetrics{}
+	metricsMu.Unlock()
 }
 
 // ---- generateId ------------------------------------------------------------
@@ -301,7 +304,7 @@ func TestUpdateServiceState_FanOut(t *testing.T) {
 	sessions["sid-3"] = &monitorSession{sessionId: "sid-3", serviceId: "inv-3",
 		routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("inv-3", StatusSuccessful, map[string]interface{}{"x": "1"}, nil, bcs)
+	UpdateServiceState("inv-3", StatusSuccessful, map[string]interface{}{"x": "1"}, nil, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -330,7 +333,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 		routerIndex: 0, filterKind: "status"}
 
 	// Status unchanged → should NOT deliver.
-	UpdateServiceState("inv-4", StatusOngoing, nil, nil, bcs)
+	UpdateServiceState("inv-4", StatusOngoing, nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("status filter should not deliver when status unchanged")
@@ -338,7 +341,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 	}
 
 	// Status changed → SHOULD deliver.
-	UpdateServiceState("inv-4", StatusSuccessful, nil, nil, bcs)
+	UpdateServiceState("inv-4", StatusSuccessful, nil, nil, nil, bcs)
 	select {
 	case <-ch:
 	case <-time.After(time.Second):
@@ -355,7 +358,7 @@ func TestUpdateServiceState_NoneFilterNeverDelivers(t *testing.T) {
 	sessions["sid-5"] = &monitorSession{sessionId: "sid-5", serviceId: "inv-5",
 		routerIndex: 0, filterKind: "none"}
 
-	UpdateServiceState("inv-5", StatusSuccessful, nil, nil, bcs)
+	UpdateServiceState("inv-5", StatusSuccessful, nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("'none' filter should never deliver events")
@@ -368,7 +371,7 @@ func TestUpdateServiceState_UnknownInvocationIsNoop(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
 	bcs := []chan map[string]interface{}{ch}
 
-	UpdateServiceState("does-not-exist", StatusFailed, nil, nil, bcs)
+	UpdateServiceState("does-not-exist", StatusFailed, nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("unknown invocation should not produce events")
@@ -388,7 +391,7 @@ func TestUpdateServiceState_ServiceErrorIncludedInEvent(t *testing.T) {
 		routerIndex: 0, filterKind: "all"}
 
 	svcErr := &ServiceError{Code: "MOTOR_STALL", Message: "seat motor stalled"}
-	UpdateServiceState("inv-e", StatusFailed, nil, svcErr, bcs)
+	UpdateServiceState("inv-e", StatusFailed, nil, svcErr, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -564,7 +567,7 @@ func TestConcurrentInvocations_IndependentState(t *testing.T) {
 	sessions["cs-2"] = &monitorSession{sessionId: "cs-2", serviceId: "ci-2", routerIndex: 0, filterKind: "all"}
 
 	// Only terminate ci-1 successfully.
-	UpdateServiceState("ci-1", StatusSuccessful, map[string]interface{}{"r": "ok"}, nil, bcs)
+	UpdateServiceState("ci-1", StatusSuccessful, map[string]interface{}{"r": "ok"}, nil, nil, bcs)
 
 	// ci-2 must still be ONGOING.
 	mu.Lock()
@@ -615,6 +618,231 @@ func TestHandleMonitor_BadRouterIndex_DoesNotPanic(t *testing.T) {
 	req := map[string]interface{}{"path": "S.P", "requestId": "r2", "routerIndex": 99}
 	bcs := []chan map[string]interface{}{make(chan map[string]interface{}, 4)}
 	HandleMonitor(req, bcs)
+}
+
+// ---- sendValidationError (§29) ---------------------------------------------
+
+func TestSendValidationError_IncludesFields(t *testing.T) {
+	ch := make(chan map[string]interface{}, 4)
+	sendValidationError(ch, "invoke", "req-v", []string{"SeatId", "Position"})
+	select {
+	case m := <-ch:
+		if m["action"] != "invoke" {
+			t.Errorf("wrong action: %v", m["action"])
+		}
+		if m["status"] != "FAILED" {
+			t.Errorf("wrong status: %v", m["status"])
+		}
+		errObj, ok := m["error"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("missing error object: %v", m)
+		}
+		if errObj["number"] != "400" {
+			t.Errorf("wrong error number: %v", errObj["number"])
+		}
+		rawFields := errObj["fields"]
+		if rawFields == nil {
+			t.Fatal("missing 'fields' in error object")
+		}
+		switch f := rawFields.(type) {
+		case []string:
+			if len(f) != 2 {
+				t.Errorf("want 2 fields, got %d", len(f))
+			}
+		case []interface{}:
+			if len(f) != 2 {
+				t.Errorf("want 2 fields (interface{}), got %d", len(f))
+			}
+		default:
+			t.Errorf("unexpected fields type: %T", rawFields)
+		}
+		if m["requestId"] != "req-v" {
+			t.Errorf("wrong requestId: %v", m["requestId"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+func TestSendValidationError_NilFields(t *testing.T) {
+	ch := make(chan map[string]interface{}, 4)
+	sendValidationError(ch, "invoke", "req-nil", nil)
+	select {
+	case m := <-ch:
+		errObj, ok := m["error"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("missing error object: %v", m)
+		}
+		if _, ok := errObj["fields"]; !ok {
+			t.Error("'fields' key should be present even when nil")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// ---- UpdateServiceState progress (§28) --------------------------------------
+
+func TestUpdateServiceState_ProgressInOngoingEvent(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["inv-p1"] = &invocationState{serviceId: "inv-p1", path: "S.PP", status: StatusOngoing}
+	sessions["sid-p1"] = &monitorSession{sessionId: "sid-p1", serviceId: "inv-p1", routerIndex: 0, filterKind: "all"}
+
+	pct := 60
+	UpdateServiceState("inv-p1", StatusOngoing, nil, nil, &pct, bcs)
+
+	select {
+	case event := <-ch:
+		got, ok := event["progress"]
+		if !ok {
+			t.Fatal("progress field missing from ONGOING event")
+		}
+		if got != 60 {
+			t.Errorf("want progress=60, got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+func TestUpdateServiceState_NilProgressNotIncluded(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["inv-p2"] = &invocationState{serviceId: "inv-p2", path: "S.PP2", status: StatusOngoing}
+	sessions["sid-p2"] = &monitorSession{sessionId: "sid-p2", serviceId: "inv-p2", routerIndex: 0, filterKind: "all"}
+
+	UpdateServiceState("inv-p2", StatusOngoing, nil, nil, nil, bcs)
+
+	select {
+	case event := <-ch:
+		if _, ok := event["progress"]; ok {
+			t.Error("progress should be absent when nil was passed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+func TestUpdateServiceState_ProgressAbsentOnTerminal(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["inv-p3"] = &invocationState{serviceId: "inv-p3", path: "S.PP3", status: StatusOngoing, startedAt: time.Now()}
+	sessions["sid-p3"] = &monitorSession{sessionId: "sid-p3", serviceId: "inv-p3", routerIndex: 0, filterKind: "all"}
+
+	pct := 99
+	UpdateServiceState("inv-p3", StatusSuccessful, nil, nil, &pct, bcs)
+
+	select {
+	case event := <-ch:
+		if _, ok := event["progress"]; ok {
+			t.Error("progress should not be present in terminal (SUCCESSFUL) event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// ---- Observability metrics (§31) --------------------------------------------
+
+func TestMetrics_IncrementOnSuccessful(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["met-1"] = &invocationState{serviceId: "met-1", path: "M.Path1", status: StatusOngoing, startedAt: time.Now()}
+	sessions["ms-1"] = &monitorSession{sessionId: "ms-1", serviceId: "met-1", routerIndex: 0, filterKind: "all"}
+
+	UpdateServiceState("met-1", StatusSuccessful, nil, nil, nil, bcs)
+	<-ch
+
+	metricsMu.Lock()
+	pm := metrics["M.Path1"]
+	metricsMu.Unlock()
+	if pm == nil {
+		t.Fatal("metrics should be created for M.Path1")
+	}
+	if pm.total != 1 {
+		t.Errorf("want total=1, got %d", pm.total)
+	}
+	if pm.successes != 1 {
+		t.Errorf("want successes=1, got %d", pm.successes)
+	}
+	if pm.failures != 0 || pm.cancels != 0 {
+		t.Errorf("unexpected failures=%d cancels=%d", pm.failures, pm.cancels)
+	}
+}
+
+func TestMetrics_IncrementOnFailed(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["met-2"] = &invocationState{serviceId: "met-2", path: "M.Path2", status: StatusOngoing, startedAt: time.Now()}
+	sessions["ms-2"] = &monitorSession{sessionId: "ms-2", serviceId: "met-2", routerIndex: 0, filterKind: "all"}
+
+	UpdateServiceState("met-2", StatusFailed, nil, nil, nil, bcs)
+	<-ch
+
+	metricsMu.Lock()
+	pm := metrics["M.Path2"]
+	metricsMu.Unlock()
+	if pm == nil {
+		t.Fatal("metrics should exist")
+	}
+	if pm.failures != 1 {
+		t.Errorf("want failures=1, got %d", pm.failures)
+	}
+	if pm.successes != 0 {
+		t.Errorf("want successes=0, got %d", pm.successes)
+	}
+}
+
+func TestMetrics_IncrementOnCanceled(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["met-3"] = &invocationState{serviceId: "met-3", path: "M.Path3", status: StatusOngoing, startedAt: time.Now()}
+	sessions["ms-3"] = &monitorSession{sessionId: "ms-3", serviceId: "met-3", routerIndex: 0, filterKind: "all"}
+
+	UpdateServiceState("met-3", StatusCanceled, nil, nil, nil, bcs)
+	<-ch
+
+	metricsMu.Lock()
+	pm := metrics["M.Path3"]
+	metricsMu.Unlock()
+	if pm == nil {
+		t.Fatal("metrics should exist")
+	}
+	if pm.cancels != 1 {
+		t.Errorf("want cancels=1, got %d", pm.cancels)
+	}
+}
+
+func TestMetrics_NoEntryForOngoing(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["met-o"] = &invocationState{serviceId: "met-o", path: "M.PathO", status: StatusOngoing, startedAt: time.Now()}
+	sessions["ms-o"] = &monitorSession{sessionId: "ms-o", serviceId: "met-o", routerIndex: 0, filterKind: "all"}
+
+	UpdateServiceState("met-o", StatusOngoing, nil, nil, nil, bcs)
+	<-ch
+
+	metricsMu.Lock()
+	pm := metrics["M.PathO"]
+	metricsMu.Unlock()
+	if pm != nil && pm.total != 0 {
+		t.Error("ONGOING transitions should not increment the total metric counter")
+	}
 }
 
 func min(a, b int) int {

@@ -55,12 +55,16 @@ var HeartbeatTimeout = 5 * time.Second
 
 // serviceConn holds one registered service connection.
 type serviceConn struct {
-	path     string // registered procedure path
-	conn     net.Conn
-	writer   *bufio.Writer
-	mu       sync.Mutex
-	lastPong time.Time           // updated on each received pong
-	sig      map[string]interface{} // stored signature for metadata
+	path            string // registered procedure path
+	conn            net.Conn
+	writer          *bufio.Writer
+	mu              sync.Mutex
+	lastPong        time.Time              // updated on each received pong
+	sig             map[string]interface{} // stored signature for metadata
+	version         string                 // declared by service during registration (§27); empty if unset
+	healthy         bool                   // latest health status (§30)
+	healthDetail    string                 // human-readable detail from last health report
+	healthUpdatedAt time.Time              // zero if health never reported
 }
 
 // sendJSON marshals v and writes it as a newline-delimited JSON frame.
@@ -159,6 +163,11 @@ func handleServiceConn(conn net.Conn, backendChans []chan map[string]interface{}
 				sc.lastPong = time.Now()
 				sc.mu.Unlock()
 			}
+		case "health":
+			// Service health report (§30).
+			if sc != nil {
+				handleHealth(msg, sc)
+			}
 		default:
 			// Progress update keyed by sessionId.
 			if sid, ok := msg["sessionId"].(string); ok && sid != "" {
@@ -227,6 +236,7 @@ func handleRegister(msg map[string]interface{}, conn net.Conn,
 	regMu.Unlock()
 
 	sig, _ := msg["signature"].(map[string]interface{})
+	version, _ := msg["version"].(string)
 	root := buildTreeFromSignature(path, sig)
 	rootName := strings.SplitN(path, ".", 2)[0]
 	domain := rootName + ".Service"
@@ -238,6 +248,7 @@ func handleRegister(msg map[string]interface{}, conn net.Conn,
 		writer:   writer,
 		lastPong: time.Now(), // initialise so first heartbeat check passes
 		sig:      sig,
+		version:  version,
 	}
 	regMu.Lock()
 	registrations[path] = sc
@@ -264,7 +275,7 @@ func handleDeregister(sc *serviceConn, backendChans []chan map[string]interface{
 	mu.Unlock()
 
 	for _, id := range failIds {
-		UpdateServiceState(id, StatusFailed, nil, nil, backendChans)
+		UpdateServiceState(id, StatusFailed, nil, nil, nil, backendChans)
 	}
 
 	rootName := strings.SplitN(sc.path, ".", 2)[0]
@@ -287,6 +298,17 @@ func handleProgress(msg map[string]interface{}, backendChans []chan map[string]i
 		}
 	}
 
+	// Extract optional progress percentage (VISSv3.3 §28); reject out-of-range values.
+	var progress *int
+	if pctRaw, ok := msg["progress"]; ok {
+		if pct, ok2 := pctRaw.(float64); ok2 {
+			v := int(pct)
+			if v >= 0 && v <= 100 {
+				progress = &v
+			}
+		}
+	}
+
 	status := ServiceStatus(statusStr)
 	switch status {
 	case StatusOngoing, StatusSuccessful, StatusFailed, StatusCanceled:
@@ -294,7 +316,19 @@ func handleProgress(msg map[string]interface{}, backendChans []chan map[string]i
 		utils.Error.Printf("serviceReg: invalid status %q from service", statusStr)
 		return
 	}
-	UpdateServiceState(sessionId, status, output, svcErr, backendChans)
+	UpdateServiceState(sessionId, status, output, svcErr, progress, backendChans)
+}
+
+// handleHealth processes a health status report from a service process (§30).
+func handleHealth(msg map[string]interface{}, sc *serviceConn) {
+	healthy, _ := msg["healthy"].(bool)
+	detail, _ := msg["detail"].(string)
+	sc.mu.Lock()
+	sc.healthy = healthy
+	sc.healthDetail = detail
+	sc.healthUpdatedAt = time.Now()
+	sc.mu.Unlock()
+	utils.Info.Printf("serviceReg: health update for %q: healthy=%v", sc.path, healthy)
 }
 
 // forwardInvokeToService sends an invoke notification to the registered service
@@ -317,6 +351,21 @@ func forwardInvokeToService(path, serviceId string, input map[string]interface{}
 		msg["authorization"] = authToken
 	}
 	sc.sendJSON(msg) //nolint:errcheck
+}
+
+// forwardCancelToService notifies the registered service process that
+// invocation serviceId has been cancelled so it can stop cleanly (VISSv3.3 §26).
+func forwardCancelToService(path, serviceId string) {
+	regMu.Lock()
+	sc := registrations[path]
+	regMu.Unlock()
+	if sc == nil {
+		return
+	}
+	sc.sendJSON(map[string]interface{}{ //nolint:errcheck
+		"action":    "cancel",
+		"sessionId": serviceId,
+	})
 }
 
 // buildTreeFromSignature constructs a HIM procedure tree from the signature
