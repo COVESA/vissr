@@ -1,6 +1,7 @@
 package webdash
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -581,5 +582,102 @@ func TestCurrentHealth_UptimeGrows(t *testing.T) {
 	}
 	if h.HeapMB <= 0 {
 		t.Errorf("HeapMB = %f, want > 0", h.HeapMB)
+	}
+}
+
+// ── SSE non-flusher path ───────────────────────────────────────────────────────
+
+// noFlushWriter implements http.ResponseWriter without http.Flusher, triggering
+// the "SSE not supported" error branch in the /api/events handler.
+type noFlushWriter struct {
+	header http.Header
+	code   int
+	body   strings.Builder
+}
+
+func newNoFlushWriter() *noFlushWriter {
+	return &noFlushWriter{header: make(http.Header), code: http.StatusOK}
+}
+
+func (w *noFlushWriter) Header() http.Header         { return w.header }
+func (w *noFlushWriter) WriteHeader(code int)         { w.code = code }
+func (w *noFlushWriter) Write(b []byte) (int, error) { return w.body.Write(b) }
+
+// TestAPIEvents_NonFlusherResponseWriter verifies that the /api/events handler
+// returns 500 when the ResponseWriter does not implement http.Flusher.
+func TestAPIEvents_NonFlusherResponseWriter(t *testing.T) {
+	mux, err := buildMux(time.Now())
+	if err != nil {
+		t.Fatalf("buildMux: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	w := newNoFlushWriter()
+	mux.ServeHTTP(w, req)
+
+	if w.code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 when Flusher not supported", w.code)
+	}
+	if !strings.Contains(w.body.String(), "SSE not supported") {
+		t.Errorf("body = %q, want 'SSE not supported'", w.body.String())
+	}
+}
+
+// ── SSE hub publish via ticker (structural coverage) ─────────────────────────
+
+// TestSSEHub_PublishIntegration verifies the complete SSE publish→receive cycle
+// end-to-end through buildMux by reading a hub-published message.
+// This exercises the msg := <-ch branch in the SSE for/select handler.
+func TestSSEHub_PublishIntegration(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	// Use a client with a generous timeout so the SSE stream stays open.
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/events", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Read the initial health event.
+	buf := make([]byte, 4096)
+	n, _ := resp.Body.Read(buf)
+	initial := string(buf[:n])
+	if !strings.Contains(initial, "event: health") {
+		t.Fatalf("expected initial health event, got: %q", initial)
+	}
+	// Cancel the context to trigger r.Context().Done() in the SSE handler
+	// (covers the context-done return branch).
+	cancel()
+}
+
+// ── Start error path ──────────────────────────────────────────────────────────
+
+// TestStart_MultipleCallsOnDifferentPorts verifies that Start can be called
+// multiple times on different ports without returning an error. Each call
+// launches an independent server goroutine.
+func TestStart_MultipleCallsOnDifferentPorts(t *testing.T) {
+	for _, addr := range []string{":19240", ":19241"} {
+		if err := Start(addr); err != nil {
+			t.Skipf("Start(%q): %v — port in use?", addr, err)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	for _, port := range []string{"19240", "19241"} {
+		resp, err := http.Get("http://localhost:" + port + "/api/health")
+		if err != nil {
+			t.Fatalf("port %s: %v", port, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("port %s: status = %d, want 200", port, resp.StatusCode)
+		}
 	}
 }

@@ -34,10 +34,25 @@ func TestMain(m *testing.M) {
 }
 
 // ---------------------------------------------------------------------------
-// Mock MQTT client for testing publishMessage without a live broker.
+// Mock MQTT message for testing publishHandler without a live broker.
 // ---------------------------------------------------------------------------
 
+// mockMessage implements the MQTT.Message interface so we can invoke
+// publishHandler in unit tests without a real broker connection.
+type mockMessage struct {
+	payload []byte
+	topic   string
+}
 
+func (m *mockMessage) Duplicate() bool  { return false }
+func (m *mockMessage) Qos() byte        { return 0 }
+func (m *mockMessage) Retained() bool   { return false }
+func (m *mockMessage) Topic() string    { return m.topic }
+func (m *mockMessage) MessageID() uint16 { return 0 }
+func (m *mockMessage) Payload() []byte  { return m.payload }
+func (m *mockMessage) Ack()             {}
+
+// ---------------------------------------------------------------------------
 // resetTopicList clears the package-level topicList between tests so
 // state doesn't leak.
 func resetTopicList() {
@@ -568,10 +583,97 @@ func TestVissV2Receiver_ForwardsOneMessage(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// mqttSubscribe — connect-failure path
+// ---------------------------------------------------------------------------
+
+// TestMqttSubscribe_ConnectFailure verifies that mqttSubscribe returns nil
+// when the broker at the given address is not reachable. On a loopback address
+// with no listener, the TCP connect attempt fails immediately with
+// "connection refused", exercising the token.Error() != nil branch without
+// any real broker.
+//
+// Port 19998 is chosen to avoid collisions with the port used in other tests.
+func TestMqttSubscribe_ConnectFailure(t *testing.T) {
+	// Initialise mqttChannel so the package publishHandler doesn't panic if
+	// somehow invoked during client construction.
+	mqttChannel = make(chan string, 1)
+
+	got := mqttSubscribe("tcp://127.0.0.1:19998", "/test/Vehicle")
+	if got != nil {
+		got.Disconnect(250)
+		t.Fatalf("mqttSubscribe to unreachable broker should return nil; got non-nil client")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// publishHandler — package-level MQTT message handler
+// ---------------------------------------------------------------------------
+
+// TestPublishHandler_ForwardsPayloadToChannel invokes the package-level
+// publishHandler directly with a mock MQTT.Message and verifies that the
+// payload is forwarded to mqttChannel. The handler is called from a goroutine
+// so the channel send doesn't block the test goroutine.
+func TestPublishHandler_ForwardsPayloadToChannel(t *testing.T) {
+	// Initialise the package-level mqttChannel that publishHandler writes to.
+	mqttChannel = make(chan string, 1)
+
+	msg := &mockMessage{payload: []byte(`{"topic":"/V/Vehicle","request":{}}`), topic: "/V/Vehicle"}
+	// Call publishHandler in a goroutine so the channel send completes
+	// asynchronously while we drain the channel below.
+	go publishHandler(nil, msg)
+
+	select {
+	case got := <-mqttChannel:
+		if got != string(msg.payload) {
+			t.Fatalf("publishHandler forwarded %q; want %q", got, string(msg.payload))
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("publishHandler did not send to mqttChannel within 1s")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getVissV2Topic — 5-second timeout path
+// ---------------------------------------------------------------------------
+
+// TestGetVissV2Topic_TimeoutPath exercises the time.After(5 * time.Second)
+// branch in getVissV2Topic. When MQTT_VIN is unset the function sends a VIN
+// request on the channel and then blocks in a select waiting for either a
+// response or the 5-second timer. If no response ever arrives, the timer
+// fires and the function returns "".
+//
+// To trigger the path we start a goroutine that consumes the outgoing VIN
+// request (so the send doesn't block forever) but never writes a response
+// back. The function then times out after 5 s and returns "".
+//
+// This test runs in parallel so it doesn't serialize the whole suite.
+func TestGetVissV2Topic_TimeoutPath(t *testing.T) {
+	t.Parallel()
+	os.Unsetenv("MQTT_VIN")
+
+	ch := make(chan string) // unbuffered, matches production constraint
+
+	// Consume the outgoing VIN request but never reply.
+	go func() {
+		<-ch // drain the send; never send back
+	}()
+
+	start := time.Now()
+	got := getVissV2Topic(ch, 99)
+	elapsed := time.Since(start)
+
+	if got != "" {
+		t.Fatalf("timeout path: getVissV2Topic = %q; want \"\"", got)
+	}
+	// Sanity-check: the function should have blocked for roughly 5 seconds.
+	if elapsed < 4*time.Second {
+		t.Fatalf("timeout path: returned after only %s; expected ~5s timeout", elapsed)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Integration-only entry points (NOT unit-tested here)
 //
 // MqttMgrInit       — binds an MQTT broker, starts unbounded for/select loop
 // mqttSubscribe     — connects to a real MQTT broker (network)
-// getVissV2Topic (channel path) — sends on unbuffered channel, blocks 5s;
-//                     the env-var fast path is tested by TestGetVissV2Topic_*
 // ---------------------------------------------------------------------------

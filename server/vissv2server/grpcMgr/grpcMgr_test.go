@@ -6,6 +6,7 @@ package grpcMgr
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -579,12 +580,16 @@ func TestUnsubscribeRequest_ForwardsAndResponds(t *testing.T) {
 // mockSubscribeStream is a minimal VISS_SubscribeRequestServer implementation
 // that allows the context to be cancelled so SubscribeRequest terminates.
 type mockSubscribeStream struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	sends  []*pb.SubscribeStreamMessage
+	ctx     context.Context
+	cancel  context.CancelFunc
+	sends   []*pb.SubscribeStreamMessage
+	sendErr error // if non-nil, Send returns this error
 }
 
 func (m *mockSubscribeStream) Send(msg *pb.SubscribeStreamMessage) error {
+	if m.sendErr != nil {
+		return m.sendErr
+	}
 	m.sends = append(m.sends, msg)
 	return nil
 }
@@ -641,6 +646,193 @@ func TestSubscribeRequest_ContextCancelledReturnsNil(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("SubscribeRequest did not return within 2s")
+	}
+}
+
+// TestSubscribeRequest_KillMessageReturnsNil: when the manager hub sends a
+// "kill subscription" message to grpcResponseChan, SubscribeRequest must
+// call resetGrpcRoutingData and return nil (the isKill branch).
+func TestSubscribeRequest_KillMessageReturnsNil(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	// Allocate a real client slot so resetGrpcRoutingData(clientId) doesn't
+	// panic with an out-of-range index — extractClientId parses the integer
+	// suffix and resetGrpcRoutingData uses it as a slot index.
+	killClientId := getClientId()
+	if killClientId == -1 {
+		t.Fatalf("no free client slot")
+	}
+	killChan := make(chan string, 1)
+	if !setGrpcRoutingData(killClientId, killChan, true) {
+		t.Fatalf("setGrpcRoutingData failed")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := &mockSubscribeStream{ctx: ctx, cancel: cancel}
+	in := &pb.SubscribeRequestMessage{Path: "Vehicle.Speed", RequestId: "55"}
+
+	srv := &Server{}
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.SubscribeRequest(in, stream)
+	}()
+
+	// Consume the initial forwarded request and reply with a kill message.
+	// Format: "kill subscription clientId:N" — extractClientId splits on ":"
+	// and converts the suffix to an int used by resetGrpcRoutingData.
+	select {
+	case req := <-grpcClientChan[0]:
+		req.GrpcRespChan <- fmt.Sprintf("kill subscription clientId:%d", killClientId)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not forward request to grpcClientChan[0]")
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SubscribeRequest (kill path) returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not return within 2s on kill path")
+	}
+
+	// No Send calls should have been made on the kill path.
+	if len(stream.sends) != 0 {
+		t.Fatalf("expected 0 stream.Send calls on kill path; got %d", len(stream.sends))
+	}
+}
+
+// TestSubscribeRequest_NormalEventThenContextCancel: covers the normal
+// subscribe path — the hub sends a subscribe-ack (setting subscribeClientId),
+// and the function then enters the loop waiting for more events. We then
+// cancel the context, which triggers the Done() branch. That branch calls
+// AddRoutingForwardRequest on grpcMgrChan, so we initialise grpcMgrChan
+// to a buffered channel and drain it from a goroutine.
+func TestSubscribeRequest_NormalEventThenContextCancel(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	// grpcMgrChan is nil by default in tests; initialise it so that the
+	// context-Done branch (AddRoutingForwardRequest → grpcMgrChan <- ...) does
+	// not block forever.
+	testMgrChan := make(chan string, 4)
+	origMgrChan := grpcMgrChan
+	grpcMgrChan = testMgrChan
+	defer func() { grpcMgrChan = origMgrChan }()
+
+	// Drain anything the context-Done branch sends. Capture testMgrChan in the
+	// closure so the goroutine does not touch the grpcMgrChan global variable
+	// after it has been restored by the defer.
+	go func(ch chan string) {
+		for range ch {
+		}
+	}(testMgrChan)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &mockSubscribeStream{ctx: ctx, cancel: cancel}
+	in := &pb.SubscribeRequestMessage{Path: "Vehicle.Speed", RequestId: "77"}
+
+	// Allocate and register a routing slot so getSubscribeRoutingData
+	// (called inside SubscribeRequest via the subscribeClientId == -1
+	// branch on the first non-error non-kill response) can find the entry.
+	id := getClientId()
+	if id == -1 {
+		t.Fatalf("no free client slot")
+	}
+	respChan := make(chan string, 4)
+	if !setGrpcRoutingData(id, respChan, true) {
+		t.Fatalf("setGrpcRoutingData failed")
+	}
+	updateGrpcRoutingData(id, "sub-NORM")
+
+	srv := &Server{}
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.SubscribeRequest(in, stream)
+	}()
+
+	// Step 1: consume the initial forwarded request; respond with a
+	// subscribe-ack containing a subscriptionId so the first-response
+	// branch sets subscribeClientId and calls stream.Send.
+	select {
+	case req := <-grpcClientChan[0]:
+		req.GrpcRespChan <- `{"action":"subscribe","subscriptionId":"sub-NORM","ts":"2026-01-01T00:00:00Z"}`
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not forward initial request")
+	}
+
+	// Step 2: give the handler time to process the ack and re-enter the
+	// select, then cancel the context so the Done() branch fires.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SubscribeRequest (normal path) returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not return within 2s after context cancel")
+	}
+
+	// Confirm stream.Send was called at least once (on the subscribe-ack).
+	if len(stream.sends) == 0 {
+		t.Fatalf("expected at least one stream.Send call; got 0")
+	}
+}
+
+// TestSubscribeRequest_SendErrorReturnsError: when stream.Send() returns an
+// error, SubscribeRequest must propagate that error to its caller. This
+// exercises the err != nil branch after stream.Send.
+func TestSubscribeRequest_SendErrorReturnsError(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Allocate a routing slot and register a subscriptionId so the first
+	// non-error non-kill response can resolve subscribeClientId.
+	id := getClientId()
+	if id == -1 {
+		t.Fatalf("no free client slot")
+	}
+	respChan := make(chan string, 4)
+	if !setGrpcRoutingData(id, respChan, true) {
+		t.Fatalf("setGrpcRoutingData failed")
+	}
+	updateGrpcRoutingData(id, "sub-SENDERR")
+
+	wantErr := fmt.Errorf("send failed")
+	stream := &mockSubscribeStream{ctx: ctx, cancel: cancel, sendErr: wantErr}
+	in := &pb.SubscribeRequestMessage{Path: "Vehicle.Speed", RequestId: "88"}
+
+	srv := &Server{}
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.SubscribeRequest(in, stream)
+	}()
+
+	// The function allocates its own grpcResponseChan internally and sends
+	// it to grpcClientChan[0].  We consume that request and reply with a
+	// subscribe-ack carrying the subscriptionId we registered above, which
+	// triggers stream.Send (which will fail).
+	select {
+	case req := <-grpcClientChan[0]:
+		req.GrpcRespChan <- `{"action":"subscribe","subscriptionId":"sub-SENDERR","ts":"2026-01-01T00:00:00Z"}`
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not forward initial request")
+	}
+
+	select {
+	case err := <-done:
+		if err != wantErr {
+			t.Fatalf("SubscribeRequest (send-error path) returned %v; want %v", err, wantErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not return within 2s on send-error path")
 	}
 }
 

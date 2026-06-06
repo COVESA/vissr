@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -497,3 +498,230 @@ func TestAgtServerHandler_SuccessfulPost_ReturnsResponse(t *testing.T) {
 		t.Errorf("response body missing expected token: %q", rec.Body.String())
 	}
 }
+
+// ── generateResponse — pop != "" path calls generateLTAgt ────────────────────
+//
+// generateLTAgt requires an RSA private key for signing (integration-only).
+// We exercise the pop != "" branch up to the PopToken.Unmarshal error path,
+// which returns immediately with a malformed-pop error and does not need
+// the RSA key.
+
+func TestGenerateResponse_WithMalformedPop(t *testing.T) {
+	saved := agtDevKey
+	agtDevKey = "mykey"
+	defer func() { agtDevKey = saved }()
+
+	input := `{"vin":"VIN1","context":"Owner+OEM+Vehicle","proof":"mykey","key":""}`
+	// A non-empty pop that cannot be unmarshalled.
+	got := generateResponse(input, "not-a-valid-pop-token")
+	if !strings.Contains(got, "error") {
+		t.Errorf("malformed pop should return error response; got %q", got)
+	}
+}
+
+// ── checkRoles — defensive delimiter branches ─────────────────────────────────
+//
+// The strings.Count guard in checkRoles ensures we always have exactly two '+'
+// before the delimiter parsing, so delimiter1 == -1 and delimiter2 == -1 are
+// unreachable in practice. The existing TestCheckRoles_Invalid table already
+// exercises the Count != 2 early-return path. We add one extra case to make
+// sure the "only one +" path is not accidentally passing for the wrong reason.
+
+func TestCheckRoles_OnePlus_Returns_False(t *testing.T) {
+	// Only one '+' → Count != 2 → return false immediately.
+	if checkRoles("Owner+OEM") {
+		t.Error("checkRoles(\"Owner+OEM\") should return false (only one '+')")
+	}
+}
+
+func TestCheckRoles_ThreePlus_Returns_False(t *testing.T) {
+	// Three '+' → Count != 2 → return false immediately.
+	if checkRoles("Owner+OEM+Vehicle+Extra") {
+		t.Error("checkRoles with three '+' should return false")
+	}
+}
+
+// ── allowedOriginHeader — with-list path for POST response ───────────────────
+
+func TestAgtServerHandler_PostWithAllowedOrigin_SetsCorsHeader(t *testing.T) {
+	saved := agtAllowedOrigins
+	agtAllowedOrigins = []string{"https://allowed.com"}
+	defer func() { agtAllowedOrigins = saved }()
+
+	ch := make(chan string)
+	go func() {
+		<-ch // body
+		<-ch // pop
+		ch <- `{"action":"agt-request","token":"tok"}`
+	}()
+
+	handler := makeAgtServerHandler(ch)
+	body := strings.NewReader(`{"vin":"V","context":"Owner+OEM+Vehicle","proof":"p","key":""}`)
+	req := httptest.NewRequest("POST", "/agts", body)
+	req.Header.Set("Origin", "https://allowed.com")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != 201 {
+		t.Errorf("POST returned %d; want 201", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://allowed.com" {
+		t.Errorf("CORS header = %q; want https://allowed.com", got)
+	}
+}
+
+func TestAgtServerHandler_PostWithBlockedOrigin_NoCorsHeader(t *testing.T) {
+	saved := agtAllowedOrigins
+	agtAllowedOrigins = []string{"https://allowed.com"}
+	defer func() { agtAllowedOrigins = saved }()
+
+	ch := make(chan string)
+	go func() {
+		<-ch // body
+		<-ch // pop
+		ch <- `{"action":"agt-request","token":"tok"}`
+	}()
+
+	handler := makeAgtServerHandler(ch)
+	body := strings.NewReader(`{"vin":"V","context":"Owner+OEM+Vehicle","proof":"p","key":""}`)
+	req := httptest.NewRequest("POST", "/agts", body)
+	req.Header.Set("Origin", "https://evil.com")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != 201 {
+		t.Errorf("POST returned %d; want 201", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("blocked origin should not get CORS header; got %q", got)
+	}
+}
+
+// ── init() — VISSR_AGT_ALLOWED_ORIGIN branch ─────────────────────────────────
+//
+// init() runs exactly once at package load time, which means we cannot set the
+// env var after the fact in the same process. To cover the
+// `VISSR_AGT_ALLOWED_ORIGIN != ""` branch (lines 98-103) we re-exec the test
+// binary as a child process with the env var set. The child sets the var before
+// the package init runs, giving us coverage of the origins-parsing loop.
+//
+// The subprocess signals success by printing "INIT_SUBPROCESS_OK" to stdout and
+// exiting 0. Any panic or unexpected exit causes the parent test to fail.
+
+func TestInit_AllowedOriginBranch_Subprocess(t *testing.T) {
+	if os.Getenv("AGT_INIT_SUBPROCESS") == "1" {
+		// We are the child: the package init() already ran with
+		// VISSR_AGT_ALLOWED_ORIGIN set (set in the child env below).
+		// Verify the package variable was populated.
+		if len(agtAllowedOrigins) == 0 {
+			fmt.Println("INIT_SUBPROCESS_FAIL: agtAllowedOrigins is empty")
+			os.Exit(1)
+		}
+		found := false
+		for _, o := range agtAllowedOrigins {
+			if o == "https://example.com" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("INIT_SUBPROCESS_FAIL: expected https://example.com in %v\n", agtAllowedOrigins)
+			os.Exit(1)
+		}
+		fmt.Println("INIT_SUBPROCESS_OK")
+		os.Exit(0)
+	}
+
+	// Parent: re-exec this specific test in a child process with the env var set.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	cmd := &exec.Cmd{
+		Path: exe,
+		Args: []string{exe, "-test.run=TestInit_AllowedOriginBranch_Subprocess", "-test.v"},
+		Env: append(os.Environ(),
+			"AGT_INIT_SUBPROCESS=1",
+			"VISSR_AGT_ALLOWED_ORIGIN=https://example.com, https://other.com",
+		),
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("subprocess failed: %v\nOutput:\n%s", err, string(out))
+	}
+	if !strings.Contains(string(out), "INIT_SUBPROCESS_OK") {
+		t.Fatalf("subprocess did not print INIT_SUBPROCESS_OK:\n%s", string(out))
+	}
+}
+
+// ── init() — VISSR_AGT_ALLOWED_ORIGIN with trimming of whitespace-only entries ──
+//
+// A comma-separated list like " , https://a.com , " should only add
+// non-empty trimmed entries. We verify this via the same subprocess approach.
+
+func TestInit_AllowedOriginTrimming_Subprocess(t *testing.T) {
+	if os.Getenv("AGT_INIT_TRIM_SUBPROCESS") == "1" {
+		// Only "https://a.com" should appear — empty segments dropped.
+		if len(agtAllowedOrigins) != 1 || agtAllowedOrigins[0] != "https://a.com" {
+			fmt.Printf("INIT_TRIM_FAIL: got %v\n", agtAllowedOrigins)
+			os.Exit(1)
+		}
+		fmt.Println("INIT_TRIM_OK")
+		os.Exit(0)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	cmd := &exec.Cmd{
+		Path: exe,
+		Args: []string{exe, "-test.run=TestInit_AllowedOriginTrimming_Subprocess", "-test.v"},
+		Env: append(os.Environ(),
+			"AGT_INIT_TRIM_SUBPROCESS=1",
+			"VISSR_AGT_ALLOWED_ORIGIN= , https://a.com , ",
+		),
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("subprocess failed: %v\nOutput:\n%s", err, string(out))
+	}
+	if !strings.Contains(string(out), "INIT_TRIM_OK") {
+		t.Fatalf("subprocess did not print INIT_TRIM_OK:\n%s", string(out))
+	}
+}
+
+// ── checkRoles — defensive delimiter branches ─────────────────────────────────
+//
+// The two `if delimiter == -1 { return false }` guards at lines 285 and 289–290
+// are unreachable in practice: the `strings.Count(context, "+") != 2` gate at
+// line 281 guarantees that strings.Index will always find '+' for a valid
+// 2-plus string. The existing TestCheckRoles_Invalid table already tests the
+// strings.Count path and all invalid role combinations. These branches are
+// intentionally left uncovered (they are defensive dead code against future
+// refactors), documented here for the coverage audit record.
+
+// ── getUUID error path ────────────────────────────────────────────────────────
+//
+// getUUID calls uuid.NewRandom() which relies on crypto/rand. The error path
+// (return "") is only triggered when the OS random source fails — practically
+// unreachable and not testable without mocking the uuid package. We document it
+// rather than add an artificial injection mechanism.
+
+// ── generateResponse — generateAgt / generateLTAgt paths ─────────────────────
+//
+// When authenticateClient succeeds and pop == "", generateResponse calls
+// generateAgt, which requires a valid RSA private key stored in privKey.
+// When pop != "" and the PoP token is valid, it calls generateLTAgt, which
+// also requires privKey. Both are integration-only (the key is loaded/generated
+// by initKey from the filesystem at startup). These branches are documented
+// rather than tested without a live key.
+
+// ── Integration-only functions — documented as such (not unit-tested) ────────
+//
+//   - main              calls initKey + initAgtServer (blocks on http.ListenAndServe)
+//   - initKey           imports or generates an RSA private key from the filesystem
+//   - initAgtServer     calls http.ListenAndServeTLS / http.ListenAndServe (blocks)
+//   - generateLTAgt     requires a valid RSA private key for RS256 signing
+//   - generateAgt       requires a valid RSA private key for RS256 signing
+//   - deleteJti         sleeps (GAP + LIFETIME + 5) seconds before evicting
