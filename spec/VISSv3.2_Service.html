@@ -198,6 +198,7 @@ The term 'WebSocket' when used in this specification is as defined in the
   <li><a href="#errors">8. Error Messages</a></li>
   <li><a href="#examples">9. Examples</a></li>
   <li><a href="#appendix-schema">Appendix A: JSON Schema</a></li>
+  <li><a href="#appendix-him-config">Appendix B: HIM Configuration</a></li>
 </ul>
 </nav>
 
@@ -323,7 +324,7 @@ to vehicle signals. The differences are listed below.</p>
 <ul>
   <li>The service interface must only be used on trees that have a 'domain' metadata value with a
     right-most segment named 'Service', as defined in the
-    <a href="#appendix-him-config">HIM configuration file</a>.</li>
+    <a href="#appendix-him-config">HIM configuration file (Appendix B)</a>.</li>
   <li>The available methods are: invoke / monitor / cancel / discover.</li>
   <li>A request can only invoke one service.</li>
   <li>All response, event and error messages shall include a <a href="#service-states">Status</a> parameter.</li>
@@ -796,6 +797,12 @@ lead to that a monitoring session is started. This session can be canceled by th
 in this appendix, unless otherwise specified in the VISSv3.2 [[TRANSPORT]] or VISSv3.2 [[PAYLOAD
 ENCODING]] specifications.</p>
 
+<p class="note"><strong>Note:</strong> The schema below uses <code>$ref</code> to external sub-schema
+files (filter, status, indata, outdata, error, etc.) that are not reproduced inline. The complete
+self-contained (bundled) schema, including all sub-schema definitions for cancel, discover, and
+monitoring-event messages, is available in the reference implementation at
+<code>server/vissv2server/vissv3.2-service-schema.json</code>.</p>
+
 <pre id="json-schema">{
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://covesa.global/vissv3.2.service.bundled.schema.json",
@@ -1012,6 +1019,32 @@ ENCODING]] specifications.</p>
         }
     }
 }</pre>
+
+<h2 id="appendix-him-config">Appendix B: HIM Configuration for Service Trees</h2>
+
+<p>A server determines whether a given HIM tree is a <em>service tree</em> (and therefore eligible
+for the service interface operations) by inspecting the <code>domain</code> metadata value in its
+HIM forest configuration file (<code>viss.him</code>). A tree is a service tree if and only if the
+right-most dot-separated segment of its <code>domain</code> value is the literal string
+<code>Service</code>.</p>
+
+<p>Example <code>viss.him</code> entry for a service tree:</p>
+
+<pre>HIM.VehicleService:
+type: direct
+domain: VehicleService.Car.Service
+version: 1.0
+local: forest/vservice.v1.0.binary
+description: Vehicle seating service tree (HIM service profile).</pre>
+
+<p>The server exposes the right-most segment via its internal <code>GetInfoType()</code> function.
+Any tree for which <code>GetInfoType()</code> returns <code>"Service"</code> is routed through the
+service interface described in this specification; all other trees are handled by the standard
+data interface.</p>
+
+<p>The HIM configuration file format, including the syntax for <code>type</code>,
+<code>domain</code>, <code>version</code>, <code>local</code>, and <code>public</code> keys, is
+defined in the VISSv3.1 [[CORE]] specification.</p>
 
 <hr>
 <p><em>This document is the VISS version 3.2 Services specification. Copyright &copy; 2026 COVESA&reg;.
