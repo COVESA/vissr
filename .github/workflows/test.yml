@@ -2,9 +2,9 @@ name: Test suite
 
 on:
   push:
-    branches: [master, v3.2beta, v3.3alpha, "fix/**", "feat/**"]
+    branches: ["**"]
   pull_request:
-    branches: [master, v3.2beta, v3.3alpha]
+    branches: ["**"]
   workflow_dispatch:
 
 concurrency:
