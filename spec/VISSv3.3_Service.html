@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COVESA VISS version 3.3-Services (alpha)</title>
+<style>
+  body { font-family: sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #333; line-height: 1.5; }
+  h1 { color: #003A6E; border-bottom: 2px solid #003A6E; padding-bottom: 0.3em; }
+  h2 { color: #003A6E; margin-top: 2em; }
+  h3 { color: #005A9C; margin-top: 1.5em; }
+  .date { color: #666; font-size: 1.1em; }
+  .alpha-banner { background: #fff3cd; border: 1px solid #e6a800; padding: 0.8em 1em; margin: 1em 0; border-radius: 4px; }
+  pre, code { font-family: monospace; }
+  pre { background: #f8f8f8; border: 1px solid #ddd; padding: 1em; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th { background: #003A6E; color: white; padding: 0.5em 1em; text-align: left; }
+  td { border: 1px solid #ddd; padding: 0.5em 1em; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  td:first-child { font-weight: bold; }
+  figure { text-align: center; margin: 2em 0; }
+  figcaption { font-style: italic; margin-top: 0.5em; }
+  .ascii-fig { font-family: monospace; font-size: 0.9em; display: inline-block; text-align: left; white-space: pre; }
+  a { color: #005A9C; }
+  .req-star { font-size: 0.85em; }
+  hr { border: 0; border-top: 1px solid #ccc; margin: 2em 0; }
+  .toc { background: #f5f5f5; border: 1px solid #ddd; padding: 1em 2em; display: inline-block; min-width: 300px; }
+  .toc ul { margin: 0.3em 0; }
+  .toc li { margin: 0.2em 0; }
+  .new { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 0.3em 0.8em; margin: 0.5em 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<h1>COVESA VISS version 3.3-Services (alpha)</h1>
+<p class="date">Draft — 2026</p>
+
+<div class="alpha-banner">
+<strong>Alpha status.</strong> This document extends VISSv3.2-Services with features that are
+under active development. All sections marked <strong>[NEW in 3.3]</strong> are normative
+proposals subject to change before ratification.
+</div>
+
+<details>
+<summary><strong>More details about this document</strong></summary>
+<dl>
+  <dt>Extends:</dt>
+  <dd><a href="VISSv3.2_Service.html">VISSv3.2_Service.html</a> — all v3.2 normative text is inherited.</dd>
+  <dt>Editors:</dt>
+  <dd>Ulf Bjorkengren (<a href="https://www.ford.com">Ford Motor Company</a>)</dd>
+  <dd>이원석(Wonsuk Lee) (<a href="https://www.etri.re.kr">한국전자통신연구원(ETRI)</a>)</dd>
+  <dt>Feedback:</dt>
+  <dd><a href="https://github.com/COVESA/vehicle-information-service-specification">GitHub COVESA/vehicle-information-service-specification</a></dd>
+</dl>
+<p>Copyright &copy; 2026 COVESA&reg;.</p>
+</details>
+
+<hr>
+
+<nav class="toc">
+<strong>Table of Contents</strong>
+<ul>
+  <li><a href="#changes">Changes from v3.2</a></li>
+  <li><a href="#concurrent">§10. Concurrent Service Invocation</a></li>
+  <li><a href="#timeout">§11. Service Timeout</a></li>
+  <li><a href="#server-service-protocol">§12. Server–Service Protocol</a>
+    <ul>
+      <li><a href="#ssp-overview">12.1 Overview</a></li>
+      <li><a href="#ssp-wire">12.2 Wire Format</a></li>
+      <li><a href="#ssp-registration">12.3 Registration</a></li>
+      <li><a href="#ssp-invocation">12.4 Invocation Forwarding</a></li>
+      <li><a href="#ssp-progress">12.5 Progress Updates</a></li>
+      <li><a href="#ssp-deregistration">12.6 Deregistration</a></li>
+    </ul>
+  </li>
+  <li><a href="#service-reg">§13. Service Registration and Discovery</a></li>
+  <li><a href="#mqtt-topics">§14. MQTT Topic Mapping</a></li>
+  <li><a href="#http-binding">§15. HTTP Method Binding</a></li>
+  <li><a href="#sdk">§16. Service Software Development Kit</a></li>
+  <li><a href="#him-config">§17. HIM Service Tree Configuration</a></li>
+  <li><a href="#instantaneous">§18. Instantaneous Service Behaviour</a></li>
+</ul>
+</nav>
+
+<hr>
+
+<h2 id="changes">Changes from VISSv3.2</h2>
+
+<p>VISSv3.3 adds the following normative sections to the v3.2 Services specification. All v3.2
+normative text remains in force unless explicitly overridden below.</p>
+
+<table>
+<thead><tr><th>Section</th><th>Title</th><th>Summary</th></tr></thead>
+<tbody>
+<tr><td>§10</td><td>Concurrent Service Invocation</td><td>Rules for multiple simultaneous invocations of the same procedure.</td></tr>
+<tr><td>§11</td><td>Service Timeout</td><td>Mandatory deadline on ONGOING invocations; optional per-request override.</td></tr>
+<tr><td>§12</td><td>Server–Service Protocol</td><td>Wire format for communication between the VISS server and service processes.</td></tr>
+<tr><td>§13</td><td>Service Registration</td><td>How service processes announce their procedure paths to the server.</td></tr>
+<tr><td>§14</td><td>MQTT Topic Mapping</td><td>Topic conventions for service actions over MQTT.</td></tr>
+<tr><td>§15</td><td>HTTP Method Binding</td><td>Which HTTP method applies to each service action.</td></tr>
+<tr><td>§16</td><td>Service SDK</td><td>Normative interface for the reference Go SDK.</td></tr>
+<tr><td>§17</td><td>HIM Service Tree Configuration</td><td>viss.him format for declaring service trees; dynamic registration as an alternative to binary trees.</td></tr>
+<tr><td>§18</td><td>Instantaneous Service Behaviour</td><td>Normative clarification of response content when service completes before the response is sent.</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2 id="concurrent">§10. Concurrent Service Invocation <span class="new">[NEW in 3.3]</span></h2>
+
+<p>Multiple clients may invoke the same procedure path concurrently. Each invocation is independent
+and is identified by a unique <code>serviceId</code> assigned by the server.</p>
+
+<p>Normative rules:</p>
+<ul>
+  <li>The server MUST assign a distinct <code>serviceId</code> to each invocation regardless of
+    whether another invocation of the same procedure is ONGOING.</li>
+  <li>Each invocation maintains its own state machine (UNKNOWN → ONGOING → terminal). The state of
+    one invocation MUST NOT affect the state of another.</li>
+  <li>A Monitor request by path attaches to the most recently started ONGOING invocation for that
+    path. If multiple ONGOING invocations exist, the server returns the one with the latest start
+    timestamp.</li>
+  <li>A Cancel request by <code>serviceId</code> affects only the invocation or monitoring session
+    identified by that serviceId.</li>
+  <li>Service processes are responsible for managing concurrency within a single procedure.
+    The server makes no ordering or serialization guarantees between concurrent invocations.</li>
+</ul>
+
+<h2 id="timeout">§11. Service Timeout <span class="new">[NEW in 3.3]</span></h2>
+
+<p>An invocation that remains in the ONGOING state past its deadline SHALL be terminated by the
+server with status FAILED. The server MUST issue a FAILED terminal event to all monitoring sessions
+for that invocation and then discard the invocation state.</p>
+
+<h3 id="timeout-default">11.1 Default Timeout</h3>
+
+<p>The server implementation SHALL define a configurable default timeout. The reference
+implementation uses 30 seconds. If no timeout is specified in the request the default applies.</p>
+
+<h3 id="timeout-request">11.2 Per-Request Timeout</h3>
+
+<p>A client MAY include a <code>"timeout"</code> field in an <code>invokeRequest</code> to override
+the default. The value is a non-negative integer representing milliseconds. A value of zero means
+no timeout (the invocation runs until it terminates naturally or is cancelled).</p>
+
+<table>
+<thead><tr><th>Object Name</th><th>Attribute</th><th>Type</th><th>Required</th></tr></thead>
+<tbody>
+<tr><td rowspan="7"><strong>invokeRequest (v3.3)</strong></td><td>action</td><td>Action</td><td>Yes</td></tr>
+<tr><td>path</td><td>string</td><td>Yes</td></tr>
+<tr><td>input</td><td>object</td><td>Yes (*)</td></tr>
+<tr><td>filter</td><td>object</td><td>Yes</td></tr>
+<tr><td>authorization</td><td>string</td><td>Optional</td></tr>
+<tr><td>requestId</td><td>string</td><td>Yes</td></tr>
+<tr><td>timeout</td><td>integer (ms)</td><td>Optional</td></tr>
+</tbody>
+</table>
+
+<p class="req-star">(*) Omitted when the procedure signature declares no input parameters.</p>
+
+<h2 id="server-service-protocol">§12. Server–Service Protocol <span class="new">[NEW in 3.3]</span></h2>
+
+<h3 id="ssp-overview">12.1 Overview</h3>
+
+<p>The VISSv3.2 specification defined the client–server interface in detail but left the mechanism
+by which the server communicates with a service process unspecified. VISSv3.3 defines a normative
+protocol for this internal interface.</p>
+
+<p>The server acts as a TCP server. Service processes connect to a well-known port
+(<code>ServiceRegPort</code>, default 8300) and maintain a long-lived connection. All messages are
+UTF-8 JSON objects, one per line (newline-delimited). Messages flow in both directions on the same
+connection.</p>
+
+<figure id="fig-ssp">
+<div class="ascii-fig">
+  Client            VISS Server           Service Process
+    |                    |                      |
+    |--- invokeRequest ->|                      |
+    |                    |-- invoke ----------->|
+    |<-- invokeResp -----|                      |
+    |                    |<-- {ONGOING, out} ---|
+    |<-- monitorEvent -- |                      |
+    |                    |<-- {SUCCESSFUL, out}-|
+    |<-- monitorEvent -- |                      |
+</div>
+<figcaption><a href="#fig-ssp">Figure 3</a> Server–Service message flow.</figcaption>
+</figure>
+
+<h3 id="ssp-wire">12.2 Wire Format</h3>
+
+<p>Messages are JSON objects terminated by a newline character (<code>0x0A</code>). The connection
+MUST use TCP. TLS is RECOMMENDED in production deployments. The server MUST accept connections on
+<code>ServiceRegPort</code>.</p>
+
+<h3 id="ssp-registration">12.3 Registration</h3>
+
+<p>The service process sends a registration message immediately after connecting:</p>
+
+<pre>{
+  "action": "register",
+  "path": "VehicleService.Seating.MoveSeat",
+  "signature": {
+    "input":  {"SeatId": "string", "Position": "uint8"},
+    "output": {"Position": "uint8"}
+  }
+}</pre>
+
+<p>The <code>path</code> field identifies the procedure node. The <code>signature</code> field
+describes the I/O parameters and their datatypes. The server uses the signature to dynamically
+construct a HIM service tree node for the procedure (see §17).</p>
+
+<p>The server responds with an acknowledgement:</p>
+
+<pre>{"registered": true, "path": "VehicleService.Seating.MoveSeat"}</pre>
+
+<p>or an error:</p>
+
+<pre>{"registered": false, "reason": "missing path"}</pre>
+
+<p>A service process MUST NOT send further messages until it has received a successful ack.</p>
+
+<h3 id="ssp-invocation">12.4 Invocation Forwarding</h3>
+
+<p>When a client issues an invoke request for a procedure path that has a registered service
+process, the server forwards the invocation:</p>
+
+<pre>{
+  "action": "invoke",
+  "sessionId": "123456",
+  "input": {"SeatId": "Row1-DriverSide", "Position": "40"}
+}</pre>
+
+<p>The <code>sessionId</code> is the server-assigned invocation identifier (same value as the
+<code>serviceId</code> returned to the client). The service process uses this identifier in all
+subsequent progress messages for this invocation.</p>
+
+<p>If no service process is registered for a procedure path, the server MAY either reject the
+invoke with a 503 error or maintain the invocation in ONGOING state and wait for a service
+process to register (implementation-defined). The reference implementation rejects immediately
+with status FAILED.</p>
+
+<h3 id="ssp-progress">12.5 Progress Updates</h3>
+
+<p>The service process sends progress updates at any time after receiving an invoke message:</p>
+
+<pre>{"sessionId": "123456", "status": "ONGOING", "output": {"Position": "25"}}</pre>
+
+<pre>{"sessionId": "123456", "status": "SUCCESSFUL", "output": {"Position": "40"}}</pre>
+
+<p>The <code>output</code> field is OPTIONAL for ONGOING updates and REQUIRED for terminal updates
+(SUCCESSFUL, CANCELED, FAILED) unless the procedure signature declares no output parameters.</p>
+
+<p>The server MUST fan out monitoring events to all subscribed clients when it receives a progress
+update, subject to each session's filter settings (see VISSv3.2 §7).</p>
+
+<p>Terminal status values (SUCCESSFUL, CANCELED, FAILED) MUST be sent at most once per
+sessionId. After sending a terminal update the service process MUST NOT send further messages
+for that sessionId.</p>
+
+<h3 id="ssp-deregistration">12.6 Deregistration</h3>
+
+<p>A service process that wishes to gracefully disconnect sends:</p>
+
+<pre>{"action": "deregister"}</pre>
+
+<p>The server MUST then mark all ONGOING invocations for the procedure path as FAILED, issue
+the appropriate terminal events to monitoring clients, and remove the procedure from the HIM
+forest. The server closes the connection after processing the deregistration.</p>
+
+<p>If the TCP connection is lost without a deregister message, the server MUST apply the same
+cleanup procedure as for explicit deregistration.</p>
+
+<h2 id="service-reg">§13. Service Registration <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A VISS server that supports VISSv3.3 MUST listen on <code>ServiceRegPort</code> (TCP, default
+8300). This port number SHOULD be configurable. The server MUST accept connections from local and
+remote service processes, subject to any firewall or TLS policy.</p>
+
+<p>A service process is considered registered when the server has sent a
+<code>{"registered": true, …}</code> ack. A registered service process MUST remain connected;
+the server treats a connection loss as an implicit deregister.</p>
+
+<p>Multiple service processes MAY register for different procedure paths. Two service processes
+MUST NOT register for the same procedure path; the server SHALL reject a duplicate registration
+with <code>{"registered": false, "reason": "path already registered"}</code>.</p>
+
+<h2 id="mqtt-topics">§14. MQTT Topic Mapping for Service Operations <span class="new">[NEW in 3.3]</span></h2>
+
+<p>When service operations are transported over MQTT, the following topic conventions apply.
+The <code>{VIN}</code> segment is the vehicle identifier used as the MQTT namespace root.
+Path separators (dots) in procedure paths are replaced with forward slashes (<code>/</code>).</p>
+
+<table>
+<thead><tr><th>Operation</th><th>Direction</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td>Invoke request</td><td>Client → Broker</td><td><code>/{VIN}/{path}/invoke</code></td></tr>
+<tr><td>Invoke response / error</td><td>Broker → Client</td><td><code>/{VIN}/{path}/invoke/response/{requestId}</code></td></tr>
+<tr><td>Monitor request</td><td>Client → Broker</td><td><code>/{VIN}/{path}/monitor</code></td></tr>
+<tr><td>Monitor response</td><td>Broker → Client</td><td><code>/{VIN}/{path}/monitor/response/{requestId}</code></td></tr>
+<tr><td>Monitoring event</td><td>Broker → Client</td><td><code>/{VIN}/{path}/monitoring/{serviceId}</code></td></tr>
+<tr><td>Cancel request</td><td>Client → Broker</td><td><code>/{VIN}/service/cancel</code></td></tr>
+<tr><td>Cancel response</td><td>Broker → Client</td><td><code>/{VIN}/service/cancel/response/{serviceId}</code></td></tr>
+<tr><td>Discover request</td><td>Client → Broker</td><td><code>/{VIN}/{path}/discover</code></td></tr>
+<tr><td>Discover response</td><td>Broker → Client</td><td><code>/{VIN}/{path}/discover/response/{requestId}</code></td></tr>
+</tbody>
+</table>
+
+<p>Example: an invoke request for <code>VehicleService.Seating.MoveSeat</code> on VIN
+<code>WVGZZZ1KZ</code> is published to topic:</p>
+
+<pre>/{WVGZZZ1KZ}/VehicleService/Seating/MoveSeat/invoke</pre>
+
+<p>The corresponding monitoring events are published to:</p>
+
+<pre>/{WVGZZZ1KZ}/VehicleService/Seating/MoveSeat/monitoring/123456</pre>
+
+<p>The MQTT QoS level for service messages SHOULD be QoS 1 (at least once) to prevent message
+loss. Clients MUST be prepared to handle duplicate deliveries.</p>
+
+<h2 id="http-binding">§15. HTTP Method Binding for Service Operations <span class="new">[NEW in 3.3]</span></h2>
+
+<p>When service operations are transported over HTTP the following method bindings apply.
+This section extends VISSv3.2 §4 ("For HTTP the POST method is used for all request actions
+except for Service Discovery that uses the GET method."):</p>
+
+<table>
+<thead><tr><th>Operation</th><th>HTTP Method</th><th>URL Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>invoke</td><td>POST</td><td><code>/viss/service/{path}</code></td><td>Body contains JSON invokeRequest (without action field).</td></tr>
+<tr><td>monitor</td><td>POST</td><td><code>/viss/service/{path}/monitor</code></td><td>Body contains JSON monitorRequest.</td></tr>
+<tr><td>cancel</td><td>DELETE</td><td><code>/viss/service/session/{serviceId}</code></td><td>No request body required.</td></tr>
+<tr><td>discover</td><td>GET</td><td><code>/viss/service/{path}</code></td><td>No request body; path may address a branch or procedure.</td></tr>
+</tbody>
+</table>
+
+<p>Since HTTP invoke and monitor requests can only receive the synchronous response (per VISSv3.2
+§4), monitoring events for long-running services MUST be delivered via a separate mechanism such
+as Server-Sent Events (SSE) on a persistent GET connection, or via WebSocket upgrade.</p>
+
+<p>The HTTP server MUST return status code 200 for successful responses and 400/500-series codes
+for error responses, with the JSON error body as defined in §8 of VISSv3.2.</p>
+
+<h2 id="sdk">§16. Service Software Development Kit (SDK) <span class="new">[NEW in 3.3]</span></h2>
+
+<p>An implementation of VISSv3.3 SHOULD provide an SDK that encapsulates the server–service
+protocol (§12) so that service authors do not need to implement raw TCP/JSON handling.</p>
+
+<h3 id="sdk-interface">16.1 Normative SDK Interface</h3>
+
+<p>The reference Go SDK (package <code>vissServiceSDK</code>) defines the following interface.
+Implementations in other languages MUST provide equivalent semantics.</p>
+
+<pre>// Create a new service bound to path. serverAddr is the registration endpoint.
+NewService(serverAddr, path string) *Service
+
+// Declare a named input parameter and its datatype.
+WithInput(name, datatype string) *Service
+
+// Declare a named output parameter and its datatype.
+WithOutput(name, datatype string) *Service
+
+// Register the handler called for each incoming invocation.
+OnInvoke(handler func(ctx *InvokeContext)) *Service
+
+// Connect to the server, send the registration message, and return the
+// registered service. Returns an error if connection or registration fails.
+Register() (*Service, error)
+
+// Block, reading and dispatching invoke messages. Returns when the
+// connection is closed or Close() is called.
+Run()
+
+// Deregister and close the connection. Idempotent.
+Close()
+
+// InvokeContext methods:
+//   SessionId  string                     — the invocation identifier
+//   Input      map[string]interface{}     — the input parameters
+//   ReportProgress(status string, output map[string]interface{}) error
+</pre>
+
+<h3 id="sdk-example">16.2 SDK Usage Example</h3>
+
+<pre>svc, err := vissServiceSDK.NewService("localhost:8300", "VehicleService.Seating.MoveSeat").
+    WithInput("SeatId", "string").
+    WithInput("Position", "uint8").
+    WithOutput("Position", "uint8").
+    OnInvoke(func(ctx *vissServiceSDK.InvokeContext) {
+        target := ctx.Input["Position"]
+        // ... move seat toward target ...
+        ctx.ReportProgress("ONGOING",  map[string]interface{}{"Position": "25"})
+        ctx.ReportProgress("SUCCESSFUL", map[string]interface{}{"Position": target})
+    }).
+    Register()
+if err != nil { log.Fatal(err) }
+defer svc.Close()
+svc.Run() // blocks until server disconnects</pre>
+
+<h2 id="him-config">§17. HIM Service Tree Configuration <span class="new">[NEW in 3.3]</span></h2>
+
+<p>A HIM service tree is any tree whose <code>domain</code> value has a right-most segment equal
+to <code>Service</code> (e.g., <code>VehicleService.Car.Service</code>). The server identifies
+service requests by checking this domain suffix via <code>GetInfoType()</code>.</p>
+
+<h3 id="him-binary">17.1 Binary Tree (Static Configuration)</h3>
+
+<p>A service tree MAY be provided as a pre-built binary file using the same format as VSS data
+trees. The <code>viss.him</code> entry follows the same syntax as data trees:</p>
+
+<pre>HIM.VehicleService:
+type: direct
+domain: VehicleService.Car.Service
+version: 1.0
+local: forest/vservice.v1.0.binary
+description: Vehicle seating service tree (HIM service profile).</pre>
+
+<p>The binary file MUST be produced using a tree compiler that supports the HIM service profile
+node types: <code>procedure</code>, <code>iostruct</code>, <code>property</code>,
+<code>symlink</code>, and <code>branch</code>.</p>
+
+<h3 id="him-dynamic">17.2 Dynamic Registration (Preferred for VISSv3.3)</h3>
+
+<p>Instead of a static binary file, a VISSv3.3 server MUST also support dynamic tree registration.
+When a service process connects and sends its signature (§12.3), the server:</p>
+
+<ol>
+  <li>Parses the <code>signature</code> JSON to extract input and output parameter names and
+    datatypes.</li>
+  <li>Constructs an in-memory HIM node tree: a <code>procedure</code> node containing
+    <code>Input</code> and <code>Output</code> <code>iostruct</code> nodes, each with
+    <code>property</code> child nodes for each parameter.</li>
+  <li>Registers the tree in the HIM forest under a domain whose right-most segment is
+    <code>Service</code>, derived from the top-level segment of the registered path.</li>
+  <li>Makes the tree immediately available for client requests (invoke, discover, etc.).</li>
+</ol>
+
+<p>Dynamic registration removes the need to pre-build binary files for service trees. A
+<code>viss.him</code> entry is not required when dynamic registration is used.</p>
+
+<p>The domain for a dynamically registered root named <code>VehicleService</code> MUST be
+<code>VehicleService.Service</code> so that <code>GetInfoType()</code> returns <code>Service</code>.</p>
+
+<h2 id="instantaneous">§18. Instantaneous Service Behaviour <span class="new">[NEW in 3.3]</span></h2>
+
+<p>VISSv3.2 §6.1 states that for services completing instantaneously, "the monitoring session is
+not initiated." VISSv3.3 clarifies the response content for this case:</p>
+
+<ul>
+  <li>The <code>invokeSuccessResponse</code> MUST have <code>status</code> set to
+    <code>SUCCESSFUL</code> (not <code>ONGOING</code>).</li>
+  <li>The <code>outdata</code> field MUST contain the final output values.</li>
+  <li>The <code>serviceId</code> field MUST be omitted (no monitoring session was created).</li>
+  <li>No monitoring events will follow the synchronous response.</li>
+</ul>
+
+<p>Whether a service is "instantaneous" is determined by whether the service process sends a
+terminal status (SUCCESSFUL, CANCELED, or FAILED) before the server sends the synchronous
+invokeSuccessResponse. In practice, if the service returns synchronously within the handler
+call, the server receives the terminal status before dispatching the response.</p>
+
+<p>Example of an instantaneous invoke response:</p>
+
+<pre>{
+  "action": "invoke",
+  "path": "VehicleService.Seating.MoveSeat",
+  "outdata": {"output": {"Position": "40"}, "ts": "2026-01-15T10:00:01Z"},
+  "status": "SUCCESSFUL",
+  "requestId": "8756",
+  "ts": "2026-01-15T10:00:01Z"
+}</pre>
+
+<hr>
+<p><em>This document is the VISSv3.3-Services alpha specification.
+Copyright &copy; 2026 COVESA&reg;. All rights reserved.</em></p>
+
+</body>
+</html>

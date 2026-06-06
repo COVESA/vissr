@@ -4,20 +4,24 @@
 * All files and artifacts in the repository at https://github.com/covesa/vissr
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
-* VISSv3.2 Service Manager
+* VISSv3.3-alpha Service Manager
 *
-* Handles the four service operations defined in the VISSv3.2 SERVICES specification:
-*   invoke   – execute a service procedure
-*   monitor  – attach to an ongoing service execution
-*   cancel   – cancel an ongoing invoke or monitor session
+* Handles the four service operations defined in VISSv3.2 SERVICES and
+* extended by VISSv3.3:
+*   invoke   – execute a service procedure (concurrent invocations supported)
+*   monitor  – attach to an ongoing invocation
+*   cancel   – cancel an invoke or monitor session
 *   discover – retrieve service tree metadata
 *
-* A "service tree" is any HIM tree whose domain name ends in ".Service".
-* Procedure nodes in the tree have node type 'procedure'; I/O containers have
-* type 'iostruct'; parameters have type 'property' or 'symlink'.
-*
-* Service state machine per procedure path:
-*   UNKNOWN → ONGOING → SUCCESSFUL | CANCELED | FAILED
+* V3.3 additions over v3.2:
+*   - Concurrent invocations: each invoke gets its own invocationState keyed
+*     by serviceId; multiple calls to the same procedure can coexist.
+*   - Per-invocation timeout watchdog: sessions that stay ONGOING past their
+*     deadline receive a FAILED terminal event.
+*   - Timebased filter: per-session ticker throttles monitoring events to
+*     the requested period while always forwarding status-change events.
+*   - Service registration: service processes connect via TCP and declare
+*     the procedure paths they implement (see serviceReg.go).
 **/
 
 package vissServiceMgr
@@ -43,37 +47,48 @@ const (
 	StatusFailed     ServiceStatus = "FAILED"
 )
 
-// serviceSession represents one active invoke or monitor session.
-type serviceSession struct {
+// DefaultTimeout is the maximum time an invocation may remain ONGOING before
+// the server issues a FAILED terminal event. Overridable per-request via the
+// "timeout" field (milliseconds).
+const DefaultTimeout = 30 * time.Second
+
+// invocationState tracks one active procedure invocation.
+type invocationState struct {
 	serviceId   string
 	path        string
-	isInvoke    bool // true = invoke session, false = monitor session
-	routerIndex int  // which backendChan[i] to send events on
+	status      ServiceStatus
 	indata      map[string]interface{}
 	outdata     map[string]interface{}
-	status      ServiceStatus
 	startedAt   time.Time
+	deadline    time.Time
+	cancelFn    func() // stops the timeout watchdog
 }
 
-// serviceState tracks per-procedure persistent state.
-type serviceState struct {
-	status  ServiceStatus
-	indata  map[string]interface{}
-	outdata map[string]interface{}
+// monitorSession represents one client watching an invocation.
+type monitorSession struct {
+	sessionId    string
+	serviceId    string // which invocation is being watched
+	path         string
+	isInvoke     bool // true = session owner invoked; false = monitor-only
+	routerIndex  int
+	filterKind   string
+	filterPeriod time.Duration // >0 for timebased
+	lastEventAt  time.Time
+	cancelTicker func() // stops the ticker goroutine, nil for non-timebased
 }
 
 var (
 	mu sync.Mutex
 
-	// sessions maps serviceId → session.
-	sessions = map[string]*serviceSession{}
+	// invocations maps serviceId → invocationState.
+	invocations = map[string]*invocationState{}
 
-	// states maps procedure path → last known state.
-	states = map[string]*serviceState{}
+	// sessions maps sessionId → monitorSession.
+	sessions = map[string]*monitorSession{}
 )
 
-// generateServiceId produces a random numeric string ID.
-func generateServiceId() string {
+// generateId produces a unique random numeric string.
+func generateId() string {
 	return strconv.Itoa(rand.Intn(900000) + 100000)
 }
 
@@ -82,72 +97,151 @@ func getTimestamp() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-// getState returns the current serviceState for path, creating UNKNOWN if absent.
-func getState(path string) *serviceState {
-	if s, ok := states[path]; ok {
-		return s
+// latestInvocationForPath returns the most recently started ONGOING invocation
+// for path, or nil if none exists.
+func latestInvocationForPath(path string) *invocationState {
+	var latest *invocationState
+	for _, inv := range invocations {
+		if inv.path == path && inv.status == StatusOngoing {
+			if latest == nil || inv.startedAt.After(latest.startedAt) {
+				latest = inv
+			}
+		}
 	}
-	s := &serviceState{status: StatusUnknown}
-	states[path] = s
-	return s
+	return latest
 }
 
-// HandleInvoke processes an "invoke" action request.
-//
-// requestMap keys consumed: path, input, filter, requestId, authorization
-// On success it writes to backendChan; on error it builds and returns an error map.
-func HandleInvoke(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
+// startTimeoutWatchdog launches a goroutine that fires after deadline and
+// terminates the invocation with FAILED if it is still ONGOING.
+func startTimeoutWatchdog(inv *invocationState, backendChans []chan map[string]interface{}) func() {
+	stopCh := make(chan struct{})
+	go func() {
+		remaining := time.Until(inv.deadline)
+		if remaining <= 0 {
+			remaining = time.Millisecond
+		}
+		select {
+		case <-time.After(remaining):
+			mu.Lock()
+			current, ok := invocations[inv.serviceId]
+			if !ok || current.status != StatusOngoing {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
+			UpdateServiceState(inv.serviceId, StatusFailed, nil, backendChans)
+		case <-stopCh:
+		}
+	}()
+	return func() { close(stopCh) }
+}
+
+// startTimebasedTicker launches a goroutine that periodically pushes the
+// current invocation state to the session's backend channel.
+func startTimebasedTicker(sess *monitorSession, period time.Duration,
+	backendChans []chan map[string]interface{}) func() {
+	stopCh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(period)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				mu.Lock()
+				inv, ok := invocations[sess.serviceId]
+				if !ok {
+					mu.Unlock()
+					return
+				}
+				event := map[string]interface{}{
+					"action":    "monitoring",
+					"path":      sess.path,
+					"serviceId": sess.sessionId,
+					"status":    string(inv.status),
+					"ts":        getTimestamp(),
+				}
+				if inv.outdata != nil {
+					event["outdata"] = copyMap(inv.outdata)
+				}
+				mu.Unlock()
+				if sess.routerIndex < len(backendChans) {
+					backendChans[sess.routerIndex] <- event
+				}
+				if inv.status != StatusOngoing {
+					return
+				}
+			case <-stopCh:
+				return
+			}
+		}
+	}()
+	return func() { close(stopCh) }
+}
+
+// HandleInvoke processes an "invoke" action request per VISSv3.2 §6.1 /
+// VISSv3.3 §10 (concurrent invocations).
+func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
+	tDChanIndex := extractRouterIndex(requestMap)
+	bc := backendChans[tDChanIndex]
 
-	// Validate: path must exist and address a procedure node.
 	node := utils.SetRootNodePointer(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
-		sendServiceError(backendChan, "invoke", requestId, "", StatusFailed,
+		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
 			"400", "bad_request", "path must address a procedure node")
 		return
 	}
 
-	// Extract and validate input against the procedure signature.
 	inputParams, _ := requestMap["input"].(map[string]interface{})
 	if !validateInputSignature(node, inputParams) {
-		sendServiceError(backendChan, "invoke", requestId, "", StatusFailed,
+		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
 			"400", "bad_request", "input does not conform to service signature")
 		return
 	}
 
+	// Compute timeout: optional "timeout" key in ms, else DefaultTimeout.
+	deadline := time.Now().Add(timeoutFromRequest(requestMap))
+
 	mu.Lock()
-	state := getState(path)
-
 	ts := getTimestamp()
-	indataWrapped := map[string]interface{}{
-		"input": inputParams,
-		"ts":    ts,
+	indataWrapped := map[string]interface{}{"input": inputParams, "ts": ts}
+
+	serviceId := generateId()
+	inv := &invocationState{
+		serviceId: serviceId,
+		path:      path,
+		status:    StatusOngoing,
+		indata:    indataWrapped,
+		startedAt: time.Now(),
+		deadline:  deadline,
 	}
+	invocations[serviceId] = inv
 
-	// Synchronous response: the service starts as ONGOING when invoked.
-	// A real implementation would call the underlying service here.
-	state.status = StatusOngoing
-	state.indata = indataWrapped
-	state.outdata = nil
-
-	// Determine filter variant to decide whether to start a monitoring session.
 	filterVariant := extractFilterVariant(requestMap["filter"])
 	var sessionId string
 	if filterVariant != "none" {
-		sessionId = generateServiceId()
-		sess := &serviceSession{
-			serviceId:   sessionId,
+		sessionId = generateId()
+		sess := &monitorSession{
+			sessionId:   sessionId,
+			serviceId:   serviceId,
 			path:        path,
 			isInvoke:    true,
-			routerIndex: extractRouterIndex(requestMap),
-			indata:      indataWrapped,
-			status:      StatusOngoing,
-			startedAt:   time.Now(),
+			routerIndex: tDChanIndex,
+			filterKind:  filterVariant,
+		}
+		if filterVariant == "timebased" {
+			period := periodFromFilter(requestMap["filter"])
+			sess.filterPeriod = period
+			sess.cancelTicker = startTimebasedTicker(sess, period, backendChans)
 		}
 		sessions[sessionId] = sess
 	}
+	inv.cancelFn = startTimeoutWatchdog(inv, backendChans)
 	mu.Unlock()
+
+	// Forward to registered service process (no-op if not registered).
+	forwardInvokeToService(path, serviceId, inputParams)
 
 	response := map[string]interface{}{
 		"action":    "invoke",
@@ -159,41 +253,58 @@ func HandleInvoke(requestMap map[string]interface{}, backendChan chan map[string
 	if sessionId != "" {
 		response["serviceId"] = sessionId
 	}
-	// outdata is omitted on initial invoke when service is starting.
 	copyRouteFields(requestMap, response)
-	backendChan <- response
+	bc <- response
 }
 
-// HandleMonitor processes a "monitor" action request.
-func HandleMonitor(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
+// HandleMonitor processes a "monitor" action request per VISSv3.2 §6.2.
+// Attaches to the most recent ONGOING invocation for path; if none, returns
+// the last known state without starting a monitoring session.
+func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
+	tDChanIndex := extractRouterIndex(requestMap)
+	bc := backendChans[tDChanIndex]
 
 	node := utils.SetRootNodePointer(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
-		sendServiceError(backendChan, "monitor", requestId, "", StatusFailed,
+		sendServiceError(bc, "monitor", requestId, "", StatusFailed,
 			"400", "bad_request", "path must address a procedure node")
 		return
 	}
 
 	mu.Lock()
-	state := getState(path)
-	currentStatus := state.status
-	indataCopy := copyMap(state.indata)
-	outdataCopy := copyMap(state.outdata)
+	inv := latestInvocationForPath(path)
+
+	var currentStatus ServiceStatus
+	var indataCopy, outdataCopy map[string]interface{}
+	var watchedServiceId string
+
+	if inv != nil {
+		currentStatus = inv.status
+		indataCopy = copyMap(inv.indata)
+		outdataCopy = copyMap(inv.outdata)
+		watchedServiceId = inv.serviceId
+	} else {
+		currentStatus = StatusUnknown
+	}
 
 	filterVariant := extractFilterVariant(requestMap["filter"])
 	var sessionId string
-	if currentStatus == StatusOngoing && filterVariant != "none" {
-		sessionId = generateServiceId()
-		sess := &serviceSession{
-			serviceId:   sessionId,
+	if inv != nil && currentStatus == StatusOngoing && filterVariant != "none" {
+		sessionId = generateId()
+		sess := &monitorSession{
+			sessionId:   sessionId,
+			serviceId:   watchedServiceId,
 			path:        path,
 			isInvoke:    false,
-			routerIndex: extractRouterIndex(requestMap),
-			indata:      indataCopy,
-			status:      StatusOngoing,
-			startedAt:   time.Now(),
+			routerIndex: tDChanIndex,
+			filterKind:  filterVariant,
+		}
+		if filterVariant == "timebased" {
+			period := periodFromFilter(requestMap["filter"])
+			sess.filterPeriod = period
+			sess.cancelTicker = startTimebasedTicker(sess, period, backendChans)
 		}
 		sessions[sessionId] = sess
 	}
@@ -217,10 +328,12 @@ func HandleMonitor(requestMap map[string]interface{}, backendChan chan map[strin
 		response["serviceId"] = sessionId
 	}
 	copyRouteFields(requestMap, response)
-	backendChan <- response
+	bc <- response
 }
 
-// HandleCancel processes a "cancel" action request.
+// HandleCancel processes a "cancel" action per VISSv3.2 §6.3.
+// If the sessionId was from an Invoke session, the invocation is cancelled.
+// If from a Monitor session, only the monitoring is cancelled.
 func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
 	serviceId, _ := requestMap["serviceId"].(string)
 	if serviceId == "" {
@@ -238,17 +351,32 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 		return
 	}
 
-	path := sess.path
-	isInvoke := sess.isInvoke
+	if sess.cancelTicker != nil {
+		sess.cancelTicker()
+	}
 	delete(sessions, serviceId)
 
-	state := getState(path)
-	outdataCopy := copyMap(state.outdata)
-	if isInvoke {
-		// Canceling the invoke session cancels the service execution.
-		state.status = StatusCanceled
+	var outdataCopy map[string]interface{}
+	if sess.isInvoke {
+		inv, invOk := invocations[sess.serviceId]
+		if invOk {
+			if inv.cancelFn != nil {
+				inv.cancelFn()
+			}
+			outdataCopy = copyMap(inv.outdata)
+			inv.status = StatusCanceled
+			// Remove all other sessions watching this invocation.
+			for id, s := range sessions {
+				if s.serviceId == sess.serviceId {
+					if s.cancelTicker != nil {
+						s.cancelTicker()
+					}
+					delete(sessions, id)
+				}
+			}
+			delete(invocations, sess.serviceId)
+		}
 	}
-	// Canceling a monitor session leaves service state unchanged.
 	mu.Unlock()
 
 	ts := getTimestamp()
@@ -265,7 +393,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	backendChan <- response
 }
 
-// HandleDiscover processes a "discover" action request.
+// HandleDiscover processes a "discover" action per VISSv3.2 §6.4.
 func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
@@ -284,8 +412,7 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 		return
 	}
 
-	// Build metadata JSON by walking the subtree.
-	metadata := buildServiceMetadata(node, path)
+	metadata := buildServiceMetadata(node)
 	ts := getTimestamp()
 	response := map[string]interface{}{
 		"action":    "discover",
@@ -297,60 +424,101 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 	backendChan <- response
 }
 
-// UpdateServiceState is called by the underlying service implementation to report
-// progress. It updates state and fans out monitoring events to subscribed sessions.
-func UpdateServiceState(path string, status ServiceStatus, outdata map[string]interface{},
-	backendChans []chan map[string]interface{}) {
+// UpdateServiceState is called by a registered service process (via
+// serviceReg.go) to report execution progress. It updates the invocation
+// state and fans out monitoring events to all watching sessions, respecting
+// each session's filter settings.
+func UpdateServiceState(serviceId string, status ServiceStatus,
+	outdata map[string]interface{}, backendChans []chan map[string]interface{}) {
 
 	ts := getTimestamp()
-	outdataWrapped := map[string]interface{}{
-		"output": outdata,
-		"ts":     ts,
+	var outdataWrapped map[string]interface{}
+	if outdata != nil {
+		outdataWrapped = map[string]interface{}{"output": outdata, "ts": ts}
 	}
 
 	mu.Lock()
-	state := getState(path)
-	state.status = status
-	if outdata != nil {
-		state.outdata = outdataWrapped
+	inv, ok := invocations[serviceId]
+	if !ok {
+		mu.Unlock()
+		return
+	}
+	prevStatus := inv.status
+	inv.status = status
+	if outdataWrapped != nil {
+		inv.outdata = outdataWrapped
 	}
 
-	// Collect sessions watching this path.
-	var toNotify []*serviceSession
+	statusChanged := prevStatus != status
+
+	// Collect sessions watching this invocation.
+	type eventTarget struct {
+		sess          *monitorSession
+		shouldDeliver bool
+	}
+	var targets []eventTarget
 	var toRemove []string
 	for id, sess := range sessions {
-		if sess.path == path {
-			toNotify = append(toNotify, sess)
-			if status != StatusOngoing {
-				toRemove = append(toRemove, id)
+		if sess.serviceId != serviceId {
+			continue
+		}
+		deliver := false
+		switch sess.filterKind {
+		case "status":
+			deliver = statusChanged
+		case "all":
+			deliver = true
+		case "timebased":
+			// timebased ticker goroutine handles delivery; we only
+			// deliver here on status change so it's never suppressed.
+			deliver = statusChanged
+		case "none":
+			deliver = false
+		default:
+			deliver = true
+		}
+		targets = append(targets, eventTarget{sess: sess, shouldDeliver: deliver})
+		if status != StatusOngoing {
+			if sess.cancelTicker != nil {
+				sess.cancelTicker()
 			}
+			toRemove = append(toRemove, id)
 		}
 	}
 	for _, id := range toRemove {
 		delete(sessions, id)
 	}
+	if status != StatusOngoing {
+		if inv.cancelFn != nil {
+			inv.cancelFn()
+		}
+		delete(invocations, serviceId)
+	}
 	mu.Unlock()
 
-	for _, sess := range toNotify {
+	for _, t := range targets {
+		if !t.shouldDeliver {
+			continue
+		}
 		event := map[string]interface{}{
 			"action":    "monitoring",
-			"path":      path,
-			"serviceId": sess.serviceId,
+			"path":      t.sess.path,
+			"serviceId": t.sess.sessionId,
 			"status":    string(status),
 			"ts":        ts,
 		}
-		if outdata != nil {
+		if outdataWrapped != nil {
 			event["outdata"] = outdataWrapped
 		}
-		if sess.routerIndex < len(backendChans) {
-			backendChans[sess.routerIndex] <- event
+		if t.sess.routerIndex < len(backendChans) {
+			backendChans[t.sess.routerIndex] <- event
 		}
 	}
 }
 
-// buildServiceMetadata walks the subtree rooted at node and returns a map
-// describing the service structure (procedure names and their I/O signatures).
-func buildServiceMetadata(node *utils.Node_t, path string) map[string]interface{} {
+// ---- tree helpers ----------------------------------------------------------
+
+func buildServiceMetadata(node *utils.Node_t) map[string]interface{} {
 	result := map[string]interface{}{}
 	numChildren := utils.VSSgetNumOfChildren(node)
 	for i := 0; i < numChildren; i++ {
@@ -359,18 +527,16 @@ func buildServiceMetadata(node *utils.Node_t, path string) map[string]interface{
 			continue
 		}
 		childName := utils.VSSgetName(child)
-		childType := utils.VSSgetType(child)
-		switch childType {
+		switch utils.VSSgetType(child) {
 		case utils.PROCEDURE:
 			result[childName] = buildProcedureMetadata(child)
 		case utils.BRANCH:
-			result[childName] = buildServiceMetadata(child, path+"."+childName)
+			result[childName] = buildServiceMetadata(child)
 		}
 	}
 	return result
 }
 
-// buildProcedureMetadata returns the I/O signature of a procedure node.
 func buildProcedureMetadata(node *utils.Node_t) map[string]interface{} {
 	meta := map[string]interface{}{"type": "procedure"}
 	numChildren := utils.VSSgetNumOfChildren(node)
@@ -379,16 +545,13 @@ func buildProcedureMetadata(node *utils.Node_t) map[string]interface{} {
 		if child == nil {
 			continue
 		}
-		childName := utils.VSSgetName(child)
-		childType := utils.VSSgetType(child)
-		if childType == utils.IOSTRUCT {
-			meta[childName] = buildIoStructMetadata(child)
+		if utils.VSSgetType(child) == utils.IOSTRUCT {
+			meta[utils.VSSgetName(child)] = buildIoStructMetadata(child)
 		}
 	}
 	return meta
 }
 
-// buildIoStructMetadata returns the parameters of an Input or Output iostruct node.
 func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 	params := map[string]interface{}{}
 	numChildren := utils.VSSgetNumOfChildren(node)
@@ -397,8 +560,7 @@ func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 		if child == nil {
 			continue
 		}
-		name := utils.VSSgetName(child)
-		params[name] = map[string]interface{}{
+		params[utils.VSSgetName(child)] = map[string]interface{}{
 			"type":     utils.VSSgetType(child),
 			"datatype": utils.VSSgetDatatype(child),
 		}
@@ -406,9 +568,6 @@ func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 	return params
 }
 
-// validateInputSignature checks that inputParams matches the Input children
-// declared under the procedure node. Returns true if valid (or if the
-// procedure has no Input iostruct).
 func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]interface{}) bool {
 	numChildren := utils.VSSgetNumOfChildren(procedureNode)
 	for i := 0; i < numChildren; i++ {
@@ -420,10 +579,9 @@ func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]
 			return validateIoParams(child, inputParams)
 		}
 	}
-	return true // no Input iostruct means no input required
+	return true
 }
 
-// validateIoParams checks that every declared parameter is present in params.
 func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{}) bool {
 	numChildren := utils.VSSgetNumOfChildren(iostructNode)
 	for i := 0; i < numChildren; i++ {
@@ -431,37 +589,74 @@ func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{})
 		if child == nil {
 			continue
 		}
-		paramName := utils.VSSgetName(child)
-		if _, ok := params[paramName]; !ok {
+		if _, ok := params[utils.VSSgetName(child)]; !ok {
 			return false
 		}
 	}
 	return true
 }
 
-// extractFilterVariant returns the "variant" string from a filter object.
-// Defaults to "all" if absent or malformed.
+// ---- filter helpers --------------------------------------------------------
+
 func extractFilterVariant(filter interface{}) string {
-	if filter == nil {
+	m := filterToMap(filter)
+	if m == nil {
 		return "all"
 	}
-	switch f := filter.(type) {
-	case map[string]interface{}:
-		if v, ok := f["variant"].(string); ok {
-			return v
-		}
-	case string:
-		var m map[string]interface{}
-		if json.Unmarshal([]byte(f), &m) == nil {
-			if v, ok := m["variant"].(string); ok {
-				return v
-			}
-		}
+	if v, ok := m["variant"].(string); ok {
+		return v
 	}
 	return "all"
 }
 
-// extractRouterIndex retrieves the transport router index stashed in the request.
+func periodFromFilter(filter interface{}) time.Duration {
+	m := filterToMap(filter)
+	if m == nil {
+		return time.Second
+	}
+	param, _ := m["parameter"].(map[string]interface{})
+	if param == nil {
+		return time.Second
+	}
+	periodStr, _ := param["period"].(string)
+	ms, err := strconv.Atoi(periodStr)
+	if err != nil || ms <= 0 {
+		return time.Second
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func filterToMap(filter interface{}) map[string]interface{} {
+	switch f := filter.(type) {
+	case map[string]interface{}:
+		return f
+	case string:
+		var m map[string]interface{}
+		if json.Unmarshal([]byte(f), &m) == nil {
+			return m
+		}
+	}
+	return nil
+}
+
+// timeoutFromRequest reads the optional "timeout" key (milliseconds) from
+// the request map. Falls back to DefaultTimeout.
+func timeoutFromRequest(requestMap map[string]interface{}) time.Duration {
+	switch v := requestMap["timeout"].(type) {
+	case float64:
+		if v > 0 {
+			return time.Duration(v) * time.Millisecond
+		}
+	case string:
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return DefaultTimeout
+}
+
+// ---- routing helpers -------------------------------------------------------
+
 func extractRouterIndex(requestMap map[string]interface{}) int {
 	if v, ok := requestMap["routerIndex"].(int); ok {
 		return v
@@ -469,8 +664,6 @@ func extractRouterIndex(requestMap map[string]interface{}) int {
 	return 0
 }
 
-// copyRouteFields copies routing metadata (RouterId, etc.) needed by the transport
-// manager to route the response back to the originating client.
 func copyRouteFields(src, dst map[string]interface{}) {
 	for _, k := range []string{"RouterId", "routerId", "routerIndex"} {
 		if v, ok := src[k]; ok {
@@ -479,7 +672,6 @@ func copyRouteFields(src, dst map[string]interface{}) {
 	}
 }
 
-// copyMap performs a shallow copy of a map. Returns nil if src is nil.
 func copyMap(src map[string]interface{}) map[string]interface{} {
 	if src == nil {
 		return nil
@@ -491,11 +683,9 @@ func copyMap(src map[string]interface{}) map[string]interface{} {
 	return dst
 }
 
-// sendServiceError builds and sends a service error response to backendChan.
 func sendServiceError(backendChan chan map[string]interface{},
 	action, requestId, serviceId string,
-	status ServiceStatus,
-	errNum, errReason, errDesc string) {
+	status ServiceStatus, errNum, errReason, errDesc string) {
 
 	errMap := map[string]interface{}{
 		"action": action,

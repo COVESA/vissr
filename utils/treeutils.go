@@ -241,6 +241,80 @@ func GetInfoType(treeHandle *Node_t) string {
 	return "Missing" //???
 }
 
+// RegisterServiceTree adds a dynamically-built service tree to the HIM forest.
+// Called by vissServiceMgr when a service process registers its procedure path.
+// domain must end in ".Service" so GetInfoType returns "Service".
+// Returns false if a tree for rootName already exists (no double-registration).
+func RegisterServiceTree(rootName, domain, version string, root *Node_t) bool {
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName {
+			return false
+		}
+	}
+	root.Name = rootName
+	himForest = append(himForest, HimTree{
+		RootName: rootName,
+		Domain:   domain,
+		Version:  version,
+		Handle:   root,
+	})
+	return true
+}
+
+// DeregisterServiceTree removes a dynamically-registered service tree by rootName.
+func DeregisterServiceTree(rootName string) {
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName {
+			himForest = append(himForest[:i], himForest[i+1:]...)
+			return
+		}
+	}
+}
+
+// NewBranchNode creates a branch Node_t with the given name and children.
+func NewBranchNode(name string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: BRANCH, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewProcedureNode creates a procedure Node_t for a VISSv3.2 service procedure.
+func NewProcedureNode(name, description string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: PROCEDURE, Description: description, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewIoStructNode creates an iostruct Node_t (Input or Output container).
+func NewIoStructNode(name string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: IOSTRUCT, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewPropertyNode creates a property Node_t for a service parameter.
+func NewPropertyNode(name, datatype, description string) *Node_t {
+	return &Node_t{Name: name, NodeType: PROPERTY, Datatype: datatype, Description: description}
+}
+
 func CreatePathListFile(pListPath string) {
 	j := 1
 	for i:=0; i < len(himForest); i++ {
