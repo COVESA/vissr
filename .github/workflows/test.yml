@@ -1,0 +1,89 @@
+name: Test suite
+
+on:
+  push:
+    branches: [master, v3.2beta, v3.3alpha, "fix/**", "feat/**"]
+  pull_request:
+    branches: [master, v3.2beta, v3.3alpha]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------ #
+  #  Unit + race tests for the service packages                         #
+  # ------------------------------------------------------------------ #
+  unit-tests:
+    name: Unit tests (race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: vet — vissServiceMgr
+        run: go vet ./server/vissv2server/vissServiceMgr/...
+
+      - name: vet — vissServiceSDK
+        run: go vet ./server/vissv2server/vissServiceSDK/...
+
+      - name: test — vissServiceMgr
+        run: go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
+
+      - name: test — vissServiceSDK
+        run: go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
+
+      - name: build all packages
+        run: go build ./...
+
+  # ------------------------------------------------------------------ #
+  #  MQTT integration tests — requires the mosquitto broker container   #
+  # ------------------------------------------------------------------ #
+  mqtt-tests:
+    name: MQTT integration (mosquitto TLS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mosquitto image
+        run: docker build -t vissr-mosquitto ./paho-mqtt
+
+      - name: Start mosquitto broker
+        run: docker run -d --name mosquitto -p 8883:8883 vissr-mosquitto
+
+      - name: Wait for broker port
+        run: |
+          for i in $(seq 1 30); do
+            if nc -z localhost 8883 2>/dev/null; then
+              echo "Port 8883 open after ${i}s"
+              sleep 1
+              exit 0
+            fi
+            echo "Waiting for mosquitto... ${i}s"
+            sleep 1
+          done
+          echo "Mosquitto did not open port 8883 within 30s"
+          docker logs mosquitto
+          exit 1
+
+      - name: Trust broker CA certificate
+        run: |
+          sudo cp paho-mqtt/cert/ca.crt /usr/local/share/ca-certificates/vissr-mqtt-ca.crt
+          sudo update-ca-certificates
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: test — paho-mqtt
+        run: go test -v -count=1 ./paho-mqtt/...
+
+      - name: Dump mosquitto logs on failure
+        if: failure()
+        run: docker logs mosquitto
