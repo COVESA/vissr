@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/covesa/vissr/utils"
 )
 
 // Unit tests for the VISSv3.3-alpha service manager.
@@ -861,4 +863,289 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ---- FormatAsSSE -----------------------------------------------------------
+
+func TestFormatAsSSE_WellFormedOutput(t *testing.T) {
+	event := map[string]interface{}{"action": "ping", "id": "42"}
+	got, err := FormatAsSSE(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(got, "data: ") {
+		t.Errorf("missing data: prefix in %q", got)
+	}
+	if !strings.HasSuffix(got, "\n\n") {
+		t.Errorf("missing trailing \\n\\n in %q", got)
+	}
+	// Payload must be valid JSON.
+	var m map[string]interface{}
+	payload := strings.TrimPrefix(strings.TrimSuffix(got, "\n\n"), "data: ")
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		t.Errorf("payload is not valid JSON: %v", err)
+	}
+}
+
+func TestFormatAsSSE_MarshalError(t *testing.T) {
+	// Channels cannot be JSON-marshaled; FormatAsSSE must propagate the error.
+	event := map[string]interface{}{"ch": make(chan int)}
+	_, err := FormatAsSSE(event)
+	if err == nil {
+		t.Error("expected error for unmarshalable event value, got nil")
+	}
+}
+
+// ---- extractRouterIndex ----------------------------------------------------
+
+func TestExtractRouterIndex_IntValue(t *testing.T) {
+	got := extractRouterIndex(map[string]interface{}{"routerIndex": 3})
+	if got != 3 {
+		t.Errorf("extractRouterIndex = %d, want 3", got)
+	}
+}
+
+func TestExtractRouterIndex_Float64FallsBackToZero(t *testing.T) {
+	// JSON unmarshaling yields float64; the function only handles int.
+	got := extractRouterIndex(map[string]interface{}{"routerIndex": float64(7)})
+	if got != 0 {
+		t.Errorf("want 0 for float64 value, got %d", got)
+	}
+}
+
+func TestExtractRouterIndex_MissingKeyReturnsZero(t *testing.T) {
+	if got := extractRouterIndex(map[string]interface{}{}); got != 0 {
+		t.Errorf("want 0 for missing key, got %d", got)
+	}
+}
+
+// ---- buildIoStructMetadata -------------------------------------------------
+
+func TestBuildIoStructMetadata_ReturnsParamMap(t *testing.T) {
+	pos := utils.NewPropertyNode("Position", "uint8", "seat position")
+	speed := utils.NewPropertyNode("Speed", "float", "speed setpoint")
+	iostruct := utils.NewIoStructNode("Input", pos, speed)
+
+	params := buildIoStructMetadata(iostruct)
+
+	if len(params) != 2 {
+		t.Fatalf("want 2 params, got %d: %v", len(params), params)
+	}
+	for _, name := range []string{"Position", "Speed"} {
+		entry, ok := params[name]
+		if !ok {
+			t.Errorf("param %q missing", name)
+			continue
+		}
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			t.Errorf("param %q: want map, got %T", name, entry)
+			continue
+		}
+		if m["type"] != utils.PROPERTY {
+			t.Errorf("param %q: type = %v, want %q", name, m["type"], utils.PROPERTY)
+		}
+	}
+}
+
+func TestBuildIoStructMetadata_EmptyIoStruct(t *testing.T) {
+	iostruct := utils.NewIoStructNode("Input")
+	params := buildIoStructMetadata(iostruct)
+	if len(params) != 0 {
+		t.Errorf("want empty map, got %v", params)
+	}
+}
+
+// ---- validateIoParams / validateInputSignature -----------------------------
+
+func TestValidateIoParams_AllPresent(t *testing.T) {
+	pos := utils.NewPropertyNode("Position", "uint8", "")
+	spd := utils.NewPropertyNode("Speed", "float", "")
+	iostruct := utils.NewIoStructNode("Input", pos, spd)
+
+	ok, missing := validateIoParams(iostruct, map[string]interface{}{
+		"Position": "40",
+		"Speed":    "10.5",
+	})
+	if !ok || len(missing) != 0 {
+		t.Errorf("expected valid, got ok=%v missing=%v", ok, missing)
+	}
+}
+
+func TestValidateIoParams_MissingParam(t *testing.T) {
+	pos := utils.NewPropertyNode("Position", "uint8", "")
+	spd := utils.NewPropertyNode("Speed", "float", "")
+	iostruct := utils.NewIoStructNode("Input", pos, spd)
+
+	ok, missing := validateIoParams(iostruct, map[string]interface{}{"Position": "40"})
+	if ok {
+		t.Error("expected invalid (Speed missing)")
+	}
+	if len(missing) != 1 || missing[0] != "Speed" {
+		t.Errorf("expected missing=[Speed], got %v", missing)
+	}
+}
+
+func TestValidateInputSignature_NoInputChild(t *testing.T) {
+	proc := utils.NewProcedureNode("Start", "starts engine")
+	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	if !ok || len(missing) != 0 {
+		t.Errorf("no Input child → should be valid; got ok=%v missing=%v", ok, missing)
+	}
+}
+
+func TestValidateInputSignature_WithInputChild_Valid(t *testing.T) {
+	pos := utils.NewPropertyNode("Position", "uint8", "")
+	inputStruct := utils.NewIoStructNode("Input", pos)
+	proc := utils.NewProcedureNode("MoveSeat", "moves seat", inputStruct)
+
+	ok, missing := validateInputSignature(proc, map[string]interface{}{"Position": "50"})
+	if !ok || len(missing) != 0 {
+		t.Errorf("expected valid, got ok=%v missing=%v", ok, missing)
+	}
+}
+
+func TestValidateInputSignature_WithInputChild_Missing(t *testing.T) {
+	pos := utils.NewPropertyNode("Position", "uint8", "")
+	inputStruct := utils.NewIoStructNode("Input", pos)
+	proc := utils.NewProcedureNode("MoveSeat", "moves seat", inputStruct)
+
+	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	if ok {
+		t.Error("expected invalid (Position missing)")
+	}
+	if len(missing) != 1 || missing[0] != "Position" {
+		t.Errorf("expected missing=[Position], got %v", missing)
+	}
+}
+
+// ---- buildServiceMetadata --------------------------------------------------
+
+func TestBuildServiceMetadata_EmptyBranch(t *testing.T) {
+	root := utils.NewBranchNode("Root")
+	meta := buildServiceMetadata(root, "Root")
+	if len(meta) != 0 {
+		t.Errorf("expected empty map for branchless root, got %v", meta)
+	}
+}
+
+func TestBuildServiceMetadata_WithProcedure(t *testing.T) {
+	resetState()
+	proc := utils.NewProcedureNode("MoveSeat", "moves seat")
+	root := utils.NewBranchNode("SeatSvc", proc)
+
+	meta := buildServiceMetadata(root, "SeatSvc")
+
+	entry, ok := meta["MoveSeat"]
+	if !ok {
+		t.Fatal("MoveSeat not in metadata")
+	}
+	m, ok := entry.(map[string]interface{})
+	if !ok {
+		t.Fatalf("MoveSeat entry is not a map: %T", entry)
+	}
+	if m["type"] != "procedure" {
+		t.Errorf("type = %v, want procedure", m["type"])
+	}
+	if m["serviceStatus"] != "disconnected" {
+		t.Errorf("serviceStatus = %v, want disconnected", m["serviceStatus"])
+	}
+}
+
+func TestBuildServiceMetadata_WithNestedBranch(t *testing.T) {
+	resetState()
+	proc := utils.NewProcedureNode("Adjust", "adjust value")
+	sub := utils.NewBranchNode("Sub", proc)
+	root := utils.NewBranchNode("Root", sub)
+
+	meta := buildServiceMetadata(root, "Root")
+
+	subMeta, ok := meta["Sub"]
+	if !ok {
+		t.Fatal("Sub branch not in metadata")
+	}
+	sm, ok := subMeta.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Sub entry is not a map: %T", subMeta)
+	}
+	if _, ok := sm["Adjust"]; !ok {
+		t.Error("nested procedure Adjust not found under Sub")
+	}
+}
+
+// ---- buildProcedureMetadata ------------------------------------------------
+
+func TestBuildProcedureMetadata_Disconnected(t *testing.T) {
+	resetState()
+	proc := utils.NewProcedureNode("UnregisteredProc", "not registered")
+	meta := buildProcedureMetadata(proc, "Root.UnregisteredProc")
+
+	if meta["type"] != "procedure" {
+		t.Errorf("type = %v, want procedure", meta["type"])
+	}
+	if meta["serviceStatus"] != "disconnected" {
+		t.Errorf("serviceStatus = %v, want disconnected", meta["serviceStatus"])
+	}
+	if meta["activeInvocations"] != 0 {
+		t.Errorf("activeInvocations = %v, want 0", meta["activeInvocations"])
+	}
+}
+
+func TestBuildProcedureMetadata_WithActiveInvocation(t *testing.T) {
+	resetState()
+	invocations["active-1"] = &invocationState{
+		serviceId: "active-1",
+		path:      "Root.ActiveProc",
+		status:    StatusOngoing,
+		startedAt: time.Now(),
+	}
+
+	proc := utils.NewProcedureNode("ActiveProc", "has active invocation")
+	meta := buildProcedureMetadata(proc, "Root.ActiveProc")
+
+	if meta["activeInvocations"] != 1 {
+		t.Errorf("activeInvocations = %v, want 1", meta["activeInvocations"])
+	}
+}
+
+func TestBuildProcedureMetadata_WithMetrics(t *testing.T) {
+	resetState()
+	path := "Root.MetricsProc"
+	metricsMu.Lock()
+	metrics[path] = &pathMetrics{total: 10, successes: 8, totalDurMs: 500}
+	metricsMu.Unlock()
+
+	proc := utils.NewProcedureNode("MetricsProc", "has metrics")
+	meta := buildProcedureMetadata(proc, path)
+
+	if meta["totalInvocations"] != int64(10) {
+		t.Errorf("totalInvocations = %v, want 10", meta["totalInvocations"])
+	}
+	if sr, _ := meta["successRate"].(float64); sr < 0.79 || sr > 0.81 {
+		t.Errorf("successRate = %v, want ~0.8", meta["successRate"])
+	}
+	if ad, _ := meta["avgDurationMs"].(int64); ad != 50 {
+		t.Errorf("avgDurationMs = %v, want 50", meta["avgDurationMs"])
+	}
+}
+
+func TestBuildProcedureMetadata_WithIoStructChildren(t *testing.T) {
+	resetState()
+	posParam := utils.NewPropertyNode("Position", "uint8", "seat position")
+	inputStruct := utils.NewIoStructNode("Input", posParam)
+	proc := utils.NewProcedureNode("MoveSeat", "moves seat", inputStruct)
+
+	meta := buildProcedureMetadata(proc, "Root.MoveSeat")
+
+	inputMeta, ok := meta["Input"]
+	if !ok {
+		t.Fatal("Input not in procedure metadata")
+	}
+	im, ok := inputMeta.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Input entry is not a map: %T", inputMeta)
+	}
+	if _, ok := im["Position"]; !ok {
+		t.Error("Position param not found in Input metadata")
+	}
 }

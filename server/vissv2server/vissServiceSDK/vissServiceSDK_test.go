@@ -785,3 +785,67 @@ func TestRun_NoReconnectByDefault(t *testing.T) {
 		t.Fatal("Run() did not exit after connection close")
 	}
 }
+
+// TestReportError_WithOutput verifies that ReportError includes the output map
+// when one is supplied (covers the output != nil branch).
+func TestReportError_WithOutput(t *testing.T) {
+	addr, received, send := fakeServer(t)
+
+	svc := NewService(addr, "Root.P").
+		OnInvoke(func(ctx *InvokeContext) {
+			ctx.ReportError("MOTOR_JAM", "motor jammed", map[string]interface{}{ //nolint:errcheck
+				"lastPosition": "42",
+			})
+		})
+
+	regSvc, err := svc.Register()
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		regSvc.Run()
+		close(done)
+	}()
+
+	send(map[string]interface{}{"action": "invoke", "sessionId": "err-out-1"})
+
+	select {
+	case msg := <-received:
+		if msg["status"] != "FAILED" {
+			t.Errorf("status = %v, want FAILED", msg["status"])
+		}
+		output, ok := msg["output"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("output missing or wrong type: %T %v", msg["output"], msg["output"])
+		}
+		if output["lastPosition"] != "42" {
+			t.Errorf("output.lastPosition = %v, want 42", output["lastPosition"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for FAILED message")
+	}
+
+	regSvc.conn.Close()
+	send(map[string]interface{}{})
+	<-done
+}
+
+// TestWithReconnect_ZeroDelayDefaultsToOneSecond verifies the initialDelay <= 0
+// guard: a zero delay is replaced with time.Second.
+func TestWithReconnect_ZeroDelayDefaultsToOneSecond(t *testing.T) {
+	svc := NewService("127.0.0.1:1", "Root.P").
+		OnInvoke(func(_ *InvokeContext) {}).
+		WithReconnect(3, 0)
+
+	if svc.retryDelay != time.Second {
+		t.Errorf("retryDelay = %v, want %v", svc.retryDelay, time.Second)
+	}
+	if svc.maxRetries != 3 {
+		t.Errorf("maxRetries = %d, want 3", svc.maxRetries)
+	}
+	if !svc.reconnect {
+		t.Error("reconnect flag not set")
+	}
+}
