@@ -6,7 +6,7 @@ go 1.22.1
 //replace github.com/COVESA/vss-tools/binary/go_parser/parserlib => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/parserlib
 
 require (
-	github.com/SoundMatt/go-DDS v0.8.0
+	github.com/SoundMatt/go-DDS v0.9.0
 	github.com/akamensky/argparse v1.4.0
 	github.com/apache/iotdb-client-go v1.1.7
 	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874

@@ -83,9 +83,13 @@ func makeEnvelope(replyTopic, action, path string) string {
 }
 
 // newMockParticipant wires up the package-level newParticipant to the mock.
+// IsolatedBroker (v0.9.0) gives each test its own broker so published samples
+// from one test cannot leak into subscribers started by another.
 func newMockParticipant(t *testing.T) {
 	t.Helper()
-	newParticipant = func() (dds.Participant, error) { return mock.New(dds.Domain(0)) }
+	newParticipant = func() (dds.Participant, error) {
+		return mock.New(dds.Domain(0), mock.IsolatedBroker())
+	}
 }
 
 // resetReplies empties the package-level reply list between tests.
@@ -557,38 +561,29 @@ func TestDdsMgrInit_VissV2Chan_NoReplyTopic(t *testing.T) {
 // TestDdsMgrInit_StartsWithValidVin verifies DdsMgrInit subscribes and
 // enters its event loop without error when given a valid VIN.  The full
 // vissv2Chan round-trip is covered by TestDdsMgrInit_HappyPath_FullRoundTrip.
-// Full end-to-end routing requires a running server core (transportDataSession)
-// and is therefore an integration-only path.
+// Uses testParticipant with direct channel injection (consistent with the
+// other main-loop tests) so no shared global broker is required.
 func TestDdsMgrInit_StartsWithValidVin(t *testing.T) {
-	newMockParticipant(t)
+	subCh := make(chan dds.Sample, 4)
+	origNew := newParticipant
+	t.Cleanup(func() { newParticipant = origNew })
+	newParticipant = func() (dds.Participant, error) {
+		return &testParticipant{subCh: subCh}, nil
+	}
 	t.Setenv("DDS_VIN", "STARTTEST01")
 	t.Cleanup(resetReplies)
-
-	// Use a buffered channel so DdsMgrInit's addRoutingAndForward doesn't
-	// block when the server core isn't running.
 	transportChan := make(chan string, 8)
-	started := make(chan struct{})
 
+	started := make(chan struct{})
 	go func() {
 		close(started)
 		DdsMgrInit(5, transportChan)
 	}()
-
 	<-started
 	// Allow the manager to pass the 2-second startup sleep and enter its loop.
 	time.Sleep(3 * time.Second)
 
-	// Publish a request; if DdsMgrInit panicked the test would have failed already.
-	p, _ := mock.New(dds.Domain(0))
-	defer p.Close()
-	pub, _ := p.NewPublisher("/STARTTEST01/Vehicle", dds.DefaultQoS)
-	defer pub.Close()
-
-	env := makeEnvelope("client/reply/start", "get", "Vehicle.Speed")
-	if err := pub.Write([]byte(env)); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-
-	// Give the loop one second to process; we just want to confirm it doesn't crash.
-	time.Sleep(time.Second)
+	// Inject a valid envelope; DdsMgrInit must not panic processing it.
+	subCh <- dds.Sample{Payload: []byte(makeEnvelope("client/reply/start", "get", "Vehicle.Speed"))}
+	time.Sleep(500 * time.Millisecond)
 }
