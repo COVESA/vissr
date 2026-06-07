@@ -176,6 +176,11 @@ func vissV2Receiver(transportMgrChan chan string, vissv2Chan chan string) {
 // newParticipant is the constructor used at runtime. Replaced in tests.
 var newParticipant = func() (dds.Participant, error) { return mock.New(ddsDomain) }
 
+// schemaValidate wraps utils.JsonSchemaValidate so tests can override it
+// to return "" (schema passes) and exercise the happy path without needing
+// a real vissv3.0-schema.json file present in the test working directory.
+var schemaValidate = utils.JsonSchemaValidate
+
 // DdsMgrInit is the transport manager entry point called by vissv2server.
 // mgrId is the channel-slot index assigned to this manager (slot 5).
 // transportMgrChan is the shared bidirectional channel to the server core;
@@ -229,7 +234,7 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 			}
 			utils.Info.Printf("ddsMgr: request on %s: %s", vehicleTopic, request)
 
-			if errStr := utils.JsonSchemaValidate(request); errStr != "" {
+			if errStr := schemaValidate(request); errStr != "" {
 				var reqMap map[string]interface{}
 				utils.MapRequest(request, &reqMap)
 				utils.SetErrorResponse(reqMap, errorResponseMap, 0, errStr)
