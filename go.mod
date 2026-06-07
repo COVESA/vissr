@@ -25,6 +25,7 @@ require (
 )
 
 require (
+	github.com/SoundMatt/go-DDS v0.0.0-20260606235813-3619a3da09c1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/apache/thrift v0.15.0 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
