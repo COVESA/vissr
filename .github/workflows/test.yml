@@ -16,7 +16,7 @@ env:
 
 jobs:
   # ------------------------------------------------------------------ #
-  #  Unit + race tests for the service packages                         #
+  #  Unit + race tests — full repo sweep                                #
   # ------------------------------------------------------------------ #
   unit-tests:
     name: Unit tests (race)
@@ -29,68 +29,23 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: vet - vissServiceMgr
-        run: go vet ./server/vissv2server/vissServiceMgr/...
-
-      - name: vet - vissServiceSDK
-        run: |
-          if [ -d server/vissv2server/vissServiceSDK ]; then
-            go vet ./server/vissv2server/vissServiceSDK/...
-          else
-            echo "vissServiceSDK not present on this branch, skipping"
-          fi
-
-      - name: test - vissServiceMgr
-        run: go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
-
-      - name: test - vissServiceSDK
-        run: |
-          if [ -d server/vissv2server/vissServiceSDK ]; then
-            go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
-          else
-            echo "vissServiceSDK not present on this branch, skipping"
-          fi
-
-      - name: vet - vdmloader
-        run: |
-          if [ -d server/vissv2server/vdmloader ]; then
-            go vet ./server/vissv2server/vdmloader/...
-          else
-            echo "vdmloader not present on this branch, skipping"
-          fi
-
-      - name: test - vdmloader
-        run: |
-          if [ -d server/vissv2server/vdmloader ]; then
-            go test -race -count=1 ./server/vissv2server/vdmloader/...
-          else
-            echo "vdmloader not present on this branch, skipping"
-          fi
-
-      - name: vet - webdash
-        run: |
-          if [ -d server/vissv2server/webdash ]; then
-            go vet ./server/vissv2server/webdash/...
-          else
-            echo "webdash not present on this branch, skipping"
-          fi
-
-      - name: build - vdminfo
-        run: |
-          if [ -d tools/vdminfo ]; then
-            go build ./tools/vdminfo/...
-          else
-            echo "vdminfo not present on this branch, skipping"
-          fi
-
-      - name: smoke - vdminfo
-        run: |
-          if [ -f tools/vdminfo/main.go ]; then
-            go run ./tools/vdminfo ./server/vissv2server/vdmloader/testdata/
-          fi
-
       - name: build all packages
         run: go build ./...
+
+      - name: vet all packages
+        # paho-mqtt is excluded: its sole test requires a live broker
+        # (covered by the mqtt-tests job below).
+        run: |
+          go list ./... | grep -v 'paho-mqtt' | xargs go vet
+
+      - name: smoke - vdminfo
+        run: go run ./tools/vdminfo ./server/vissv2server/vdmloader/testdata/
+
+      - name: test all packages (race)
+        # paho-mqtt is excluded here; it is tested in the mqtt-tests job
+        # below where a real Mosquitto broker is available.
+        run: |
+          go list ./... | grep -v 'paho-mqtt' | xargs go test -race -count=1 -timeout 5m
 
   # ------------------------------------------------------------------ #
   #  MQTT integration tests - requires the mosquitto broker container   #
