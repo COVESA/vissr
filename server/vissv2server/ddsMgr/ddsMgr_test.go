@@ -45,7 +45,7 @@ type testParticipant struct {
 	pubCount       int
 }
 
-func (tp *testParticipant) NewSubscriber(_ string, _ dds.QoS) (dds.Subscriber, error) {
+func (tp *testParticipant) NewSubscriber(_ string, _ dds.QoS, _ ...dds.SubscriberOption) (dds.Subscriber, error) {
 	if tp.failSubscriber {
 		return nil, errors.New("test: subscriber creation failed")
 	}

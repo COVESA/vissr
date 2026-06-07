@@ -1,5 +1,5 @@
-github.com/SoundMatt/go-DDS v0.0.0-20260606235813-3619a3da09c1 h1:ZrSzL1cr+ckaHyx5lW2nEzpqRtwZ5jLpldxG2um9j8w=
-github.com/SoundMatt/go-DDS v0.0.0-20260606235813-3619a3da09c1/go.mod h1:VE4DbxF55WI39NWVJNzlmRGbfrHJOn4DEu0yKidNoMA=
+github.com/SoundMatt/go-DDS v0.8.0 h1:wYxitugKBE//dDnWU8W/TPZVunpwSqLMnxNpsSBFsrs=
+github.com/SoundMatt/go-DDS v0.8.0/go.mod h1:VE4DbxF55WI39NWVJNzlmRGbfrHJOn4DEu0yKidNoMA=
 github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KOX7eoM=
 github.com/agnivade/levenshtein v1.2.1/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/akamensky/argparse v1.4.0 h1:YGzvsTqCvbEZhL8zZu2AiA5nq805NZh75JNj4ajn1xc=
