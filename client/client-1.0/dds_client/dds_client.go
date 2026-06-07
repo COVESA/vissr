@@ -19,8 +19,8 @@
 // envelope above. Responses arrive asynchronously on the reply topic.
 //
 // By default the in-process mock DDS implementation is used (no system library
-// required). Rebuild with -tags cyclone (libcyclonedds-dev required) or
-// -tags rtps for a real network transport.
+// required). Rebuild with -tags cyclone (libcyclonedds-dev required) for a real
+// network transport.
 //
 // Integration-only entry points (main, subscription loop) are not unit-tested;
 // only buildEnvelope is unit-testable and is covered in dds_client_test.go.
@@ -37,8 +37,11 @@ import (
 	"github.com/google/uuid"
 
 	dds "github.com/SoundMatt/go-DDS"
-	"github.com/SoundMatt/go-DDS/mock"
 )
+
+// newParticipant is set by the build-tag-conditional backend file
+// (dds_client_mock.go or dds_client_cyclone.go). Tests may override it.
+var newParticipant func() (dds.Participant, error)
 
 // buildEnvelope wraps a raw VISS JSON request in the DDS wire envelope:
 //
@@ -82,7 +85,7 @@ func main() {
 
 	utils.InitLog("dds-client-log.txt", "./logs", *logFile, *logLevel)
 
-	participant, err := mock.New(dds.Domain(0))
+	participant, err := newParticipant()
 	if err != nil {
 		utils.Error.Printf("dds_client: cannot create DDS participant: %v", err)
 		os.Exit(1)

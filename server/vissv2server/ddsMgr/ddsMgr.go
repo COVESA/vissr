@@ -28,7 +28,6 @@ import (
 	"time"
 
 	dds "github.com/SoundMatt/go-DDS"
-	"github.com/SoundMatt/go-DDS/mock"
 	"github.com/covesa/vissr/utils"
 )
 
@@ -173,8 +172,9 @@ func vissV2Receiver(transportMgrChan chan string, vissv2Chan chan string) {
 	}
 }
 
-// newParticipant is the constructor used at runtime. Replaced in tests.
-var newParticipant = func() (dds.Participant, error) { return mock.New(ddsDomain) }
+// newParticipant is set by the build-tag-conditional backend file (ddsMgr_mock.go
+// or ddsMgr_cyclone.go). Tests may override it to inject a fake participant.
+var newParticipant func() (dds.Participant, error)
 
 // schemaValidate wraps utils.JsonSchemaValidate so tests can override it
 // to return "" (schema passes) and exercise the happy path without needing
