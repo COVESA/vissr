@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 
+	dds "github.com/SoundMatt/go-DDS"
 	"github.com/covesa/vissr/server/vissv2server/atServer"
 	"github.com/covesa/vissr/server/vissv2server/ddsMgr"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
@@ -1076,6 +1077,7 @@ func main() {
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
 	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
+	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
 	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (mutually exclusive with viss.him)", Default: ""})
 	webAddr := parser.String("", "web-addr", &argparse.Options{Required: false, Help: "address for optional VDM web dashboard (e.g. :8090); disabled when empty", Default: ""})
 
@@ -1167,6 +1169,9 @@ func main() {
 			if *ddsEnable {
 				// DDS channel must be unbuffered: DdsMgrInit performs a
 				// synchronous VIN request/response on the same channel.
+				if *ddsDomain != 0 {
+					ddsMgr.SetDomain(dds.Domain(*ddsDomain))
+				}
 				transportMgrChannel[5] = make(chan string)
 				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
 				go transportDataSession(transportMgrChannel[5], transportDataChan[5], backendChan[5])

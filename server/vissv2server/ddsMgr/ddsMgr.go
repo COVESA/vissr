@@ -32,7 +32,13 @@ import (
 )
 
 // ddsDomain is the DDS domain used for VISS traffic.
-const ddsDomain = dds.Domain(0)
+// SetDomain overrides it; must be called before DdsMgrInit.
+var ddsDomain = dds.Domain(0)
+
+// SetDomain configures the DDS domain for VISS traffic.
+// Call from vissv2server before launching DdsMgrInit when the user
+// specifies --ddsdomain; default is domain 0.
+func SetDomain(d dds.Domain) { ddsDomain = d }
 
 var errorResponseMap = map[string]interface{}{}
 

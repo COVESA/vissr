@@ -9,6 +9,6 @@ import (
 
 func init() {
 	newParticipant = func() (dds.Participant, error) {
-		return cyclone.New(dds.Domain(0))
+		return cyclone.New(clientDomain)
 	}
 }

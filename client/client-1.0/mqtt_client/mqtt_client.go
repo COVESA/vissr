@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -21,13 +22,11 @@ import (
 var uniqueTopicName string
 
 func getBrokerSocket(isSecure bool) string {
-	//	FVTAddr := os.Getenv("MQTT_BROKER_ADDR")
-	FVTAddr := "test.mosquitto.org" // does it work for testing?
-	//        FVTAddr := "mqtt.flespi.io"
+	FVTAddr := "test.mosquitto.org"
 	if FVTAddr == "" {
 		FVTAddr = "127.0.0.1"
 	}
-	if isSecure == true {
+	if isSecure {
 		return "ssl://" + FVTAddr + ":8883"
 	}
 	return "tcp://" + FVTAddr + ":1883"
@@ -45,7 +44,8 @@ func mqttSubscribe(brokerSocket string, topic string) {
 
 	c := MQTT.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		utils.Error.Printf("mqttSubscribe: broker connect failed: %v", token.Error())
+		os.Exit(1)
 	}
 	if token := c.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
 		utils.Error.Println(token.Error())
@@ -71,14 +71,35 @@ func subscribeVissV2Response(brokerSocket string) {
 	mqttSubscribe(brokerSocket, uniqueTopicName)
 }
 
+// buildPublishPayload wraps a raw VISS JSON request in the MQTT transport
+// envelope: {"topic":"<replyTopic>","request":{...}}.
+// Returns ("", false) when replyTopic is empty or request is not valid JSON.
+func buildPublishPayload(replyTopic, request string) (string, bool) {
+	if replyTopic == "" {
+		return "", false
+	}
+	if !json.Valid([]byte(request)) {
+		utils.Error.Printf("mqtt_client: request is not valid JSON: %s", request)
+		return "", false
+	}
+	envelope := map[string]interface{}{
+		"topic":   replyTopic,
+		"request": json.RawMessage(request),
+	}
+	b, _ := json.Marshal(envelope)
+	return string(b), true
+}
+
 func publishVissV2Request(brokerSocket string, vin string, request string) {
-	payload := `{"topic":"` + uniqueTopicName + `", "request":` + request + `}`
+	payload, ok := buildPublishPayload(uniqueTopicName, request)
+	if !ok {
+		return
+	}
 	publishMessage(brokerSocket, "/"+vin+"/Vehicle", payload)
 }
 
 func main() {
 	parser := argparse.NewParser("print", "mqtt client")
-	// Create string flag
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
 		Required: false,
@@ -88,13 +109,11 @@ func main() {
 		Required: true,
 		Help:     "VIN Number",
 		Default:  "ULFB0"})
-	// Parse input
-	err := parser.Parse(os.Args)
-	if err != nil {
+	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 
-	//utils.TransportErrorMessage = "MQTT client-finalizeResponse: JSON encode failed.\n"
 	utils.InitLog("mqtt-client-log.txt", "./logs", *logFile, *logLevel)
 
 	brokerSocket := getBrokerSocket(false)
@@ -108,6 +127,9 @@ func main() {
 	for continueLoop {
 		fmt.Printf("\nVISSv2-request (or q to quit):")
 		fmt.Scanf("%s", &request)
+		if len(request) == 0 {
+			continue
+		}
 		switch request[0] {
 		case 'q':
 			continueLoop = false

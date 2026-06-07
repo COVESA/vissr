@@ -9,6 +9,6 @@ import (
 
 func init() {
 	newParticipant = func() (dds.Participant, error) {
-		return mock.New(dds.Domain(0))
+		return mock.New(clientDomain)
 	}
 }

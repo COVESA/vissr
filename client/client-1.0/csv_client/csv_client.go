@@ -56,7 +56,11 @@ func jsonToStructList(jsonList string) int {
 		//        utils.Info.Println(jsonList, "is an array:, len=",strconv.Itoa(len(vv)))
 		requestList.Request = make([]string, len(vv))
 		for i := 0; i < len(vv); i++ {
-			requestList.Request[i] = retrieveRequest(vv[i].(map[string]interface{}))
+			m, ok := vv[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			requestList.Request[i] = retrieveRequest(m)
 		}
 	case map[string]interface{}:
 		//        utils.Info.Println(jsonList, "is a map:")
@@ -149,9 +153,9 @@ func performNoneCommand(commandNumber int, conn *websocket.Conn, optionChannel c
 		subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 		unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `"}`
 		unsubChannel <- unsubReq
-		maxArrayLen := 10     // no of datapoints to save in csv + buffer size for last notification
-		var valArray []string //:= make([]string, maxArrayLen)
-		var tsArray []string  //:= make([]string, maxArrayLen)
+		maxArrayLen := 10 // no of datapoints to save in csv + buffer size for last notification
+		valArray := make([]string, maxArrayLen)
+		tsArray := make([]string, maxArrayLen)
 		sessionDone := false
 		arrayIndex := 0
 		finalIterations := -1

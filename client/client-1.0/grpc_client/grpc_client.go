@@ -161,10 +161,9 @@ func main() {
 		Help:     "changes log output level",
 		Default:  "info"})
 
-	// Parse input
-	err := parser.Parse(os.Args)
-	if err != nil {
+	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 
 	utils.InitLog("grpc_client-log.txt", "./logs", *logFile, *logLevel)

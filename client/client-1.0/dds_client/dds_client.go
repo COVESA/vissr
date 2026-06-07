@@ -43,6 +43,10 @@ import (
 // (dds_client_mock.go or dds_client_cyclone.go). Tests may override it.
 var newParticipant func() (dds.Participant, error)
 
+// clientDomain is the DDS domain to connect to. Set from --dds-domain before
+// newParticipant is called; backend init() closures read it at call time.
+var clientDomain = dds.Domain(0)
+
 // buildEnvelope wraps a raw VISS JSON request in the DDS wire envelope:
 //
 //	{"replyTopic":"<replyTopic>","request":{...}}
@@ -77,12 +81,18 @@ func main() {
 		Help:     "Vehicle VIN — determines the DDS request topic (/<VIN>/Vehicle)",
 		Default:  "ULFB0",
 	})
+	ddsDomainFlag := parser.Int("", "dds-domain", &argparse.Options{
+		Required: false,
+		Help:     "DDS domain ID (default 0)",
+		Default:  0,
+	})
 
 	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
 		os.Exit(1)
 	}
 
+	clientDomain = dds.Domain(*ddsDomainFlag)
 	utils.InitLog("dds-client-log.txt", "./logs", *logFile, *logLevel)
 
 	participant, err := newParticipant()
