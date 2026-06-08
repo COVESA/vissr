@@ -36,7 +36,9 @@ var secConfig SecConfig
 
 func readTransportSecConfig() {
 	path, err := os.Getwd()
-
+	if err != nil {
+		path = "."
+	}
 	data, err := os.ReadFile(path + "/" + trSecConfigPath + "transportSec.json")
 	if err != nil {
 		fmt.Printf("ReadTransportSecConfig():%stransportSec.json error=%s", trSecConfigPath, err)

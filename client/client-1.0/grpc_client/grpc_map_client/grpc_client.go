@@ -117,7 +117,7 @@ func streamCall(commandIndex int) {
 		portNo := secConfig.GrpcSecPort
 		conn, err = grpc.Dial(address+portNo, grpc.WithTransportCredentials(tlsCredentials), grpc.WithBlock())
 	} else {
-		conn, err = grpc.Dial(address+":8887", grpc.WithInsecure(), grpc.WithBlock())
+		conn, err = grpc.Dial(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	}
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -131,14 +131,18 @@ func streamCall(commandIndex int) {
 	vssRequest := commandList[commandIndex]
 	pbRequest := utils.SubscribeRequestJsonToPb(vssRequest)
 	stream, err := client.SubscribeRequest(ctx, pbRequest)
+	if err != nil {
+		fmt.Printf("SubscribeRequest failed: %v\n", err)
+		return
+	}
 	for {
 		pbResponse, err := stream.Recv()
-		vssResponse := utils.SubscribeStreamPbToJson(pbResponse)
 		if err != nil {
 			fmt.Printf("Error=%v when issuing request=:%s", err, vssRequest)
-		} else {
-			fmt.Printf("Received response:%s\n", vssResponse)
+			return
 		}
+		vssResponse := utils.SubscribeStreamPbToJson(pbResponse)
+		fmt.Printf("Received response:%s\n", vssResponse)
 	}
 }
 

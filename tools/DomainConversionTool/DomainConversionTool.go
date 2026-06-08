@@ -638,7 +638,11 @@ func getConversionTypeForEnum(nbdEnums string, sbdEnums string) int {
 	for i := 0; i < len(nbdEnumMap); i++ {
 		enumMap += `"` + nbdEnumMap[i] + `":"` + sbdEnumMap[i] + `", `
 	}
-	enumMap = enumMap[:len(enumMap)-2] + "}"
+	if len(nbdEnumMap) > 0 {
+		enumMap = enumMap[:len(enumMap)-2] + "}"
+	} else {
+		enumMap += "}"
+	}
 	for i := 0; i < len(scaleDataList); i++ {
 		if scaleDataList[i] == enumMap {
 			return i
@@ -1025,7 +1029,13 @@ func decomposePath(path string) []string {
 	segments := strings.Count(path, ".")
 	lead := 0
 	for i := 0; i <= segments; i++ {
-		trail := strings.Index(path[lead:], ".") + lead
+		idx := strings.Index(path[lead:], ".")
+		var trail int
+		if idx < 0 {
+			trail = len(path)
+		} else {
+			trail = idx + lead
+		}
 		branchPaths = append(branchPaths, path[:trail])
 		lead = trail + 1
 	}
