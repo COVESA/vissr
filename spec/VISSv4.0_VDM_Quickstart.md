@@ -319,6 +319,50 @@ The server will reject `set` requests with values outside the allowed list.
 
 ---
 
+## SET value validation
+
+The server performs three tiers of validation before accepting a `set` request.
+No external configuration is needed — the checks are driven entirely by the
+signal metadata already in the VDM/VSS tree.
+
+### 1. Node-type guard
+Only `ACTUATOR` and `ATTRIBUTE` nodes can be written.  Attempting to `set` a
+`SENSOR` returns HTTP-like error code **403 (read-only)**.  Trying to `set` a
+branch node returns **400**.
+
+### 2. Allowed-value check
+If `AllowedDef` is non-empty (populated by enum signals — see above), the value
+must appear in the list (case-insensitive).  If it does not, the request is
+rejected with code **400** before any type or range check is performed.
+
+### 3. Datatype and range check
+For signals without an allowed list, the server parses the value against the
+declared datatype:
+
+| Datatype         | Accepted values                                    |
+|------------------|----------------------------------------------------|
+| `boolean`        | `true`, `false`, `1`, `0` (case-insensitive)       |
+| `int8` … `int64` | Signed integer within the type's natural range     |
+| `uint8` … `uint64`| Non-negative integer within the type's natural range|
+| `float`          | IEEE 754 single; `NaN` and `Inf` rejected          |
+| `double`         | IEEE 754 double; `NaN` and `Inf` rejected          |
+| `string`         | Any UTF-8 string                                   |
+| unknown / empty  | Accepted without type checking                     |
+
+If `@range(min: …, max: …)` is declared in the SDL, the parsed numeric value
+must fall within `[min, max]` inclusive.
+
+#### Example error responses
+
+```json
+{"error": {"number": 403, "reason": "read_only", "message": "signal \"Vehicle.Speed\" is read-only (sensor)"}}
+{"error": {"number": 400, "reason": "bad_request", "message": "value \"Sport\" not in allowed set [Park, Reverse, Neutral, Drive]"}}
+{"error": {"number": 400, "reason": "bad_request", "message": "value \"256\" out of uint8 range [0, 255]"}}
+{"error": {"number": 400, "reason": "bad_request", "message": "Vehicle.Cabin.Seat.Position: value 101 above maximum 100"}}
+```
+
+---
+
 ## Multi-instance signals (instance tags)
 
 VDM's instance tag mechanism lets one signal definition expand to cover many
