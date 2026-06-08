@@ -76,6 +76,8 @@ fuzzers=(
     'FuzzProcessHistoryGet      ./server/vissv2server/serviceMgr'
     'FuzzMapRequest             ./utils'
     'FuzzJsonSchemaValidate     ./utils'
+    'FuzzPathFromURL            ./server/vissv2server/restMgr'
+    'FuzzJsonEscapeString       ./server/vissv2server/restMgr'
     'FuzzGetFileDescriptorData  ./server/vissv2server'
     'FuzzGetRangeBoundaries     ./server/vissv2server'
     'FuzzGetValueForKey         ./server/vissv2server/wsMgr'

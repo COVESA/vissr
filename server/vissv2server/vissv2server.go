@@ -34,6 +34,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
+	"github.com/covesa/vissr/server/vissv2server/restMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
@@ -63,6 +64,7 @@ var serverComponents []string = []string{
 	"grpcMgr",
 	"udsMgr",
 	"ddsMgr",
+	"restMgr",
 	"atServer",
 }
 
@@ -70,7 +72,7 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 6  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS
+ const NUMOFTRANSPORTMGRS = 7  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS, REST
 var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
@@ -1086,6 +1088,8 @@ func main() {
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
 	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
 	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
+	restEnable := parser.Flag("", "restenable", &argparse.Options{Required: false, Help: "enable REST+SSE transport (GET/PUT /viss/v2/{path})", Default: false})
+	restPort := parser.Int("", "restport", &argparse.Options{Required: false, Help: "port for REST+SSE transport (default 8081)", Default: 8081})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1167,6 +1171,12 @@ func main() {
 				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
 				go transportDataSession(transportMgrChannel[5], transportDataChan[5], backendChan[5])
 			}
+		case "restMgr":
+			if *restEnable {
+				addr := fmt.Sprintf(":%d", *restPort)
+				go restMgr.RestMgrInit(6, transportMgrChannel[6], addr)
+				go transportDataSession(transportMgrChannel[6], transportDataChan[6], backendChan[6])
+			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
@@ -1190,6 +1200,8 @@ func main() {
 			serveRequest(request, 4, 0)
 		case request := <-transportDataChan[5]: // request from DDS mgr
 			serveRequest(request, 5, 0)
+		case request := <-transportDataChan[6]: // request from REST mgr
+			serveRequest(request, 6, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			request := map[string]interface{}{}
