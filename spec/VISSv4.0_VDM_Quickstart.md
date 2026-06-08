@@ -241,6 +241,61 @@ also query these endpoints directly with `curl` for scripting.
 
 ---
 
+## REST+SSE transport
+
+An optional REST+SSE transport is available alongside WebSocket and HTTP.
+Start it with `--restenable` (port defaults to 8081; override with `--restport`):
+
+```bash
+vissv2server --vdm ./my-vdm/ --restenable --restport 8081
+```
+
+### Read a signal
+
+```bash
+curl http://localhost:8081/viss/v2/Vehicle.Speed
+```
+
+Response (VISS JSON):
+```json
+{"action":"get","path":"Vehicle.Speed","data":{"dp":{"value":"42","ts":"2026-06-08T12:00:00Z"}},"requestId":"rest-1","ts":"..."}
+```
+
+### Write a signal
+
+```bash
+curl -X PUT http://localhost:8081/viss/v2/Vehicle.ADAS.ABS.IsEnabled \
+     -H 'Content-Type: application/json' \
+     -d '{"value":"true"}'
+```
+
+### Stream signal updates (SSE)
+
+```bash
+curl -N http://localhost:8081/viss/v2/Vehicle.Speed/subscribe
+```
+
+Each SSE event has `event: notification` and VISS JSON in the data line.
+Cancel with `DELETE /viss/v2/{path}/subscribe?subscriptionId=<id>`.
+
+### Metadata
+
+```bash
+curl http://localhost:8081/viss/v2/metadata/Vehicle.Speed
+```
+
+### Path format
+
+Signals may be specified as dot-separated VISS paths (`Vehicle.Speed`) or
+slash-separated URL paths (`Vehicle/Speed`) — both are accepted.
+
+### CORS
+
+All responses include `Access-Control-Allow-Origin: *` and the transport
+handles `OPTIONS` pre-flight requests, making it suitable for browser use.
+
+---
+
 ## Running the test suite
 
 Unit tests for the VDM loader:
