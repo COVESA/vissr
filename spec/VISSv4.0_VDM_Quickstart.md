@@ -160,6 +160,24 @@ tree in the HIM forest.
 
 ---
 
+## S2DM CI integration
+
+The repo ships a ready-to-use GitHub Actions workflow
+`.github/workflows/s2dm-validate.yml` that runs on every push/PR that
+touches `.graphql` files.  It has three jobs:
+
+| Job | What it does |
+|-----|-------------|
+| `s2dm-validate` | Runs `uvx covesa-s2dm validate` on every non-testdata VDM directory |
+| `vdmloader-tests` | `go test -race ./server/vissv2server/vdmloader/...` + `vdminfo` smoke test |
+| `sdl-drift` | Runs `tools/gen-sdl.sh` (if present) and diffs the output against committed SDL |
+
+To enable drift detection, create `tools/gen-sdl.sh` (a template is
+committed at that path) that regenerates your SDL from the source VSS
+catalog.  The job soft-fails (no error) if the script is absent.
+
+---
+
 ## Validating SDL with s2dm (recommended for CI)
 
 The COVESA **s2dm** toolchain enforces naming conventions and structural rules
