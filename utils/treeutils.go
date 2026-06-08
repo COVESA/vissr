@@ -282,6 +282,62 @@ func NewSignalNode(name, nodeType, datatype, description, min, max, unit string)
 	}
 }
 
+// ForestInfo is a JSON-serialisable summary of one tree in the HIM forest.
+type ForestInfo struct {
+	RootName string `json:"rootName"`
+	Domain   string `json:"domain"`
+	Version  string `json:"version"`
+}
+
+// ForestInfoList returns metadata for every tree currently in the HIM forest.
+func ForestInfoList() []ForestInfo {
+	out := make([]ForestInfo, 0, len(himForest))
+	for _, t := range himForest {
+		out = append(out, ForestInfo{RootName: t.RootName, Domain: t.Domain, Version: t.Version})
+	}
+	return out
+}
+
+// GetForestRoot returns the root Node_t for the named tree, or nil.
+func GetForestRoot(rootName string) *Node_t {
+	for i := range himForest {
+		if himForest[i].RootName == rootName {
+			return himForest[i].Handle
+		}
+	}
+	return nil
+}
+
+// RegisterServiceTree adds a dynamically-built service tree to the HIM forest.
+// Called by vissServiceMgr when a service process registers its procedure path.
+// domain must end in ".Service" so GetInfoType returns "Service".
+// Returns false if a tree for rootName already exists (no double-registration).
+func RegisterServiceTree(rootName, domain, version string, root *Node_t) bool {
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName {
+			return false
+		}
+	}
+	root.Name = rootName
+	himForest = append(himForest, HimTree{
+		RootName: rootName,
+		Domain:   domain,
+		Version:  version,
+		Handle:   root,
+	})
+	return true
+}
+
+// DeregisterServiceTree removes a dynamically-registered service tree by rootName.
+func DeregisterServiceTree(rootName string) {
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName {
+			himForest = append(himForest[:i], himForest[i+1:]...)
+			return
+		}
+	}
+}
+
 func PopulateDefault() {
 	j := 1
 	for i:=0; i < len(himForest); i++ {
