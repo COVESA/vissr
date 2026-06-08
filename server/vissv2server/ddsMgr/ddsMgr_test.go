@@ -97,6 +97,35 @@ func newMockParticipant(t *testing.T) {
 	}
 }
 
+// ── ddsErrDetail ──────────────────────────────────────────────────────────────
+
+func TestDdsErrDetail_KnownSentinels(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{dds.ErrQoSMismatch, "QoS incompatibility"},
+		{dds.ErrPayloadTooLarge, "payload exceeds"},
+		{dds.ErrResourceLimits, "resource limits"},
+		{dds.ErrDeadlineMissed, "deadline missed"},
+		{dds.ErrSampleRejected, "sample rejected"},
+		{context.DeadlineExceeded, "write timed out"},
+	}
+	for _, c := range cases {
+		got := ddsErrDetail(c.err)
+		if !containsStr(got, c.want) {
+			t.Errorf("ddsErrDetail(%v) = %q, want substring %q", c.err, got, c.want)
+		}
+	}
+}
+
+func TestDdsErrDetail_UnknownError(t *testing.T) {
+	err := errors.New("some unknown error")
+	if got := ddsErrDetail(err); got != err.Error() {
+		t.Errorf("ddsErrDetail unknown: got %q, want %q", got, err.Error())
+	}
+}
+
 // resetReplies empties the package-level reply list between tests.
 func resetReplies() {
 	replies.mu.Lock()

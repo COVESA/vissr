@@ -22,6 +22,7 @@ package ddsMgr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -188,6 +189,27 @@ var newParticipant func() (dds.Participant, error)
 // a real vissv3.0-schema.json file present in the test working directory.
 var schemaValidate = utils.JsonSchemaValidate
 
+// ddsErrDetail maps known dds error sentinels to a concise diagnostic string
+// so log messages name the root cause rather than repeating the raw error text.
+func ddsErrDetail(err error) string {
+	switch {
+	case errors.Is(err, dds.ErrQoSMismatch):
+		return "QoS incompatibility between publisher and subscriber"
+	case errors.Is(err, dds.ErrPayloadTooLarge):
+		return "payload exceeds QoS MaxSampleSize"
+	case errors.Is(err, dds.ErrResourceLimits):
+		return "resource limits exceeded"
+	case errors.Is(err, dds.ErrDeadlineMissed):
+		return "deadline missed — no sample within QoS deadline"
+	case errors.Is(err, dds.ErrSampleRejected):
+		return "sample rejected by subscriber resource limits"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "write timed out — subscriber too slow"
+	default:
+		return err.Error()
+	}
+}
+
 // DdsMgrInit is the transport manager entry point called by vissv2server.
 // mgrId is the channel-slot index assigned to this manager (slot 5).
 // transportMgrChan is the shared bidirectional channel to the server core;
@@ -210,14 +232,14 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	sub, err := participant.NewSubscriber(vehicleTopic, dds.DefaultQoS)
 	if err != nil {
-		utils.Error.Printf("ddsMgr: subscribe to %q failed: %v", vehicleTopic, err)
+		utils.Error.Printf("ddsMgr: subscribe to %q failed: %s", vehicleTopic, ddsErrDetail(err))
 		return
 	}
 	defer sub.Close()
 
 	pub, err := participant.NewPublisher(vehicleTopic, dds.DefaultQoS)
 	if err != nil {
-		utils.Error.Printf("ddsMgr: create publisher failed: %v", err)
+		utils.Error.Printf("ddsMgr: create publisher for %q failed: %s", vehicleTopic, ddsErrDetail(err))
 		return
 	}
 	defer pub.Close()
@@ -246,9 +268,13 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 				utils.MapRequest(request, &reqMap)
 				utils.SetErrorResponse(reqMap, errorResponseMap, 0, errStr)
 				replyPub, perr := participant.NewPublisher(replyTopic, dds.DefaultQoS)
-				if perr == nil {
+				if perr != nil {
+					utils.Error.Printf("ddsMgr: error-reply publisher for %q failed: %s", replyTopic, ddsErrDetail(perr))
+				} else {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					replyPub.WriteCtx(ctx, []byte(utils.FinalizeMessage(errorResponseMap)))
+					if werr := replyPub.WriteCtx(ctx, []byte(utils.FinalizeMessage(errorResponseMap))); werr != nil {
+						utils.Error.Printf("ddsMgr: error-reply write to %q: %s", replyTopic, ddsErrDetail(werr))
+					}
 					cancel()
 					replyPub.Close()
 				}
@@ -270,12 +296,12 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 			replies.pop(topicHandle)
 			replyPub, err := participant.NewPublisher(replyTopic, dds.DefaultQoS)
 			if err != nil {
-				utils.Error.Printf("ddsMgr: cannot publish reply to %q: %v", replyTopic, err)
+				utils.Error.Printf("ddsMgr: reply publisher for %q failed: %s", replyTopic, ddsErrDetail(err))
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if werr := replyPub.WriteCtx(ctx, []byte(responsePayload)); werr != nil {
-				utils.Error.Printf("ddsMgr: reply write to %q: %v", replyTopic, werr)
+				utils.Error.Printf("ddsMgr: reply write to %q: %s", replyTopic, ddsErrDetail(werr))
 			}
 			cancel()
 			replyPub.Close()
