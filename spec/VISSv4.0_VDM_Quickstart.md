@@ -368,6 +368,55 @@ Up to N dimensions are supported; VDM today uses 1 or 2.
 
 ---
 
+## Generating an SPDX SBOM
+
+vissr ships a `tools/sbom` CLI that reads `go list -m -json all` and emits a
+valid SPDX Software Bill of Materials document.  Three spec versions are
+supported:
+
+| Version | Format options | Extras vs previous version |
+|---|---|---|
+| 2.2 | tag-value (tv) | baseline |
+| 2.3 | tag-value, JSON | same fields; adds JSON output |
+| 3.0.1 | tag-value, JSON | adds `primaryPackagePurpose` + `PackageVerificationCode` |
+
+### Quick usage
+
+```bash
+# SPDX 2.3 tag-value to stdout
+go run ./tools/sbom --version 2.3 --format tv
+
+# SPDX 2.3 JSON to file
+go run ./tools/sbom --version 2.3 --format json --out sbom/vissr.spdx.json
+
+# SPDX 3.0.1 JSON
+go run ./tools/sbom --version 3.0.1 --format json --out sbom/vissr-3.0.1.spdx.json
+
+# Custom document name + namespace
+go run ./tools/sbom \
+    --version 2.3 --format json \
+    --name my-product \
+    --ns "https://example.com/spdx/my-product-$(git rev-parse HEAD)"
+```
+
+All flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--version` | `2.3` | SPDX spec version: `2.2`, `2.3`, or `3.0.1` |
+| `--format` | `tv` | Output format: `tv` (tag-value) or `json` |
+| `--out` | stdout | Output file path |
+| `--name` | `vissr` | SPDX document name |
+| `--ns` | auto-generated | Document namespace URI |
+
+### CI integration
+
+The `.github/workflows/sbom.yml` workflow generates all three SBOM variants on
+every push to `master`/`v4.1` and on every PR.  On a tagged release, the SBOMs
+are automatically attached to the GitHub release as downloadable assets.
+
+---
+
 ## Known limitations (v4.0)
 
 | Limitation | Planned fix |

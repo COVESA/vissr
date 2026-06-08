@@ -17,6 +17,13 @@ and an ongoing development of a reference implementation of the [VISSv3.0 specif
 # Tutorial
 A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 
+## VISSv4.1 new features
+* **SET value validation**: three-tier guard (node type, allowed-value list, datatype/range) with typed error codes (400/403).
+* **VDM live reload**: `--vdm-watch` flag hot-reloads `.graphql` SDL files without restarting the server.
+* **REST+SSE transport**: `GET/PUT /viss/v2/{path}` plus Server-Sent Events for subscriptions.
+* **S2DM CI**: GitHub Actions workflow validates SDL files with the COVESA s2dm toolchain on every PR.
+* **SPDX SBOM**: `tools/sbom` CLI generates SPDX 2.2 (tag-value), 2.3 (JSON), and 3.0.1 (JSON) SBOMs from `go list -m`; workflow attaches them to every release.
+
 ## VISSv3.0 new features
 * Multiple tree support. The server can be configured to manage multiple trees that a client can access.
 * Server capabilities. A Server tree can be accessed by clients.
