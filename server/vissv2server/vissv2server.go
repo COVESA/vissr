@@ -527,17 +527,18 @@ func isServiceTree(requestMap map[string]interface{}) bool {
 	return utils.GetInfoType(treeRoot) == "Service"
 }
 
-// dispatchServiceAction routes VISSv3.2 service actions to vissServiceMgr.
+// dispatchServiceAction routes VISSv3.2/3.3 service actions to vissServiceMgr.
+// HandleInvoke and HandleMonitor receive the full backendChan slice so they
+// can fan out monitoring events to any transport channel.
 func dispatchServiceAction(requestMap map[string]interface{}, tDChanIndex int) {
 	action, _ := requestMap["action"].(string)
-	bc := backendChan[tDChanIndex]
 	switch action {
 	case "invoke":
-		vissServiceMgr.HandleInvoke(requestMap, bc)
+		vissServiceMgr.HandleInvoke(requestMap, backendChan)
 	case "monitor":
-		vissServiceMgr.HandleMonitor(requestMap, bc)
+		vissServiceMgr.HandleMonitor(requestMap, backendChan)
 	case "discover":
-		vissServiceMgr.HandleDiscover(requestMap, bc)
+		vissServiceMgr.HandleDiscover(requestMap, backendChan[tDChanIndex])
 	default:
 		utils.Error.Printf("dispatchServiceAction: unexpected action %q", action)
 	}
@@ -1093,6 +1094,10 @@ func main() {
 	}
 
 	initChannels()
+
+	// VISSv3.3: start the service registration TCP listener so external
+	// service processes can register procedure paths and receive invocations.
+	go vissServiceMgr.StartServiceRegServer(backendChan)
 
 /*	router := mux.NewRouter()
 	router.HandleFunc("/vsspathlist", pathList.VssPathListHandler).Methods("GET")
