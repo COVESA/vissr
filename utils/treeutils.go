@@ -53,6 +53,7 @@ type HimTree struct {
 }
 
 var himForest []HimTree
+var himForestMu sync.RWMutex
 
 // ForestInfo is a JSON-serialisable summary of one tree in the HIM forest.
 type ForestInfo struct {
@@ -63,6 +64,8 @@ type ForestInfo struct {
 
 // ForestInfoList returns metadata for every tree currently in the HIM forest.
 func ForestInfoList() []ForestInfo {
+	himForestMu.RLock()
+	defer himForestMu.RUnlock()
 	out := make([]ForestInfo, 0, len(himForest))
 	for _, t := range himForest {
 		out = append(out, ForestInfo{RootName: t.RootName, Domain: t.Domain, Version: t.Version})
@@ -72,6 +75,8 @@ func ForestInfoList() []ForestInfo {
 
 // GetForestRoot returns the root Node_t for the named tree, or nil.
 func GetForestRoot(rootName string) *Node_t {
+	himForestMu.RLock()
+	defer himForestMu.RUnlock()
 	for i := range himForest {
 		if himForest[i].RootName == rootName {
 			return himForest[i].Handle
@@ -205,6 +210,7 @@ func InitForest(himPath string) bool {
 	scanner.Split(bufio.ScanLines)
 	var text string
 	continueScan := true
+	var local []HimTree
 	i := -1
 	for continueScan {
 		continueScan = scanner.Scan()
@@ -215,37 +221,42 @@ func InitForest(himPath string) bool {
 		rootIndex := strings.Index(text, "HIM.") + 4
 		if rootIndex != 3 && text[len(text)-1] == ':' {
 			i++
-			himForest = append(himForest, HimTree{})
-			himForest[i].RootName = text[rootIndex:len(text)-1]
+			local = append(local, HimTree{})
+			local[i].RootName = text[rootIndex : len(text)-1]
 		} else if text[0] != '#' && strings.Contains(text, "type:") && i != -1 {
 			typeIndex := strings.Index(text, "type:") + 5
-			himForest[i].TreeType = strings.TrimSpace(text[typeIndex:len(text)])
+			local[i].TreeType = strings.TrimSpace(text[typeIndex:len(text)])
 		} else if text[0] != '#' && strings.Contains(text, "domain:") {
 			domainIndex := strings.Index(text, "domain:") + 7
-			himForest[i].Domain = strings.TrimSpace(text[domainIndex:len(text)])
+			local[i].Domain = strings.TrimSpace(text[domainIndex:len(text)])
 		} else if text[0] != '#' && strings.Contains(text, "version:") {
 			versionIndex := strings.Index(text, "version:") + 8
-			himForest[i].Version = strings.TrimSpace(text[versionIndex:len(text)])
+			local[i].Version = strings.TrimSpace(text[versionIndex:len(text)])
 		} else if text[0] != '#' && strings.Contains(text, "local:") {
 			localIndex := strings.Index(text, "local:") + 6
 			localPath := strings.TrimSpace(text[localIndex:len(text)])
-			himForest[i].Handle = VSSReadTree(localPath)
-			if himForest[i].Handle == nil {
+			local[i].Handle = VSSReadTree(localPath)
+			if local[i].Handle == nil {
 				Error.Printf("Error parsing %s", localPath)
+				file.Close()
 				return false
 			}
-			himForest[i].Handle.Name = himForest[i].RootName
+			local[i].Handle.Name = local[i].RootName
 		}
-		
 	}
 	file.Close()
+	himForestMu.Lock()
+	himForest = append(himForest, local...)
+	himForestMu.Unlock()
 	return true
 }
 
 func SetRootNodePointer(rootPath string) *Node_t {
 	dotIndex := GetFirstDotIndex(rootPath)
 	rootNodeName := rootPath[:dotIndex]
-	for i:=0; i < len(himForest); i++ {
+	himForestMu.RLock()
+	defer himForestMu.RUnlock()
+	for i := 0; i < len(himForest); i++ {
 		if himForest[i].RootName == rootNodeName {
 			return himForest[i].Handle
 		}
@@ -254,14 +265,15 @@ func SetRootNodePointer(rootPath string) *Node_t {
 }
 
 func GetInfoType(treeHandle *Node_t) string {
-	for i:=0; i < len(himForest); i++ {
+	himForestMu.RLock()
+	defer himForestMu.RUnlock()
+	for i := 0; i < len(himForest); i++ {
 		if himForest[i].Handle == treeHandle {
 			infoTypeIndex := strings.LastIndex(himForest[i].Domain, ".")
 			if infoTypeIndex == -1 {
 				return "Missing" //???
-			} else {
-				return himForest[i].Domain[infoTypeIndex+1:]
 			}
+			return himForest[i].Domain[infoTypeIndex+1:]
 		}
 	}
 	return "Missing" //???
@@ -272,6 +284,8 @@ func GetInfoType(treeHandle *Node_t) string {
 // domain must end in ".Service" so GetInfoType returns "Service".
 // Returns false if a tree for rootName already exists (no double-registration).
 func RegisterServiceTree(rootName, domain, version string, root *Node_t) bool {
+	himForestMu.Lock()
+	defer himForestMu.Unlock()
 	for i := 0; i < len(himForest); i++ {
 		if himForest[i].RootName == rootName {
 			return false
@@ -289,6 +303,8 @@ func RegisterServiceTree(rootName, domain, version string, root *Node_t) bool {
 
 // DeregisterServiceTree removes a dynamically-registered service tree by rootName.
 func DeregisterServiceTree(rootName string) {
+	himForestMu.Lock()
+	defer himForestMu.Unlock()
 	for i := 0; i < len(himForest); i++ {
 		if himForest[i].RootName == rootName {
 			himForest = append(himForest[:i], himForest[i+1:]...)
@@ -356,12 +372,16 @@ func NewSignalNode(name, nodeType, datatype, description, min, max, unit string)
 }
 
 func CreatePathListFile(pListPath string) {
+	himForestMu.RLock()
+	snap := make([]HimTree, len(himForest))
+	copy(snap, himForest)
+	himForestMu.RUnlock()
 	j := 1
-	for i:=0; i < len(himForest); i++ {
-		if himForest[i].Handle != nil {
+	for i := 0; i < len(snap); i++ {
+		if snap[i].Handle != nil {
 			pListFile := pListPath + "pathlist" + strconv.Itoa(j) + ".json"
 			os.Remove(pListFile)
-			VSSGetLeafNodesList(himForest[i].Handle, himForest[i].RootName, pListFile)
+			VSSGetLeafNodesList(snap[i].Handle, snap[i].RootName, pListFile)
 			sortPathList(pListFile)
 			Info.Printf(pListFile + " created.")
 			j++
@@ -370,11 +390,15 @@ func CreatePathListFile(pListPath string) {
 }
 
 func PopulateDefault() {
+	himForestMu.RLock()
+	snap := make([]HimTree, len(himForest))
+	copy(snap, himForest)
+	himForestMu.RUnlock()
 	j := 1
-	for i:=0; i < len(himForest); i++ {
-		if himForest[i].Handle != nil {
+	for i := 0; i < len(snap); i++ {
+		if snap[i].Handle != nil {
 			dListFile := "defaultList" + strconv.Itoa(j) + ".json"
-			numOfDefaults := VSSGetDefaultList(himForest[i].Handle, himForest[i].RootName, dListFile)
+			numOfDefaults := VSSGetDefaultList(snap[i].Handle, snap[i].RootName, dListFile)
 			if numOfDefaults == 0 {
 				os.Remove(dListFile)
 			} else {

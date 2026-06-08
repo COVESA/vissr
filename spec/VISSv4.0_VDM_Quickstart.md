@@ -241,6 +241,30 @@ also query these endpoints directly with `curl` for scripting.
 
 ---
 
+## Live reload of VDM files
+
+Start the server with `--vdm-watch` to automatically reload the signal trees
+whenever a `.graphql` file in the VDM directory is created, modified, or removed:
+
+```bash
+vissv2server --vdm ./my-vdm/ --vdm-watch
+```
+
+When any `.graphql` file changes:
+1. All trees previously loaded from that directory are deregistered from the
+   HIM forest.
+2. The entire directory is re-parsed and the new trees are registered.
+
+Transport managers see the updated forest on their next lookup — no restart
+needed.  `--vdm-watch` has no effect when `--vdm` is not set.
+
+> **Note**: live reload modifies the HIM forest concurrently with incoming
+> requests. The forest is protected by a `sync.RWMutex` so there are no
+> data races, but in-flight requests that hold a reference to an old tree
+> will continue to use it until they complete.
+
+---
+
 ## Running the test suite
 
 Unit tests for the VDM loader:
