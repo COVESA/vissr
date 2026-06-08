@@ -80,6 +80,13 @@ fuzzers=(
     'FuzzGetRangeBoundaries     ./server/vissv2server'
     'FuzzGetValueForKey         ./server/vissv2server/wsMgr'
     'FuzzCompressTs             ./server/vissv2server/wsMgr'
+    'FuzzValidateSetValue       ./utils'
+    'FuzzIsGraphQL              ./server/vissv2server/vdmloader'
+    'FuzzPathFromURL            ./server/vissv2server/restMgr'
+    'FuzzJsonEscapeString       ./server/vissv2server/restMgr'
+    'FuzzWriteTV                ./tools/sbom'
+    'FuzzWriteJSON              ./tools/sbom'
+    'FuzzDownloadURL            ./tools/sbom'
 )
 for entry in "${fuzzers[@]}"; do
     set -- $entry
@@ -194,6 +201,23 @@ points are tested via runtest.sh integration.
 Covers `fileExists`, `deSerializeUInt` (1/2/4-byte), `inFeederScope`,
 `splitToDomainDataAndTs`, `convertToDomainData`, `makeDataPoint`,
 `calcInputValue`, `incDpIndex`, `enumConversion`, `linearConversion`.
+
+### SBOM generator (`tools/sbom`)
+
+| Function / area | Test |
+|---|---|
+| `noassertion` | `TestNoassertion_*` |
+| `downloadURL` | `TestDownloadURL_*` |
+| `timestamp` format | `TestTimestamp_Format` |
+| `packageVerificationCode` determinism + hex + uniqueness | `TestPackageVerificationCode_*` |
+| `writeTV` — header fields, all three spec versions, package fields, license, empty input, no-version omission | `TestWriteTV_*`, `TestAllVersions_TV` |
+| `writeTV` — 3.0.1 adds `PackageVerificationCode`; 2.2 omits it | `TestWriteTV_Version301*`, `TestWriteTV_Version22*` |
+| `writeJSON` — valid JSON, header, creation-info, packages, relationships, license, indentation | `TestWriteJSON_*`, `TestAllVersions_JSON` |
+| `writeJSON` — 3.0.1 sets `primaryPackagePurpose: LIBRARY`; 2.2 omits it | `TestWriteJSON_Version301*`, `TestWriteJSON_Version22*` |
+| Fuzz: `writeTV`, `writeJSON`, `downloadURL` must not panic on arbitrary input | `FuzzWriteTV`, `FuzzWriteJSON`, `FuzzDownloadURL` |
+
+Note: `goListPackages` is an integration-only entry point (executes `go list -m -json all`)
+and is excluded from unit tests; it is exercised by the CI `generate` job on every push.
 
 ## Functions that need code refactoring to be unit-testable
 
