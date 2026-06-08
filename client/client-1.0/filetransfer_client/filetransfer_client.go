@@ -124,6 +124,7 @@ func calculateHash(fileName string) string {
 	f, err := os.Open(fileName)
 	if err != nil {
 		utils.Info.Printf("calculateHash: failed to open %s, err=%s", fileName, err)
+		return ""
 	}
 	defer f.Close()
 
@@ -172,13 +173,18 @@ func encodeUlRequest(uid []byte, messageNo byte, status byte) []byte { // reques
 }
 
 func decodeDlResponse(dataResp []byte) (byte, byte) { // response: uid(4)|messageNo(1)|status(1)
-//	uid := string(dataResp[:4])
-	mNo := dataResp[4]
-	status := dataResp[5]
-	return mNo, status
+	if len(dataResp) < 6 {
+		utils.Error.Printf("decodeDlResponse: response too short: %d bytes", len(dataResp))
+		return 0, 0xFF // 0xFF = server error; triggers session termination
+	}
+	return dataResp[4], dataResp[5]
 }
 
-func decodeUlResponse(dataResp []byte) ([]byte, byte, byte, uint32, []byte) {// response: uid(4)|messageNo(1)|chunkSize(4)| lastMessage(1)|chunk(N)
+func decodeUlResponse(dataResp []byte) ([]byte, byte, byte, uint32, []byte) { // response: uid(4)|messageNo(1)|chunkSize(4)|lastMessage(1)|chunk(N)
+	if len(dataResp) < 10 {
+		utils.Error.Printf("decodeUlResponse: response too short: %d bytes", len(dataResp))
+		return nil, 0, 0x01, 0, nil // lastMessage=1 ends the session safely
+	}
 	uid := dataResp[:4]
 	mNo := dataResp[4]
 	var chunkSize uint32

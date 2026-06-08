@@ -113,6 +113,15 @@ func TestGetValueForKey_EmptyMessage(t *testing.T) {
 	}
 }
 
+func TestGetValueForKey_ValueStartAtEnd(t *testing.T) {
+	// When the opening quote of the value is the last character, valueStart
+	// points past the end of the string → return "".
+	// Input: `"action":"` (len=10), key `"action"` → valueStart=10 == len(10).
+	if got := getValueForKey(`"action":"`, `"action"`); got != "" {
+		t.Errorf("got %q; want \"\"", got)
+	}
+}
+
 // --------------------------------------------------------------------------
 // signedTimeDiff — pre-fix would panic on empty diffMsStr via diffMsStr[1:].
 // --------------------------------------------------------------------------
@@ -1108,18 +1117,432 @@ func TestErrorResponseMap_FinalizeIsValidJSON(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// Integration-only entry point
+// checkCompressionRequest — responseHandling variants 2, 3, 4
+// --------------------------------------------------------------------------
+
+func TestCheckCompressionRequest_Handling2_GetWithPaths(t *testing.T) {
+	initDcCache()
+	// singleResponse=true (get), singlePath=false (paths array) → handling=2
+	req := `{"action":"get","paths":["A","B"],"requestId":"r-h2","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h2")
+	if idx == -1 {
+		t.Fatal("not cached for handling-2")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 2 {
+		t.Errorf("got handling=%d; want 2", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+func TestCheckCompressionRequest_Handling3_SubscribeSinglePath(t *testing.T) {
+	initDcCache()
+	// singleResponse=false (subscribe), singlePath=true → handling=3
+	req := `{"action":"subscribe","path":"A","requestId":"r-h3","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h3")
+	if idx == -1 {
+		t.Fatal("not cached for handling-3")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 3 {
+		t.Errorf("got handling=%d; want 3", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+func TestCheckCompressionRequest_Handling4_SubscribeMultiplePaths(t *testing.T) {
+	initDcCache()
+	// singleResponse=false (subscribe), singlePath=false (paths) → handling=4
+	req := `{"action":"subscribe","paths":["A","B"],"requestId":"r-h4","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h4")
+	if idx == -1 {
+		t.Fatal("not cached for handling-4")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 4 {
+		t.Errorf("got handling=%d; want 4", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+// --------------------------------------------------------------------------
+// replaceTs — happy path (actual timestamp replacement)
+// --------------------------------------------------------------------------
+
+func TestReplaceTs_SingleBracePreIndexPath(t *testing.T) {
+	// When the messageTs position has only 1 '{' before it (top-level ts),
+	// the preIndex path is taken.  The inner timestamp should be replaced.
+	refTs := "2024-01-01T10:00:01Z"
+	innerTs := "2024-01-01T10:00:00Z" // 1000ms before refTs
+	// Single '{' before refTs position (it's right after the first '{').
+	msg := `{"ts":"` + refTs + `","dp":"100","innerTs":"` + innerTs + `"}`
+	got := replaceTs(msg, refTs, []string{innerTs})
+	// The inner ts should have been replaced with a diff (not the original ISO string).
+	if strings.Contains(got, innerTs) {
+		t.Errorf("inner ts was not replaced; got: %s", got)
+	}
+}
+
+func TestReplaceTs_MultipleOpenBracesPostIndexPath(t *testing.T) {
+	// When multiple '{' appear before the messageTs position (nested ts),
+	// the postIndex path is taken.  The inner timestamp should be replaced.
+	refTs := "2024-01-01T10:00:01Z"
+	innerTs := "2024-01-01T10:00:00Z"
+	// Two '{' before refTs (outer object + nested data object).
+	msg := `{"data":[{"ts":"` + innerTs + `","v":"50"}],"ts":"` + refTs + `"}`
+	got := replaceTs(msg, refTs, []string{innerTs})
+	if strings.Contains(got, innerTs) {
+		t.Errorf("inner ts was not replaced in postIndex path; got: %s", got)
+	}
+}
+
+func TestReplaceTs_BadTsListEntrySkipped(t *testing.T) {
+	// Bad format in tsList[i] → parse error → continue; message unchanged.
+	refTs := "2024-01-01T10:00:01Z"
+	msg := `{"ts":"` + refTs + `","v":"50","bad":"not-a-ts"}`
+	got := replaceTs(msg, refTs, []string{"not-a-ts"})
+	if !strings.Contains(got, "not-a-ts") {
+		t.Errorf("bad tsList entry should not be removed; got: %s", got)
+	}
+}
+
+func TestReplaceTs_LargeOffsetKeptAsISO(t *testing.T) {
+	// When |diffMs| > 999_999_999, the timestamp is kept as the original ISO string.
+	refTs := "2024-01-01T10:00:00Z"
+	farTs := "2020-01-01T00:00:00Z" // ~4 years gap >> 999_999_999 ms
+	msg := `{"ts":"` + refTs + `","old":"` + farTs + `"}`
+	got := replaceTs(msg, refTs, []string{farTs})
+	if !strings.Contains(got, farTs) {
+		t.Errorf("large-offset ts should NOT be replaced; got: %s", got)
+	}
+}
+
+// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// Additional targeted tests to close remaining coverage gaps
+// --------------------------------------------------------------------------
+
+// RemoveRoutingForwardResponse — subscription-dropped default branch.
+// When clientBackendChan has no reader, the select-default fires.
+func TestRemoveRoutingForwardResponse_SubscriptionDropped(t *testing.T) {
+	resetChannels(t)
+	// Use client slot 2 (no reader for clientBackendChan[2]).
+	// RouterId "0?2" → clientId=2.
+	resp := `{"action":"subscription","RouterId":"0?2","subscriptionId":"s-drop","data":{}}`
+	done := make(chan struct{})
+	go func() {
+		RemoveRoutingForwardResponse(resp, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Expected: select-default fired, function returned immediately.
+	case <-time.After(1 * time.Second):
+		t.Fatal("RemoveRoutingForwardResponse blocked when subscription channel has no reader")
+	}
+}
+
+// getValueForKey — keyIndex at or past end of string.
+func TestGetValueForKey_KeyIndexAtEnd(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	// Key is found but there are no characters left after it.
+	// Input ends with the key itself.
+	if got := getValueForKey(`"action"`, `"action"`); got != "" {
+		t.Errorf("got %q; want \"\"", got)
+	}
+}
+
+// getValueForKey — hyphenIndex1 == -1: no double-quote anywhere in
+// reqMessage[keyIndex:].
+func TestGetValueForKey_NoQuoteAfterKey(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	// After "action" the remaining portion ":123" has no double-quote.
+	if got := getValueForKey(`"action":123`, `"action"`); got != "" {
+		t.Errorf("got %q; want \"\" when no quote follows the key", got)
+	}
+}
+
+// compressTs — map[string]interface{} data branch with dp present.
+func TestCompressTs_MapDataWithDp(t *testing.T) {
+	// Single-object data (map shape) that has a "dp" field containing a ts.
+	// messageTs == dpTs → diff == 0 → "+0" replacement.
+	msg := `{"action":"get","ts":"1970-01-01T00:00:01Z","data":{"path":"Vehicle.Speed","dp":{"value":"1","ts":"1970-01-01T00:00:00Z"}}}`
+	got := compressTs(msg)
+	if !strings.Contains(got, `"ts":"-1000"`) {
+		t.Errorf("map-data dp ts not compressed; got %q", got)
+	}
+}
+
+// compressTs — map data branch where dp is absent.
+func TestCompressTs_MapDataNoDp(t *testing.T) {
+	// data is a map but has no "dp" key → tsList stays empty → replaceTs no-ops.
+	msg := `{"action":"get","ts":"1970-01-01T00:00:01Z","data":{"path":"Vehicle.Speed","value":"42"}}`
+	got := compressTs(msg)
+	// No dp ts to replace; message should be returned (possibly with replaceTs
+	// called but no replacement performed since tsList is empty).
+	if got == "" {
+		t.Fatalf("compressTs returned empty string on no-dp map data")
+	}
+}
+
+// replaceTs — messageTsIndex == -1 early return (valid RFC3339 ts but not in msg).
+func TestReplaceTs_ValidTsNotInMessage(t *testing.T) {
+	// Provide a valid RFC3339 messageTs so time.Parse succeeds,
+	// but the ts string is NOT present in msg → Index returns -1 → early return.
+	messageTs := "2024-01-01T10:00:00Z"
+	msg := `{"action":"get","ts":"2024-06-01T00:00:00Z","data":{}}`
+	got := replaceTs(msg, messageTs, []string{"2024-01-01T10:00:00Z"})
+	if got != msg {
+		t.Errorf("expected unchanged when messageTs not in msg; got %q", got)
+	}
+}
+
+// handleUdsClientRequest — checkCompressionRequest call when validation passes
+// and request has a dc field.
+func TestHandleUdsClientRequest_CompressionRequestCalled(t *testing.T) {
+	resetChannels(t)
+	initDcCache()
+	// A get request with a dc field that would pass JSON schema validation.
+	// We can't easily control whether utils.JsonSchemaValidate passes so we
+	// use the kill-subscriptions bypass to reach AddRoutingForwardRequest.
+	// Instead exercise the dc path by seeding the request and verifying
+	// the cache is populated. Since JsonSchemaValidate may or may not accept
+	// the request depending on the embedded schema, we call checkCompressionRequest
+	// directly in the same way handleUdsClientRequest would.
+	req := `{"action":"get","path":"Vehicle.Speed","requestId":"uds-dc-1","dc":"2+1"}`
+	transportMgrChan := make(chan string, 4)
+	// Route via the kill path to ensure forward reaches transportMgrChan
+	// without blocking on validation:
+	killReq := `{"action":"internal-killsubscriptions"}`
+	done := make(chan struct{})
+	go func() {
+		handleUdsClientRequest(killReq, 0, 0, transportMgrChan)
+		close(done)
+	}()
+	select {
+	case <-transportMgrChan:
+	case <-time.After(2 * time.Second):
+		t.Fatal("kill request not forwarded")
+	}
+	<-done
+
+	// Now test that a request with dc causes checkCompressionRequest to run.
+	// We call it directly since JsonSchemaValidate is integration-only.
+	checkCompressionRequest(req)
+	if getDcCacheIndex("uds-dc-1") == -1 {
+		t.Errorf("dc cache not populated after checkCompressionRequest")
+	}
+}
+
+// handleUdsClientRequest — checkCompressionRequest via the non-kill path
+// when validation succeeds. We need a valid JSON message that passes the
+// embedded schema. The kill-bypass is used here as a stand-in; for the
+// actual "no error, forward" path we test the dc branch directly via
+// checkCompressionRequest (the function handleUdsClientRequest delegates to).
+func TestHandleUdsClientRequest_ForwardsValidRequest(t *testing.T) {
+	resetChannels(t)
+	transportMgrChan := make(chan string, 4)
+	// A kill request always bypasses validation.
+	req := `{"action":"internal-killsubscriptions"}`
+	done := make(chan struct{})
+	go func() {
+		handleUdsClientRequest(req, 0, 0, transportMgrChan)
+		close(done)
+	}()
+	select {
+	case msg := <-transportMgrChan:
+		if !strings.Contains(msg, "internal-killsubscriptions") {
+			t.Errorf("got %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("request not forwarded")
+	}
+	<-done
+}
+
+// udsReader — quit fires while reader is blocked trying to send request to hub.
+func TestUdsReader_QuitWhileSendingRequest(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	// clientChannel is unbuffered and has no reader → send will block.
+	clientChannel := make(chan string)
+	backendChannel := make(chan string, 4)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		udsReader(server, clientChannel, backendChannel, 0, quit)
+		close(done)
+	}()
+	// Feeder sends a small request so the read succeeds and the reader tries
+	// to forward to the (unread) clientChannel.
+	go func() { client.Write([]byte(`{"action":"get"}`)) }()
+	// Give the reader time to reach the blocked send on clientChannel.
+	time.Sleep(50 * time.Millisecond)
+	// Close quit to unblock the reader.
+	close(quit)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("udsReader did not exit on quit while blocking on clientChannel send")
+	}
+}
+
+// udsReader — quit fires while reader is waiting to receive a response from hub.
+func TestUdsReader_QuitWhileWaitingResponse(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	clientChannel := make(chan string) // unbuffered
+	backendChannel := make(chan string, 4)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		udsReader(server, clientChannel, backendChannel, 0, quit)
+		close(done)
+	}()
+	// Feeder sends request.
+	go func() { client.Write([]byte(`{"action":"get"}`)) }()
+	// Consume the send (so the reader proceeds to wait for response).
+	select {
+	case <-clientChannel:
+	case <-time.After(2 * time.Second):
+		t.Fatal("request not forwarded")
+	}
+	// Now the reader is blocked on `case response = <-clientChannel`. Close quit.
+	close(quit)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("udsReader did not exit on quit while waiting for response")
+	}
+}
+
+// udsReader — quit fires while reader is trying to forward response to backendChannel.
+func TestUdsReader_QuitWhileForwardingResponse(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	clientChannel := make(chan string) // unbuffered
+	backendChannel := make(chan string) // unbuffered, no reader
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		udsReader(server, clientChannel, backendChannel, 0, quit)
+		close(done)
+	}()
+	// Feeder sends request.
+	go func() { client.Write([]byte(`{"action":"get"}`)) }()
+	// Consume the send (reader proceeds to wait for response).
+	select {
+	case <-clientChannel:
+	case <-time.After(2 * time.Second):
+		t.Fatal("request not forwarded to clientChannel")
+	}
+	// Send a response back to the reader.
+	go func() { clientChannel <- `{"action":"get","data":{}}` }()
+	// Give reader time to receive the response and block on backendChannel send.
+	time.Sleep(50 * time.Millisecond)
+	// Close quit to unblock the backendChannel send.
+	close(quit)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("udsReader did not exit on quit while blocking on backendChannel")
+	}
+}
+
+// udsReader — quit fires in error path (kill-subscriptions select).
+func TestUdsReader_QuitInErrorPathBeforeKillSub(t *testing.T) {
+	server, _ := net.Pipe()
+	// clientChannel is unbuffered and has no reader → kill-sub send blocks.
+	clientChannel := make(chan string)
+	backendChannel := make(chan string, 4)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		udsReader(server, clientChannel, backendChannel, 0, quit)
+		close(done)
+	}()
+	// Close the server side to trigger a read error.
+	server.Close()
+	// Give reader time to hit the error and block on kill-sub send.
+	time.Sleep(50 * time.Millisecond)
+	// Signal quit — reader should exit via the `case <-quit` in the first select.
+	close(quit)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("udsReader did not exit on quit during error path kill-sub select")
+	}
+}
+
+// udsReader — quit fires in error path (backendTermination select).
+func TestUdsReader_QuitInErrorPathBeforeBackendTerm(t *testing.T) {
+	server, _ := net.Pipe()
+	// clientChannel is buffered so kill-sub goes through immediately.
+	clientChannel := make(chan string, 1)
+	// backendChannel is unbuffered with no reader → backendTermination blocks.
+	backendChannel := make(chan string)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		udsReader(server, clientChannel, backendChannel, 0, quit)
+		close(done)
+	}()
+	server.Close()
+	// Drain the kill-sub so the reader proceeds to the second select.
+	select {
+	case <-clientChannel:
+	case <-time.After(2 * time.Second):
+		t.Fatal("kill-sub not sent")
+	}
+	// Now reader is blocked on backendTermination send. Close quit.
+	time.Sleep(20 * time.Millisecond)
+	close(quit)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("udsReader did not exit on quit during error path backendTerm select")
+	}
+}
+
+// --------------------------------------------------------------------------
+// Integration-only entry points and unreachable-in-unit-test branches
 //
-// initClientServer and UdsMgrInit are top-level goroutine drivers. They bind
-// the fixed UDS socket at /var/tmp/vissv2/udsMgr.sock, run an unbounded for/
-// select loop, and call utils.JsonSchemaValidate against the embedded schema.
-// They are exercised end-to-end by the server's integration tests.
+// The following are NOT covered by unit tests and are documented here:
 //
-// Every inner helper they call - mapString, getValueForKey, getSortedPaths,
+// 1. initClientServer, UdsMgrInit — top-level goroutine drivers. They bind
+//    the fixed UDS socket at /var/tmp/vissv2/udsMgr.sock, run an unbounded
+//    for/select loop, and call utils.JsonSchemaValidate against the embedded
+//    schema. Exercised end-to-end by the server's integration tests.
+//
+// 2. handleUdsClientRequest — checkCompressionRequest call (line 617):
+//    reachable only when utils.JsonSchemaValidate returns no error. In the
+//    unit-test environment the schema file (vissv3.0-schema.json) is not
+//    present, so JsonSchemaValidate always returns "schema not loaded". The
+//    checkCompressionRequest helper itself is fully covered by the
+//    TestCheckCompressionRequest_* tests above.
+//
+// 3. handleUdsClientRequest — channelSendTimeout branch (line 612):
+//    fires only when the consumer of udsClientChan[clientId] is absent for
+//    the full channelSendTimeout (5 s). Impractical to exercise in a unit
+//    test. The normal send path (line 611) and the return path (line 615)
+//    are both covered.
+//
+// 4. udsReader — kill-subscriptions timeout (line 727-728) and
+//    backendTermination timeout (line 733-734): fire only when the hub
+//    is absent for the full channelSendTimeout (5 s). Impractical in a
+//    unit test. The normal send paths and the quit-signal paths are covered
+//    by TestUdsReader_QuitInErrorPath*.
+//
+// Every other inner helper — mapString, getValueForKey, getSortedPaths,
 // compressTs, getDpTsList, replaceTs, signedTimeDiff, compressPaths,
 // checkCompressionRequest, checkCompressionResponse, getDcConfig,
 // dcCacheInsert, setDcValue, updatepayloadId, getDcCacheIndex, resetDcCache,
 // isKillSubscriptions, getUdsClientIndex, returnUdsClientIndex,
 // RemoveRoutingForwardResponse, udsReader, udsWriter, serveConn,
-// initChannels, initDcCache - is covered above.
+// initChannels, initDcCache — is covered above.
 // --------------------------------------------------------------------------

@@ -125,7 +125,7 @@ func streamCall(commandIndex int) {
 		portNo := secConfig.GrpcSecPort
 		conn, err = grpc.Dial(address+portNo, grpc.WithTransportCredentials(tlsCredentials), grpc.WithBlock())
 	} else {
-		conn, err = grpc.Dial(address+":8887", grpc.WithInsecure(), grpc.WithBlock())
+		conn, err = grpc.Dial(address+":8887", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	}
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -161,10 +161,9 @@ func main() {
 		Help:     "changes log output level",
 		Default:  "info"})
 
-	// Parse input
-	err := parser.Parse(os.Args)
-	if err != nil {
+	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 
 	utils.InitLog("grpc_client-log.txt", "./logs", *logFile, *logLevel)
