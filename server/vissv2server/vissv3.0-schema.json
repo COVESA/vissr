@@ -65,7 +65,7 @@
                 {
                     "properties": {
                         "path": {
-                            "description": "VISS path. MUST begin with a forward-slash (/). Example: /Vehicle/Speed",
+                            "description": "VISS path. Dot-delimited (Vehicle.Speed) or slash-delimited (Vehicle/Speed); no leading delimiter. See §3.2.2 of the VISSv3.1 Core spec.",
                             "type": "string"
                         },
                         "filter": {
@@ -158,7 +158,7 @@
                 {
                     "properties": {
                         "path": {
-                            "description": "VISS path. MUST begin with a forward-slash (/). Example: /Vehicle/Speed",
+                            "description": "VISS path. Dot-delimited (Vehicle.Speed) or slash-delimited (Vehicle/Speed); no leading delimiter. See §3.2.2 of the VISSv3.1 Core spec.",
                             "type": "string"
                         },
                         "value": {
@@ -225,7 +225,7 @@
                 {
                     "properties": {
                         "path": {
-                            "description": "VISS path. MUST begin with a forward-slash (/). Example: /Vehicle/Speed",
+                            "description": "VISS path. Dot-delimited (Vehicle.Speed) or slash-delimited (Vehicle/Speed); no leading delimiter. See §3.2.2 of the VISSv3.1 Core spec.",
                             "type": "string"
                         },
                         "filter": {
@@ -683,7 +683,7 @@
                 "description": "VISSv3 data object",
                 "properties": {
                     "path": {
-                        "description": "VISS path. MUST begin with a forward-slash (/). Example: /Vehicle/Speed",
+                        "description": "VISS path. Dot-delimited (Vehicle.Speed) or slash-delimited (Vehicle/Speed); no leading delimiter. See §3.2.2 of the VISSv3.1 Core spec.",
                         "type": "string"
                     },
                     "dp": {
