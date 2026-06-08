@@ -59,6 +59,23 @@ More information for some of the options:
 Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
 However, to get it up and running there might be other preparations also needed, please see the [VISSv2 Data Storage](/vissr/datastore) chapter.
 
+## Path grammar
+
+A VISS path identifies a tree node by its fully-qualified name.
+Paths are slash-separated and **MUST** begin with a forward-slash.
+
+```abnf
+viss-path    = "/" path-segment *( "/" path-segment )
+path-segment = ALPHA *( ALPHA / DIGIT / "_" )
+```
+
+Example: `/Vehicle/Powertrain/TractionBattery/StateOfCharge/Current`
+
+Implementations receiving a `path` value that does not begin with `/` MUST return an HTTP 400 (or equivalent) error.
+The internal dot-notation form used in some VISSR log output and feeder interfaces (`Vehicle.Powertrain.TractionBattery.StateOfCharge.Current`) is not a VISS path; it is a transport-layer convenience that `utils.UrlToPath` / `utils.PathToUrl` convert to and from the normative slash form.
+
+---
+
 ## Protocol support configuration
 
 The server supports the following protocols:
