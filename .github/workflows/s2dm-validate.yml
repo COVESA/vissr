@@ -38,10 +38,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
-      - name: Install s2dm
-        # Pin to a known-good version; bump deliberately via PR.
-        run: uv tool install covesa-s2dm
-
       - name: Discover VDM directories
         id: vdm-dirs
         run: |
@@ -66,6 +62,11 @@ jobs:
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install s2dm
+        if: steps.vdm-dirs.outputs.found == 'true'
+        # PyPI package is "s2dm"; CLI entry-point is "s2dm check constraints".
+        run: uv tool install s2dm
+
       - name: Validate SDL files
         if: steps.vdm-dirs.outputs.found == 'true'
         run: |
@@ -73,7 +74,7 @@ jobs:
           while IFS= read -r dir; do
             [ -z "$dir" ] && continue
             echo "::group::Validating $dir"
-            uvx covesa-s2dm validate --input "$dir" || rc=$?
+            s2dm check constraints --schema "$dir" || rc=$?
             echo "::endgroup::"
           done <<'DIRS'
           ${{ steps.vdm-dirs.outputs.dirs }}
