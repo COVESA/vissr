@@ -59,20 +59,23 @@ More information for some of the options:
 Currently the server supports two different databases, SQLite and Redis, which one to use is selected in the command line configuration.
 However, to get it up and running there might be other preparations also needed, please see the [VISSv2 Data Storage](/vissr/datastore) chapter.
 
-## Path grammar
+## Path format
 
-A VISS path identifies a tree node by its fully-qualified name.
-Paths are slash-separated and **MUST** begin with a forward-slash.
+A VISS path is a sequence of tree node names joined by a delimiter.
+The normative grammar (§3.2.2 of the VISSv3.1 Core spec) is:
 
 ```abnf
-viss-path    = "/" path-segment *( "/" path-segment )
+viss-path    = path-segment *( delimiter path-segment )
 path-segment = ALPHA *( ALPHA / DIGIT / "_" )
+delimiter    = "." / "/"
 ```
 
-Example: `/Vehicle/Powertrain/TractionBattery/StateOfCharge/Current`
+- **Dot notation** (`.`) is the HIM-recommended form and the default for WebSocket/MQTT/gRPC payloads: `Vehicle.Powertrain.TractionBattery.StateOfCharge.Current`
+- **Slash notation** (`/`) is supported as an alternative for HTTP URL paths: `Vehicle/Powertrain/TractionBattery/StateOfCharge/Current`
+- **No leading delimiter** — paths begin directly with the root node name, not `.` or `/`
+- Mixing delimiters within a single path expression SHOULD be avoided
 
-Implementations receiving a `path` value that does not begin with `/` MUST return an HTTP 400 (or equivalent) error.
-The internal dot-notation form used in some VISSR log output and feeder interfaces (`Vehicle.Powertrain.TractionBattery.StateOfCharge.Current`) is not a VISS path; it is a transport-layer convenience that `utils.UrlToPath` / `utils.PathToUrl` convert to and from the normative slash form.
+VISSR uses dot notation internally. The helper functions `utils.UrlToPath` and `utils.PathToUrl` convert between slash and dot forms at the HTTP transport boundary.
 
 ---
 
