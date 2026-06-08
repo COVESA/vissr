@@ -25,10 +25,12 @@ require (
 )
 
 require (
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/apache/thrift v0.15.0 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.32.0 // indirect
 	github.com/qri-io/jsonpointer v0.1.1 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.33 // indirect
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/sys v0.16.0 // indirect
