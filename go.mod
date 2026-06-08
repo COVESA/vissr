@@ -1,6 +1,6 @@
 module github.com/covesa/vissr
 
-go 1.22.1
+go 1.23
 
 //replace github.com/COVESA/vss-tools/binary/go_parser/datamodel => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/datamodel
 //replace github.com/COVESA/vss-tools/binary/go_parser/parserlib => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/parserlib
@@ -29,6 +29,7 @@ require (
 require (
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/apache/thrift v0.15.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.32.0 // indirect
 	github.com/qri-io/jsonpointer v0.1.1 // indirect

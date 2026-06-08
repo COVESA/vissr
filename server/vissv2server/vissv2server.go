@@ -1079,6 +1079,7 @@ func main() {
 	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
 	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
 	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (mutually exclusive with viss.him)", Default: ""})
+	vdmWatch := parser.Flag("", "vdm-watch", &argparse.Options{Required: false, Help: "watch --vdm directory for changes and reload trees automatically", Default: false})
 	webAddr := parser.String("", "web-addr", &argparse.Options{Required: false, Help: "address for optional VDM web dashboard (e.g. :8090); disabled when empty", Default: ""})
 
 	// Parse input
@@ -1097,6 +1098,15 @@ func main() {
 			return
 		}
 		utils.Info.Printf("VDM loader: registered %d tree(s) from %s", n, *vdmDir)
+		if *vdmWatch {
+			watcher, werr := vdmloader.NewWatcher(*vdmDir)
+			if werr != nil {
+				utils.Error.Printf("VDM watcher: failed to start for %s: %v", *vdmDir, werr)
+			} else {
+				utils.Info.Printf("VDM watcher: watching %s for changes", *vdmDir)
+				defer watcher.Stop()
+			}
+		}
 	} else {
 		if !utils.InitForest("viss.him") {
 			utils.Error.Printf("Failed to initialize viss.him")
