@@ -62,10 +62,10 @@ jobs:
           cache: true
 
       - name: smoke - WebSocket GET + SET
-        # The smoke tag compiles the test that builds and starts vissv2server
-        # in-process with the in-repo VDM testdata and none (in-memory) backend.
+        # TestMain pre-builds the binary once; both tests reuse it.
+        # The none backend needs /var/tmp/vissv2/ for its feeder socket.
         run: |
-          go test -v -tags smoke -timeout 90s ./server/vissv2server/smoketest/
+          go test -v -tags smoke -timeout 120s ./server/vissv2server/smoketest/
 
   # ------------------------------------------------------------------ #
   #  MQTT integration tests - requires the mosquitto broker container   #

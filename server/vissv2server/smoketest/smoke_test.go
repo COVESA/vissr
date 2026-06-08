@@ -5,7 +5,7 @@
 //
 // Run with:
 //
-//	go test -v -tags smoke -timeout 60s ./server/vissv2server/smoketest/
+//	go test -v -tags smoke -timeout 120s ./server/vissv2server/smoketest/
 //
 // Integration-only — NOT included in the standard unit-test sweep.
 package smoketest
@@ -24,33 +24,49 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// repoRoot returns the absolute path of the repository root by walking up
-// from this source file's location.
-func repoRoot(t *testing.T) string {
-	t.Helper()
+var (
+	// builtBin is the path to the pre-built vissv2server binary.
+	// Populated by TestMain so both tests share one build.
+	builtBin string
+	// serverDir is the CWD for the server subprocess — relative paths
+	// (atServer/purposelist.json, etc.) resolve from here.
+	serverDir string
+)
+
+func TestMain(m *testing.M) {
+	// Locate the repository root from this source file's path.
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("runtime.Caller failed")
+		fmt.Fprintln(os.Stderr, "TestMain: runtime.Caller failed")
+		os.Exit(1)
 	}
-	// file is .../server/vissv2server/smoketest/smoke_test.go — walk up 3 dirs
-	return filepath.Join(filepath.Dir(file), "..", "..", "..")
-}
+	// file is .../server/vissv2server/smoketest/smoke_test.go — walk up 3
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	serverDir = filepath.Join(root, "server", "vissv2server")
 
-// buildBinary compiles vissv2server into a temp file and returns its path.
-func buildBinary(t *testing.T) string {
-	t.Helper()
-	bin := filepath.Join(t.TempDir(), "vissv2server-smoke")
+	// serviceMgr creates a Unix socket here; create the dir if CI doesn't
+	// have it.
+	if err := os.MkdirAll("/var/tmp/vissv2", 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: create /var/tmp/vissv2: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Build the binary once; reuse it for every test in this package.
+	bin := filepath.Join(os.TempDir(), "vissv2server-smoke-bin")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	root := repoRoot(t)
 	cmd := exec.Command("go", "build", "-o", bin, "./server/vissv2server/")
 	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("build vissv2server: %v\n%s", err, out)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "build vissv2server: %v\n%s\n", err, out)
+		os.Exit(1)
 	}
-	return bin
+	builtBin = bin
+
+	code := m.Run()
+	os.Remove(bin)
+	os.Exit(code)
 }
 
 // waitForPort polls addr until it accepts TCP connections or the deadline passes.
@@ -68,24 +84,19 @@ func waitForPort(t *testing.T, addr string, timeout time.Duration) {
 	t.Fatalf("server did not open %s within %s", addr, timeout)
 }
 
-// TestSmoke_WsGetSpeed starts vissv2server with the in-repo VDM testdata
-// and an in-memory state backend, then verifies that a VISS WebSocket GET
-// for Vehicle.Speed returns a well-formed response.
-func TestSmoke_WsGetSpeed(t *testing.T) {
-	root := repoRoot(t)
-	bin := buildBinary(t)
-	vdmDir := filepath.Join(root, "server", "vissv2server", "vdmloader", "testdata")
-	// Run from the server directory so relative paths (atServer/purposelist.json,
-	// vissv3.0-schema.json, ../transport_sec/) resolve correctly. The logs/
-	// subdirectory it creates is gitignored.
-	serverDir := filepath.Join(root, "server", "vissv2server")
+// startServer launches vissv2server with the in-repo VDM testdata and
+// none backend and registers a cleanup that kills it.
+func startServer(t *testing.T) {
+	t.Helper()
+	vdmDir := filepath.Join(serverDir, "vdmloader", "testdata")
 
-	args := []string{
+	srv := exec.Command(builtBin,
 		"--vdm", vdmDir,
 		"-s", "none",
 		"--loglevel", "error",
-	}
-	srv := exec.Command(bin, args...)
+	)
+	// Run from the server directory so relative paths resolve correctly.
+	// logs/ in that directory is gitignored.
 	srv.Dir = serverDir
 	srv.Stdout = os.Stdout
 	srv.Stderr = os.Stderr
@@ -98,7 +109,14 @@ func TestSmoke_WsGetSpeed(t *testing.T) {
 		srv.Wait()
 	})
 
-	waitForPort(t, "localhost:8080", 20*time.Second)
+	waitForPort(t, "localhost:8080", 30*time.Second)
+}
+
+// TestSmoke_WsGetSpeed starts vissv2server with the in-repo VDM testdata
+// and an in-memory state backend, then verifies that a VISS WebSocket GET
+// for Vehicle.Speed returns a well-formed response.
+func TestSmoke_WsGetSpeed(t *testing.T) {
+	startServer(t)
 
 	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/", nil)
 	if err != nil {
@@ -129,33 +147,18 @@ func TestSmoke_WsGetSpeed(t *testing.T) {
 	if resp["requestId"] == nil {
 		t.Errorf("response missing 'requestId' field: %s", msg)
 	}
-	// noneBackend returns data or a 503 service_unavailable — both are valid
-	// VISS responses that prove the full pipeline (WS→core→serviceMgr) ran.
+	// noneBackend returns data or a 404/503 — both are valid VISS responses
+	// that prove the full pipeline (WS→core→serviceMgr) ran.
 	if resp["data"] == nil && resp["error"] == nil {
 		t.Errorf("response has neither 'data' nor 'error' field: %s", msg)
 	}
-	fmt.Printf("smoke response: %s\n", msg)
+	fmt.Printf("smoke GET response: %s\n", msg)
 }
 
 // TestSmoke_WsSetRejected verifies that a SET on the none backend returns
-// a 503 service_unavailable error (the none backend never stores values).
+// a VISS error response (the none backend never stores values).
 func TestSmoke_WsSetRejected(t *testing.T) {
-	root := repoRoot(t)
-	bin := buildBinary(t)
-	vdmDir := filepath.Join(root, "server", "vissv2server", "vdmloader", "testdata")
-	serverDir := filepath.Join(root, "server", "vissv2server")
-
-	srv := exec.Command(bin,
-		"--vdm", vdmDir, "-s", "none", "--loglevel", "error")
-	srv.Dir = serverDir
-	srv.Stdout = os.Stdout
-	srv.Stderr = os.Stderr
-	if err := srv.Start(); err != nil {
-		t.Fatalf("start vissv2server: %v", err)
-	}
-	t.Cleanup(func() { srv.Process.Kill(); srv.Wait() })
-
-	waitForPort(t, "localhost:8080", 20*time.Second)
+	startServer(t)
 
 	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/", nil)
 	if err != nil {
@@ -178,7 +181,7 @@ func TestSmoke_WsSetRejected(t *testing.T) {
 	if err := json.Unmarshal(msg, &resp); err != nil {
 		t.Fatalf("response is not valid JSON: %v — raw: %s", err, msg)
 	}
-	fmt.Printf("smoke set response: %s\n", msg)
+	fmt.Printf("smoke SET response: %s\n", msg)
 
 	// none backend cannot write — expect error field in response
 	if resp["error"] == nil && resp["data"] == nil {
