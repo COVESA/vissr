@@ -770,6 +770,14 @@ func validateData(requestMap map[string]interface{}, searchData []utils.SearchDa
 	if requestMap["action"] == "set" && utils.VSSgetType(searchData[0].NodeHandle) != utils.ACTUATOR {
 		return 1, "Forbidden to write to read-only resource" //invalid_data
 	}
+	// VDM/VSS type validation: check value against declared datatype, range, allowed.
+	if requestMap["action"] == "set" {
+		if value, ok := requestMap["value"].(string); ok && len(searchData) > 0 {
+			if verr := utils.ValidateSetValue(searchData[0].NodeHandle, value); verr != nil {
+				return 1, verr.Error()
+			}
+		}
+	}
 	if requestMap["filter"] == nil {
 		return -1, ""
 	}
