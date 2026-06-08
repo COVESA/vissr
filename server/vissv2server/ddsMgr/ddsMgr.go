@@ -20,6 +20,7 @@
 package ddsMgr
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strconv"
@@ -246,7 +247,9 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 				utils.SetErrorResponse(reqMap, errorResponseMap, 0, errStr)
 				replyPub, perr := participant.NewPublisher(replyTopic, dds.DefaultQoS)
 				if perr == nil {
-					replyPub.Write([]byte(utils.FinalizeMessage(errorResponseMap)))
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					replyPub.WriteCtx(ctx, []byte(utils.FinalizeMessage(errorResponseMap)))
+					cancel()
 					replyPub.Close()
 				}
 				continue
@@ -270,7 +273,11 @@ func DdsMgrInit(mgrId int, transportMgrChan chan string) {
 				utils.Error.Printf("ddsMgr: cannot publish reply to %q: %v", replyTopic, err)
 				continue
 			}
-			replyPub.Write([]byte(responsePayload))
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if werr := replyPub.WriteCtx(ctx, []byte(responsePayload)); werr != nil {
+				utils.Error.Printf("ddsMgr: reply write to %q: %v", replyTopic, werr)
+			}
+			cancel()
 			replyPub.Close()
 		}
 	}

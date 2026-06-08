@@ -1,6 +1,7 @@
 package ddsMgr
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -23,14 +24,17 @@ type testSubscriber struct {
 	ch chan dds.Sample
 }
 
-func (s *testSubscriber) C() <-chan dds.Sample { return s.ch }
-func (s *testSubscriber) Close() error         { return nil }
+func (s *testSubscriber) C() <-chan dds.Sample        { return s.ch }
+func (s *testSubscriber) TryRead() (dds.Sample, bool) { select { case v := <-s.ch: return v, true; default: return dds.Sample{}, false } }
+func (s *testSubscriber) Unsubscribe() error          { return nil }
+func (s *testSubscriber) Close() error                { return nil }
 
 // testPublisher is a no-op dds.Publisher. Write and Close always succeed.
 type testPublisher struct{}
 
-func (p *testPublisher) Write(_ []byte) error { return nil }
-func (p *testPublisher) Close() error         { return nil }
+func (p *testPublisher) Write(_ []byte) error                       { return nil }
+func (p *testPublisher) WriteCtx(_ context.Context, _ []byte) error { return nil }
+func (p *testPublisher) Close() error                               { return nil }
 
 // testParticipant is a minimal dds.Participant for unit tests. Setting
 // failSubscriber / failPublisher causes the respective New* call to return
@@ -65,7 +69,8 @@ func (tp *testParticipant) NewPublisher(_ string, _ dds.QoS) (dds.Publisher, err
 	return &testPublisher{}, nil
 }
 
-func (tp *testParticipant) Close() error { return nil }
+func (tp *testParticipant) Domain() dds.Domain { return dds.Domain(0) }
+func (tp *testParticipant) Close() error       { return nil }
 
 // ── makeEnvelope / newMockParticipant ─────────────────────────────────────────
 
