@@ -23,11 +23,15 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
 
 // TestExtractMgrId checks the "mgrId?clientId" parser used by the
@@ -89,7 +93,7 @@ func TestCountPathSegments(t *testing.T) {
 // TestGetTokenErrorMessage covers every documented error-code index
 // plus an unknown-index baseline.
 func TestGetTokenErrorMessage(t *testing.T) {
-	knownIndices := []int{1, 2, 5, 6, 10, 11, 15, 16, 20, 21, 30, 40, 41, 42, 60}
+	knownIndices := []int{1, 2, 5, 6, 10, 11, 15, 16, 20, 21, 22, 30, 40, 41, 42, 60, 61}
 	for _, idx := range knownIndices {
 		t.Run("known", func(t *testing.T) {
 			got := getTokenErrorMessage(idx)
@@ -312,6 +316,14 @@ func TestGetRangeBoundary(t *testing.T) {
 	}
 }
 
+func TestGetRangeBoundary_NonStringValueIgnored(t *testing.T) {
+	// numeric value hits the default branch and is logged, boundary stays ""
+	got := getRangeBoundary(map[string]interface{}{"boundary": 42})
+	if got != "" {
+		t.Errorf("getRangeBoundary with non-string boundary = %q; want \"\"", got)
+	}
+}
+
 // TestGetRangeBoundaries handles both shapes the filter parser
 // produces: a single object (one boundary) and an array of objects
 // (two boundaries).
@@ -397,4 +409,232 @@ func FuzzGetRangeBoundaries(f *testing.F) {
 		}()
 		_, _ = getRangeBoundaries(in)
 	})
+}
+
+// ── isServiceAction ──────────────────────────────────────────────────────────
+
+func TestIsServiceAction_TrueCases(t *testing.T) {
+	for _, action := range []string{"invoke", "monitor", "cancel", "discover"} {
+		if !isServiceAction(action) {
+			t.Errorf("isServiceAction(%q) = false; want true", action)
+		}
+	}
+}
+
+func TestIsServiceAction_FalseCases(t *testing.T) {
+	for _, action := range []string{"get", "set", "subscribe", "unsubscribe", "internal-killsubscriptions", ""} {
+		if isServiceAction(action) {
+			t.Errorf("isServiceAction(%q) = true; want false", action)
+		}
+	}
+}
+
+// ── getTokenContext ──────────────────────────────────────────────────────────
+
+// jwtWith builds a minimal unsigned JWT whose payload contains the given claims.
+func jwtWith(t *testing.T, claims map[string]interface{}) string {
+	t.Helper()
+	hdr, _ := json.Marshal(map[string]string{"alg": "none"})
+	pay, _ := json.Marshal(claims)
+	return base64.RawURLEncoding.EncodeToString(hdr) + "." +
+		base64.RawURLEncoding.EncodeToString(pay) + ".sig"
+}
+
+func TestGetTokenContext_WithStringAuthorization(t *testing.T) {
+	jwt := jwtWith(t, map[string]interface{}{"clx": "Owner+OEM+Vehicle"})
+	got := getTokenContext(map[string]interface{}{"authorization": jwt})
+	if got != "Owner+OEM+Vehicle" {
+		t.Errorf("getTokenContext with clx claim = %q; want %q", got, "Owner+OEM+Vehicle")
+	}
+}
+
+func TestGetTokenContext_JWTWithoutClxReturnsEmpty(t *testing.T) {
+	jwt := jwtWith(t, map[string]interface{}{"sub": "user1"})
+	got := getTokenContext(map[string]interface{}{"authorization": jwt})
+	if got != "" {
+		t.Errorf("getTokenContext without clx = %q; want \"\"", got)
+	}
+}
+
+// ── jsonifyTreeNode ──────────────────────────────────────────────────────────
+
+func TestJsonifyTreeNode_DepthLimitReturnsInputBuffer(t *testing.T) {
+	node := utils.NewSignalNode("Speed", utils.SENSOR, "float32", "Vehicle speed", "", "", "km/h")
+	got := jsonifyTreeNode(node, "prefix", 3, 3) // depth >= maxDepth → early return
+	if got != "prefix" {
+		t.Errorf("jsonifyTreeNode at depth limit = %q; want %q", got, "prefix")
+	}
+}
+
+func TestJsonifyTreeNode_SignalNode(t *testing.T) {
+	node := utils.NewSignalNode("Speed", utils.SENSOR, "float32", "Vehicle speed", "", "", "km/h")
+	got := jsonifyTreeNode(node, "", 0, 2)
+	if !strings.Contains(got, `"Speed":{`) {
+		t.Errorf("missing node name in output: %s", got)
+	}
+	if !strings.Contains(got, `"type":"sensor"`) {
+		t.Errorf("missing type in output: %s", got)
+	}
+	if !strings.Contains(got, `"datatype":"float32"`) {
+		t.Errorf("missing datatype in output: %s", got)
+	}
+	if !strings.Contains(got, `"description":"Vehicle speed"`) {
+		t.Errorf("missing description in output: %s", got)
+	}
+}
+
+func TestJsonifyTreeNode_BranchWithChild(t *testing.T) {
+	child := utils.NewSignalNode("Speed", utils.SENSOR, "float32", "Vehicle speed", "", "", "km/h")
+	branch := utils.NewBranchNode("Vehicle", child)
+	got := jsonifyTreeNode(branch, "", 0, 3)
+	if !strings.Contains(got, `"Vehicle":{`) {
+		t.Errorf("missing branch node in output: %s", got)
+	}
+	if !strings.Contains(got, `"children":{`) {
+		t.Errorf("missing children block in output: %s", got)
+	}
+	if !strings.Contains(got, `"Speed":{`) {
+		t.Errorf("missing child node in output: %s", got)
+	}
+}
+
+func TestJsonifyTreeNode_WithDefaultValue(t *testing.T) {
+	node := &utils.Node_t{
+		Name:         "Gear",
+		NodeType:     utils.ACTUATOR,
+		DefaultValue: "1",
+		Description:  "Current gear",
+		Datatype:     "uint8",
+	}
+	got := jsonifyTreeNode(node, "", 0, 2)
+	if !strings.Contains(got, `"default":"1"`) {
+		t.Errorf("missing default field in output: %s", got)
+	}
+}
+
+func TestJsonifyTreeNode_WithObjectDefault(t *testing.T) {
+	// When DefaultValue starts with '{' or '[' it is embedded without extra quotes.
+	node := &utils.Node_t{
+		Name:         "Config",
+		NodeType:     utils.SENSOR,
+		DefaultValue: `{'key':'val'}`,
+		Description:  "Config obj",
+	}
+	got := jsonifyTreeNode(node, "", 0, 2)
+	if !strings.Contains(got, `"default":`) {
+		t.Errorf("missing default field in output: %s", got)
+	}
+	// singleToDoubleQuote should have converted the single quotes
+	if !strings.Contains(got, `"key"`) {
+		t.Errorf("singleToDoubleQuote not applied to default value: %s", got)
+	}
+}
+
+// ── himJsonify ───────────────────────────────────────────────────────────────
+
+// chdirTest changes to dir for the duration of t and restores cwd in cleanup.
+// Uses os.Chdir because t.Chdir requires Go 1.24 and our module is pinned to 1.22.
+func chdirTest(t *testing.T, dir string) {
+	t.Helper()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+}
+
+// TestHimJsonify_MissingFileReturnsEmpty covers the os.ReadFile error path.
+func TestHimJsonify_MissingFileReturnsEmpty(t *testing.T) {
+	chdirTest(t, t.TempDir())
+	got := himJsonify()
+	if got != "" {
+		t.Errorf("himJsonify with no viss.him = %q; want \"\"", got)
+	}
+}
+
+// TestHimJsonify_InvalidYAMLReturnsEmpty covers the yaml.Unmarshal error path.
+func TestHimJsonify_InvalidYAMLReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "viss.him"), []byte(":\tbad yaml\x00"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	chdirTest(t, dir)
+	got := himJsonify()
+	if got != "" {
+		t.Errorf("himJsonify with bad YAML = %q; want \"\"", got)
+	}
+}
+
+// TestHimJsonify_ValidYAMLReturnsJSON covers the success path.
+func TestHimJsonify_ValidYAMLReturnsJSON(t *testing.T) {
+	dir := t.TempDir()
+	yml := "section:\n  key: value\n  other: 42\n"
+	if err := os.WriteFile(filepath.Join(dir, "viss.him"), []byte(yml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	chdirTest(t, dir)
+	got := himJsonify()
+	if got == "" {
+		t.Fatal("himJsonify returned empty string for valid YAML")
+	}
+	if got[0] != '{' {
+		t.Errorf("himJsonify result is not JSON: %q", got)
+	}
+}
+
+func TestJsonifyTreeNode_AppendsToExistingBuffer(t *testing.T) {
+	node := utils.NewSignalNode("RPM", utils.SENSOR, "uint16", "Engine RPM", "", "", "rpm")
+	got := jsonifyTreeNode(node, `"existing":true,`, 0, 2)
+	if !strings.HasPrefix(got, `"existing":true,`) {
+		t.Errorf("existing buffer not preserved; got: %s", got)
+	}
+	if !strings.Contains(got, `"RPM":{`) {
+		t.Errorf("new node not appended; got: %s", got)
+	}
+}
+
+// ── isServiceTree ────────────────────────────────────────────────────────────
+
+// registerTestServiceTree registers a synthetic service tree and returns a
+// cleanup function that deregisters it. Callers must defer the cleanup.
+func registerTestServiceTree(t *testing.T, rootName, domain string) func() {
+	t.Helper()
+	root := utils.NewBranchNode(rootName)
+	utils.RegisterServiceTree(rootName, domain, "1.0", root)
+	return func() { utils.DeregisterServiceTree(rootName) }
+}
+
+func TestIsServiceTree_NoPathKeyReturnsFalse(t *testing.T) {
+	if isServiceTree(map[string]interface{}{}) {
+		t.Error("isServiceTree with no path key should return false")
+	}
+}
+
+func TestIsServiceTree_NonStringPathReturnsFalse(t *testing.T) {
+	if isServiceTree(map[string]interface{}{"path": 42}) {
+		t.Error("isServiceTree with non-string path should return false")
+	}
+}
+
+func TestIsServiceTree_UnknownRootReturnsFalse(t *testing.T) {
+	if isServiceTree(map[string]interface{}{"path": "UnknownRoot.Invoke"}) {
+		t.Error("isServiceTree with unregistered root should return false")
+	}
+}
+
+func TestIsServiceTree_NonServiceDomainReturnsFalse(t *testing.T) {
+	defer registerTestServiceTree(t, "TestData", "Vehicle.Car.Data")()
+	if isServiceTree(map[string]interface{}{"path": "TestData.SomeLeaf"}) {
+		t.Error("isServiceTree with non-service domain should return false")
+	}
+}
+
+func TestIsServiceTree_ServiceDomainReturnsTrue(t *testing.T) {
+	defer registerTestServiceTree(t, "TestSvc", "Vehicle.Car.Service")()
+	if !isServiceTree(map[string]interface{}{"path": "TestSvc.Invoke"}) {
+		t.Error("isServiceTree with .Service domain should return true")
+	}
 }

@@ -6,6 +6,7 @@ go 1.22.1
 //replace github.com/COVESA/vss-tools/binary/go_parser/parserlib => /home/ubjorken/Proj/covesa/vss-tools/binary/go_parser/parserlib
 
 require (
+	github.com/SoundMatt/go-DDS v0.9.1
 	github.com/akamensky/argparse v1.4.0
 	github.com/apache/iotdb-client-go v1.1.7
 	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874
@@ -19,12 +20,14 @@ require (
 	github.com/petervolvowinz/viss-rl-interfaces v0.1.0
 	github.com/qri-io/jsonschema v0.2.1
 	github.com/sirupsen/logrus v1.9.3
+	github.com/vektah/gqlparser/v2 v2.5.33
 	google.golang.org/grpc v1.62.1
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/apache/thrift v0.15.0 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.32.0 // indirect

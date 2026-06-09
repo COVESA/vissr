@@ -1,0 +1,334 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://covesa.global/vissv3.2.service.bundled.schema.json",
+    "title": "VISSv3.2 Service",
+    "description": "VISS version 3.2 service bundled schema",
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "action"
+    ],
+    "oneOf": [
+        {
+            "properties": {
+                "action": { "const": "invoke" }
+            },
+            "$ref": "#/$defs/invoke-message"
+        },
+        {
+            "properties": {
+                "action": { "const": "monitor" }
+            },
+            "$ref": "#/$defs/monitor-message"
+        },
+        {
+            "properties": {
+                "action": { "const": "cancel" }
+            },
+            "$ref": "#/$defs/cancel-message"
+        },
+        {
+            "properties": {
+                "action": { "const": "discover" }
+            },
+            "$ref": "#/$defs/discover-message"
+        },
+        {
+            "properties": {
+                "action": { "const": "monitoring" }
+            },
+            "$ref": "#/$defs/monitoring-event"
+        }
+    ],
+    "$defs": {
+        "status": {
+            "$id": "#/$defs/status",
+            "description": "The service execution status",
+            "type": "string",
+            "enum": ["UNKNOWN", "ONGOING", "SUCCESSFUL", "CANCELED", "FAILED"]
+        },
+        "filter": {
+            "$id": "#/$defs/filter",
+            "description": "Service monitoring filter",
+            "type": "object",
+            "properties": {
+                "variant": {
+                    "type": "string",
+                    "enum": ["timebased", "status", "all", "none"]
+                },
+                "parameter": {
+                    "type": "object",
+                    "properties": {
+                        "period": { "type": "string" }
+                    }
+                }
+            },
+            "required": ["variant"]
+        },
+        "indata": {
+            "$id": "#/$defs/indata",
+            "description": "Service input data wrapper",
+            "type": "object",
+            "properties": {
+                "input": {
+                    "description": "The input parameters",
+                    "type": "object"
+                },
+                "ts": {
+                    "description": "The timestamp of input reception",
+                    "type": "string"
+                }
+            },
+            "required": ["input", "ts"]
+        },
+        "outdata": {
+            "$id": "#/$defs/outdata",
+            "description": "Service output data wrapper",
+            "type": "object",
+            "properties": {
+                "output": {
+                    "description": "The output parameters",
+                    "type": "object"
+                },
+                "ts": {
+                    "description": "The timestamp of output capture",
+                    "type": "string"
+                }
+            },
+            "required": ["output", "ts"]
+        },
+        "error": {
+            "$id": "#/$defs/error",
+            "description": "Error information",
+            "type": "object",
+            "properties": {
+                "number": {
+                    "description": "The status code",
+                    "type": "string",
+                    "enum": ["400", "401", "403", "404", "408", "429", "502", "503", "504"]
+                },
+                "reason": {
+                    "description": "The reason",
+                    "type": "string",
+                    "enum": [
+                        "bad_request",
+                        "invalid_data",
+                        "invalid_token",
+                        "forbidden_request",
+                        "unavailable_data",
+                        "request_timeout",
+                        "too_many_requests",
+                        "bad_gateway",
+                        "service_unavailable",
+                        "gateway_timeout"
+                    ]
+                },
+                "description": {
+                    "description": "Human-readable description of the error",
+                    "type": "string"
+                }
+            },
+            "required": ["number", "reason", "description"]
+        },
+        "invoke-message": {
+            "$id": "#/$defs/invoke-message",
+            "description": "VISSv3.2 service invoke request and response messages",
+            "type": "object",
+            "oneOf": [
+                {
+                    "description": "invokeRequest",
+                    "properties": {
+                        "action": { "const": "invoke" },
+                        "path": { "description": "The service path", "type": "string" },
+                        "input": { "description": "The service input parameters (bare param object)", "type": "object" },
+                        "filter": { "$ref": "#/$defs/filter" },
+                        "authorization": { "description": "The access token", "type": "string" },
+                        "requestId": { "description": "The request id", "type": "string" }
+                    },
+                    "required": ["action", "path", "filter", "requestId"]
+                },
+                {
+                    "description": "invokeSuccessResponse",
+                    "properties": {
+                        "action": { "const": "invoke" },
+                        "path": { "description": "The service path", "type": "string" },
+                        "outdata": { "$ref": "#/$defs/outdata" },
+                        "serviceId": { "description": "The monitoring session id", "type": "string" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "authorization": { "description": "The access token", "type": "string" },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "path", "status", "requestId", "ts"]
+                },
+                {
+                    "description": "invokeErrorResponse",
+                    "properties": {
+                        "action": { "const": "invoke" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "error": { "$ref": "#/$defs/error" },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "status", "error", "ts"]
+                }
+            ]
+        },
+        "monitor-message": {
+            "$id": "#/$defs/monitor-message",
+            "description": "VISSv3.2 service monitor request, response and event messages",
+            "type": "object",
+            "oneOf": [
+                {
+                    "description": "monitorRequest",
+                    "properties": {
+                        "action": { "const": "monitor" },
+                        "path": { "description": "The service path", "type": "string" },
+                        "filter": { "$ref": "#/$defs/filter" },
+                        "authorization": { "description": "The access token", "type": "string" },
+                        "requestId": { "description": "The request id", "type": "string" }
+                    },
+                    "required": ["action", "path", "filter", "requestId"]
+                },
+                {
+                    "description": "monitorSuccessResponse",
+                    "properties": {
+                        "action": { "const": "monitor" },
+                        "path": { "description": "The service path", "type": "string" },
+                        "indata": { "$ref": "#/$defs/indata" },
+                        "outdata": { "$ref": "#/$defs/outdata" },
+                        "serviceId": { "description": "The monitoring session id", "type": "string" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "authorization": { "description": "The access token handle", "type": "string" },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "path", "status", "requestId", "ts"]
+                },
+                {
+                    "description": "monitorErrorResponse",
+                    "properties": {
+                        "action": { "const": "monitor" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "error": { "$ref": "#/$defs/error" },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "status", "error", "ts"]
+                }
+            ]
+        },
+        "cancel-message": {
+            "$id": "#/$defs/cancel-message",
+            "description": "VISSv3.2 service cancel request and response messages",
+            "type": "object",
+            "oneOf": [
+                {
+                    "description": "cancelRequest",
+                    "properties": {
+                        "action": { "const": "cancel" },
+                        "serviceId": { "description": "The id of the ongoing session", "type": "string" }
+                    },
+                    "required": ["action", "serviceId"]
+                },
+                {
+                    "description": "cancelSuccessResponse",
+                    "properties": {
+                        "action": { "const": "cancel" },
+                        "outdata": { "$ref": "#/$defs/outdata" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "serviceId": { "description": "The id of the canceled session", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "status", "serviceId", "ts"]
+                },
+                {
+                    "description": "cancelErrorResponse",
+                    "properties": {
+                        "action": { "const": "cancel" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "error": { "$ref": "#/$defs/error" },
+                        "serviceId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "status", "error", "ts"]
+                }
+            ]
+        },
+        "discover-message": {
+            "$id": "#/$defs/discover-message",
+            "description": "VISSv3.2 service discovery request and response messages",
+            "type": "object",
+            "oneOf": [
+                {
+                    "description": "discoveryRequest",
+                    "properties": {
+                        "action": { "const": "discover" },
+                        "path": { "description": "The service path (branch or procedure node)", "type": "string" },
+                        "authorization": { "description": "The access token", "type": "string" },
+                        "requestId": { "description": "The request id", "type": "string" }
+                    },
+                    "required": ["action", "path", "requestId"]
+                },
+                {
+                    "description": "discoverySuccessResponse",
+                    "properties": {
+                        "action": { "const": "discover" },
+                        "metadata": {
+                            "description": "JSON representation of the addressed service subtree",
+                            "type": "object"
+                        },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "metadata", "requestId", "ts"]
+                },
+                {
+                    "description": "discoveryErrorResponse",
+                    "properties": {
+                        "action": { "const": "discover" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "error": { "$ref": "#/$defs/error" },
+                        "requestId": { "description": "The request id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "error", "ts"]
+                }
+            ]
+        },
+        "monitoring-event": {
+            "$id": "#/$defs/monitoring-event",
+            "description": "VISSv3.2 service monitoring event message",
+            "type": "object",
+            "oneOf": [
+                {
+                    "description": "monitorEvent",
+                    "properties": {
+                        "action": { "const": "monitoring" },
+                        "path": { "description": "The service path", "type": "string" },
+                        "outdata": { "$ref": "#/$defs/outdata" },
+                        "serviceId": { "description": "The monitoring session id", "type": "string" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "path", "serviceId", "status", "ts"]
+                },
+                {
+                    "description": "monitorErrorEvent",
+                    "properties": {
+                        "action": { "const": "monitoring" },
+                        "status": { "$ref": "#/$defs/status" },
+                        "error": { "$ref": "#/$defs/error" },
+                        "serviceId": { "description": "The monitoring session id", "type": "string" },
+                        "ts": { "description": "The time stamp", "type": "string" }
+                    },
+                    "required": ["action", "status", "error", "serviceId", "ts"]
+                }
+            ]
+        }
+    }
+}

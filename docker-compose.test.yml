@@ -1,0 +1,42 @@
+# Local test environment: starts the mosquitto TLS broker so you can run
+# all tests natively against a live MQTT broker.
+#
+# USAGE
+#   1. Start the broker:
+#        docker compose -f docker-compose.test.yml up -d
+#        docker compose -f docker-compose.test.yml ps   # wait for healthy
+#
+#   2. Trust the self-signed CA (one-time per machine):
+#        macOS:
+#          sudo security add-trusted-cert -d -r trustRoot \
+#            -k /Library/Keychains/System.keychain paho-mqtt/cert/ca.crt
+#        Linux:
+#          sudo cp paho-mqtt/cert/ca.crt /usr/local/share/ca-certificates/vissr-mqtt-ca.crt
+#          sudo update-ca-certificates
+#
+#   3. Run tests:
+#        go test -race -count=1 ./server/vissv2server/vissServiceMgr/...
+#        go test -race -count=1 ./server/vissv2server/vissServiceSDK/...
+#        go test -v  -count=1 ./paho-mqtt/...
+#
+#   4. Tear down:
+#        docker compose -f docker-compose.test.yml down
+
+version: "3.9"
+
+services:
+  mosquitto:
+    build:
+      context: ./paho-mqtt
+    ports:
+      - "8883:8883"
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - "mosquitto_pub -h localhost -p 8883 --cafile /etc/mosquitto/ca.crt -u homesecurity -P rocktheworld -t _ci/health -m ping --quiet"
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
