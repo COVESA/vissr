@@ -490,3 +490,249 @@ func TestReadBytesE_ZeroLengthReturnsNilAndNoError(t *testing.T) {
 	}
 }
 
+// ── New node constructors ────────────────────────────────────────────────────
+
+func TestNewBranchNode_NoChildren(t *testing.T) {
+	n := NewBranchNode("Root")
+	if n.Name != "Root" {
+		t.Errorf("Name = %q, want Root", n.Name)
+	}
+	if n.NodeType != BRANCH {
+		t.Errorf("NodeType = %q, want %q", n.NodeType, BRANCH)
+	}
+	if n.Children != 0 || len(n.Child) != 0 {
+		t.Errorf("expected 0 children, got Children=%d Child=%d", n.Children, len(n.Child))
+	}
+}
+
+func TestNewBranchNode_WithChildren(t *testing.T) {
+	leaf1 := NewSignalNode("Speed", SENSOR, "float", "vehicle speed", "0", "300", "km/h")
+	leaf2 := NewPropertyNode("Gear", "uint8", "current gear")
+	root := NewBranchNode("Vehicle", leaf1, leaf2)
+
+	if root.Children != 2 || len(root.Child) != 2 {
+		t.Fatalf("want 2 children, got Children=%d Child=%d", root.Children, len(root.Child))
+	}
+	if root.Child[0] != leaf1 || root.Child[1] != leaf2 {
+		t.Error("children not stored in order")
+	}
+	if leaf1.Parent != root || leaf2.Parent != root {
+		t.Error("Parent pointers not set on children")
+	}
+}
+
+func TestNewProcedureNode_Fields(t *testing.T) {
+	input := NewIoStructNode("Input")
+	proc := NewProcedureNode("MoveSeat", "adjusts seat position", input)
+
+	if proc.NodeType != PROCEDURE {
+		t.Errorf("NodeType = %q, want %q", proc.NodeType, PROCEDURE)
+	}
+	if proc.Description != "adjusts seat position" {
+		t.Errorf("Description = %q", proc.Description)
+	}
+	if proc.Children != 1 || proc.Child[0] != input {
+		t.Error("child not linked")
+	}
+	if input.Parent != proc {
+		t.Error("Parent not set on child")
+	}
+}
+
+func TestNewIoStructNode_Empty(t *testing.T) {
+	n := NewIoStructNode("Output")
+	if n.NodeType != IOSTRUCT {
+		t.Errorf("NodeType = %q, want %q", n.NodeType, IOSTRUCT)
+	}
+	if n.Children != 0 {
+		t.Errorf("want 0 children, got %d", n.Children)
+	}
+}
+
+func TestNewIoStructNode_WithChildren(t *testing.T) {
+	p1 := NewPropertyNode("Angle", "int8", "steering angle")
+	p2 := NewPropertyNode("Force", "float", "applied force")
+	n := NewIoStructNode("Input", p1, p2)
+
+	if n.Children != 2 || len(n.Child) != 2 {
+		t.Fatalf("want 2 children, got Children=%d Child=%d", n.Children, len(n.Child))
+	}
+	if n.Child[0] != p1 || n.Child[1] != p2 {
+		t.Error("children not stored in order")
+	}
+	if p1.Parent != n || p2.Parent != n {
+		t.Error("Parent pointers not set on children")
+	}
+}
+
+func TestNewPropertyNode_Fields(t *testing.T) {
+	p := NewPropertyNode("Position", "uint8", "seat position 0-100")
+	if p.NodeType != PROPERTY {
+		t.Errorf("NodeType = %q, want %q", p.NodeType, PROPERTY)
+	}
+	if p.Datatype != "uint8" {
+		t.Errorf("Datatype = %q, want uint8", p.Datatype)
+	}
+	if p.Description != "seat position 0-100" {
+		t.Errorf("Description = %q", p.Description)
+	}
+}
+
+func TestNewSignalNode_AllFields(t *testing.T) {
+	s := NewSignalNode("Temperature", SENSOR, "float", "cabin temp", "-40", "85", "celsius")
+	if s.Name != "Temperature" || s.NodeType != SENSOR || s.Datatype != "float" {
+		t.Errorf("basic fields wrong: %+v", s)
+	}
+	if s.Min != "-40" || s.Max != "85" || s.Unit != "celsius" {
+		t.Errorf("range/unit fields wrong: %+v", s)
+	}
+	if s.Description != "cabin temp" {
+		t.Errorf("Description = %q", s.Description)
+	}
+}
+
+// ── Path helpers ─────────────────────────────────────────────────────────────
+
+func TestGetFirstDotIndex_HasDot(t *testing.T) {
+	cases := []struct {
+		path string
+		want int
+	}{
+		{"Vehicle.Speed", 7},
+		{"A.B.C", 1},
+		{"A.B", 1},
+	}
+	for _, tc := range cases {
+		got := GetFirstDotIndex(tc.path)
+		if got != tc.want {
+			t.Errorf("GetFirstDotIndex(%q) = %d, want %d", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestGetFirstDotIndex_NoDot(t *testing.T) {
+	path := "VehicleOnly"
+	got := GetFirstDotIndex(path)
+	if got != len(path) {
+		t.Errorf("GetFirstDotIndex(%q) = %d, want %d (len)", path, got, len(path))
+	}
+}
+
+func TestGetLastDotSegment_Normal(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"Vehicle.Body.Speed", "Speed"},
+		{"Root.Leaf", "Leaf"},
+		{"Trailing.", ""},
+	}
+	for _, tc := range cases {
+		got := GetLastDotSegment(tc.path)
+		if got != tc.want {
+			t.Errorf("GetLastDotSegment(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestGetLastDotSegment_NoDot(t *testing.T) {
+	// No dot: strings.LastIndex returns -1; path[-1+1:] = path[0:] = full string.
+	got := GetLastDotSegment("NoDot")
+	if got != "NoDot" {
+		t.Errorf("GetLastDotSegment(\"NoDot\") = %q, want \"NoDot\"", got)
+	}
+}
+
+// ── Forest management ────────────────────────────────────────────────────────
+
+func saveAndRestoreForest(t *testing.T) {
+	t.Helper()
+	saved := make([]HimTree, len(himForest))
+	copy(saved, himForest)
+	t.Cleanup(func() { himForest = saved })
+}
+
+func TestRegisterServiceTree_AddsToForest(t *testing.T) {
+	saveAndRestoreForest(t)
+	root := NewBranchNode("RegSvc")
+	before := len(himForest)
+
+	ok := RegisterServiceTree("RegSvc", "reg.Service", "1.0.0", root)
+	if !ok {
+		t.Fatal("RegisterServiceTree returned false on first registration")
+	}
+	if len(himForest) != before+1 {
+		t.Errorf("forest len = %d, want %d", len(himForest), before+1)
+	}
+	if root.Name != "RegSvc" {
+		t.Errorf("root.Name = %q, want RegSvc", root.Name)
+	}
+}
+
+func TestRegisterServiceTree_NoDuplicates(t *testing.T) {
+	saveAndRestoreForest(t)
+	RegisterServiceTree("DupSvc", "d.Service", "1.0", NewBranchNode("DupSvc"))
+	ok := RegisterServiceTree("DupSvc", "d.Service", "1.1", NewBranchNode("DupSvc"))
+	if ok {
+		t.Error("second RegisterServiceTree for same name should return false")
+	}
+}
+
+func TestDeregisterServiceTree_Removes(t *testing.T) {
+	saveAndRestoreForest(t)
+	RegisterServiceTree("RemSvc", "r.Service", "1.0", NewBranchNode("RemSvc"))
+	before := len(himForest)
+	DeregisterServiceTree("RemSvc")
+	if len(himForest) != before-1 {
+		t.Errorf("after deregister: len=%d, want %d", len(himForest), before-1)
+	}
+	if GetForestRoot("RemSvc") != nil {
+		t.Error("root still reachable after deregister")
+	}
+}
+
+func TestDeregisterServiceTree_NoopOnMissing(t *testing.T) {
+	saveAndRestoreForest(t)
+	before := len(himForest)
+	DeregisterServiceTree("DoesNotExist")
+	if len(himForest) != before {
+		t.Errorf("forest len changed after deregister of missing tree")
+	}
+}
+
+func TestForestInfoList_ReturnsAllTrees(t *testing.T) {
+	saveAndRestoreForest(t)
+	himForest = nil
+	RegisterServiceTree("Alpha", "a.Service", "1.0", NewBranchNode("Alpha"))
+	RegisterServiceTree("Beta", "b.Service", "2.0", NewBranchNode("Beta"))
+
+	list := ForestInfoList()
+	if len(list) != 2 {
+		t.Fatalf("want 2, got %d: %+v", len(list), list)
+	}
+	names := map[string]bool{}
+	for _, fi := range list {
+		names[fi.RootName] = true
+	}
+	if !names["Alpha"] || !names["Beta"] {
+		t.Errorf("unexpected list: %+v", list)
+	}
+}
+
+func TestGetForestRoot_Found(t *testing.T) {
+	saveAndRestoreForest(t)
+	root := NewBranchNode("FindMe")
+	RegisterServiceTree("FindMe", "f.Service", "1.0", root)
+
+	got := GetForestRoot("FindMe")
+	if got != root {
+		t.Errorf("GetForestRoot returned %p, want %p", got, root)
+	}
+}
+
+func TestGetForestRoot_NotFound(t *testing.T) {
+	if got := GetForestRoot("Ghost_xyz_999"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+

@@ -761,6 +761,38 @@ func TestGetInfoType_NotFound(t *testing.T) {
 	}
 }
 
+func TestForestInfoList(t *testing.T) {
+	cleanup := buildTestForestEntry(t)
+	defer cleanup()
+
+	list := ForestInfoList()
+	if len(list) == 0 {
+		t.Fatalf("ForestInfoList returned empty list")
+	}
+	if list[0].RootName != "Vehicle" {
+		t.Errorf("RootName = %q; want Vehicle", list[0].RootName)
+	}
+}
+
+func TestGetForestRoot_FoundGap(t *testing.T) {
+	cleanup := buildTestForestEntry(t)
+	defer cleanup()
+
+	got := GetForestRoot("Vehicle")
+	if got == nil {
+		t.Fatalf("GetForestRoot returned nil for known root")
+	}
+}
+
+func TestGetForestRoot_NotFoundGap(t *testing.T) {
+	cleanup := buildTestForestEntry(t)
+	defer cleanup()
+
+	if got := GetForestRoot("Unknown"); got != nil {
+		t.Errorf("GetForestRoot returned non-nil for unknown root")
+	}
+}
+
 // ============================================================================
 // treeutils.go — VSSsearchNodes
 // ============================================================================
@@ -1289,6 +1321,53 @@ func TestValidateSecConfig_TransportSecYes_ExistingServerName(t *testing.T) {
 	if cfg.ServerName != "myserver.example.com" {
 		t.Errorf("ServerName = %q; want \"myserver.example.com\" (not overwritten)", cfg.ServerName)
 	}
+}
+
+// ============================================================================
+// treeutils.go — RegisterServiceTree / DeregisterServiceTree
+// ============================================================================
+
+func TestRegisterServiceTree_DoubleRegistration(t *testing.T) {
+	old := himForest
+	himForest = nil
+	defer func() { himForest = old }()
+
+	root := NewBranchNode("SvcRoot")
+	if ok := RegisterServiceTree("MySvc", "org.example.MySvc.Service", "1.0", root); !ok {
+		t.Fatalf("first RegisterServiceTree failed")
+	}
+	// Second registration with same rootName should return false
+	if ok := RegisterServiceTree("MySvc", "org.example.MySvc.Service", "1.0", root); ok {
+		t.Errorf("duplicate RegisterServiceTree should return false; got true")
+	}
+}
+
+func TestDeregisterServiceTree_RemovesEntry(t *testing.T) {
+	old := himForest
+	himForest = nil
+	defer func() { himForest = old }()
+
+	root := NewBranchNode("SvcRoot")
+	RegisterServiceTree("MySvc", "org.example.MySvc.Service", "1.0", root)
+	DeregisterServiceTree("MySvc")
+
+	if GetForestRoot("MySvc") != nil {
+		t.Errorf("DeregisterServiceTree did not remove the entry")
+	}
+}
+
+func TestDeregisterServiceTree_NotFound(t *testing.T) {
+	old := himForest
+	himForest = nil
+	defer func() { himForest = old }()
+
+	// Must not panic on unknown rootName
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("DeregisterServiceTree panicked on unknown rootName: %v", r)
+		}
+	}()
+	DeregisterServiceTree("NonExistent")
 }
 
 // ============================================================================

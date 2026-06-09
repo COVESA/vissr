@@ -28,11 +28,16 @@ import (
 	"strconv"
 	"strings"
 
+	dds "github.com/SoundMatt/go-DDS"
 	"github.com/covesa/vissr/server/vissv2server/atServer"
+	"github.com/covesa/vissr/server/vissv2server/ddsMgr"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
+	"github.com/covesa/vissr/server/vissv2server/vdmloader"
+	"github.com/covesa/vissr/server/vissv2server/webdash"
+	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
 	"github.com/covesa/vissr/server/vissv2server/udsMgr"
@@ -59,6 +64,7 @@ var serverComponents []string = []string{
 	"mqttMgr",
 	"grpcMgr",
 	"udsMgr",
+	"ddsMgr",
 	"atServer",
 }
 
@@ -66,7 +72,7 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
+ const NUMOFTRANSPORTMGRS = 6  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS
 var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
@@ -416,6 +422,16 @@ func isUnsubscribeRequest(action string) bool {
 	return action == "unsubscribe"
 }
 
+// isServiceAction reports whether the action is one of the four VISSv3.2
+// service operations: invoke, monitor, cancel, discover.
+func isServiceAction(action string) bool {
+	switch action {
+	case "invoke", "monitor", "cancel", "discover":
+		return true
+	}
+	return false
+}
+
 // setErrorAndForward fills errorResponseMap with the given error code
 // and description (using the request fields from requestMap) and pushes
 // it to the backend channel for the transport manager identified by
@@ -484,7 +500,53 @@ func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanInde
 		serviceDataChan[sDChanIndex] <- requestMap
 		return
 	}
+	// VISSv3.2 service actions bypass the signal data pipeline and go to
+	// the vissServiceMgr. Cancel uses serviceId (no path), so we check it
+	// before the general path-based service action check.
+	if action, _ := requestMap["action"].(string); action == "cancel" {
+		requestMap["routerIndex"] = tDChanIndex
+		vissServiceMgr.HandleCancel(requestMap, backendChan[tDChanIndex])
+		return
+	}
+	if action, _ := requestMap["action"].(string); isServiceAction(action) {
+		if isServiceTree(requestMap) {
+			requestMap["routerIndex"] = tDChanIndex
+			dispatchServiceAction(requestMap, tDChanIndex)
+			return
+		}
+	}
 	issueServiceRequest(requestMap, tDChanIndex, sDChanIndex)
+}
+
+// isServiceTree returns true when the path in requestMap targets a HIM tree
+// whose domain ends in ".Service" (the VISSv3.2 service profile marker).
+func isServiceTree(requestMap map[string]interface{}) bool {
+	path, ok := requestMap["path"].(string)
+	if !ok {
+		return false
+	}
+	treeRoot := utils.SetRootNodePointer(path)
+	if treeRoot == nil {
+		return false
+	}
+	return utils.GetInfoType(treeRoot) == "Service"
+}
+
+// dispatchServiceAction routes VISSv3.2/3.3 service actions to vissServiceMgr.
+// HandleInvoke and HandleMonitor receive the full backendChan slice so they
+// can fan out monitoring events to any transport channel.
+func dispatchServiceAction(requestMap map[string]interface{}, tDChanIndex int) {
+	action, _ := requestMap["action"].(string)
+	switch action {
+	case "invoke":
+		vissServiceMgr.HandleInvoke(requestMap, backendChan)
+	case "monitor":
+		vissServiceMgr.HandleMonitor(requestMap, backendChan)
+	case "discover":
+		vissServiceMgr.HandleDiscover(requestMap, backendChan[tDChanIndex])
+	default:
+		utils.Error.Printf("dispatchServiceAction: unexpected action %q", action)
+	}
 }
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
@@ -1014,6 +1076,10 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
+	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
+	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
+	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (mutually exclusive with viss.him)", Default: ""})
+	webAddr := parser.String("", "web-addr", &argparse.Options{Required: false, Help: "address for optional VDM web dashboard (e.g. :8090); disabled when empty", Default: ""})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1024,9 +1090,24 @@ func main() {
 
 	utils.InitLog("servercore-log.txt", "./logs", *logFile, *logLevel)
 
-	if !utils.InitForest("viss.him") {
-		utils.Error.Printf("Failed to initialize viss.him")
-		return
+	if *vdmDir != "" {
+		n, err := vdmloader.LoadDir(*vdmDir)
+		if err != nil {
+			utils.Error.Printf("Failed to load VDM from %s: %v", *vdmDir, err)
+			return
+		}
+		utils.Info.Printf("VDM loader: registered %d tree(s) from %s", n, *vdmDir)
+	} else {
+		if !utils.InitForest("viss.him") {
+			utils.Error.Printf("Failed to initialize viss.him")
+			return
+		}
+	}
+
+	if *webAddr != "" {
+		if err := webdash.Start(*webAddr); err != nil {
+			utils.Error.Printf("webdash: failed to start on %s: %v", *webAddr, err)
+		}
 	}
 
 	if *dPop {
@@ -1037,6 +1118,10 @@ func main() {
 	}
 
 	initChannels()
+
+	// VISSv3.3: start the service registration TCP listener so external
+	// service processes can register procedure paths and receive invocations.
+	go vissServiceMgr.StartServiceRegServer(backendChan)
 
 /*	router := mux.NewRouter()
 	router.HandleFunc("/vsspathlist", pathList.VssPathListHandler).Methods("GET")
@@ -1080,6 +1165,17 @@ func main() {
 		case "udsMgr":
 			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
 			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
+		case "ddsMgr":
+			if *ddsEnable {
+				// DDS channel must be unbuffered: DdsMgrInit performs a
+				// synchronous VIN request/response on the same channel.
+				if *ddsDomain != 0 {
+					ddsMgr.SetDomain(dds.Domain(*ddsDomain))
+				}
+				transportMgrChannel[5] = make(chan string)
+				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
+				go transportDataSession(transportMgrChannel[5], transportDataChan[5], backendChan[5])
+			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
@@ -1101,6 +1197,8 @@ func main() {
 			serveRequest(request, 3, 0)
 		case request := <-transportDataChan[4]: // request from UDS mgr
 			serveRequest(request, 4, 0)
+		case request := <-transportDataChan[5]: // request from DDS mgr
+			serveRequest(request, 5, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			request := map[string]interface{}{}
