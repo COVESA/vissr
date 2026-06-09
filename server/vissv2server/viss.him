@@ -34,3 +34,21 @@ description: The server capabilities tree.
 #public: https://himrepo.oem.com?instance=Vehicle.Car.Data.X.Y.Z
 #description: A VSS tree augmented with a struct example.
 
+# VISSv3.3 service tree example.
+# Service trees are identified by a domain whose rightmost segment is "Service".
+# The binary is optional — if omitted, service processes may register
+# their procedure signatures dynamically via the service registration protocol
+# (TCP port 8300). The domain suffix ".Service" activates service routing.
+#
+# To use the pre-built binary tree instead of dynamic registration:
+#   1. Author a service tree in YAML following the HIM service profile rules.
+#   2. Compile it with the vss2binary tool.
+#   3. Uncomment the local: line below.
+#
+#HIM.VehicleService:
+#type: direct
+#domain: VehicleService.Car.Service
+#version: 1.0
+#local: forest/vservice.v1.0.binary
+#description: Vehicle service tree (HIM service profile, VISSv3.3).
+

@@ -338,6 +338,37 @@ func DeregisterServiceTree(rootName string) {
 	}
 }
 
+// NewProcedureNode creates a procedure Node_t for a VISSv3.3 service procedure.
+func NewProcedureNode(name, description string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: PROCEDURE, Description: description, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewIoStructNode creates an iostruct Node_t (Input or Output container).
+func NewIoStructNode(name string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: IOSTRUCT, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewPropertyNode creates a property Node_t for a service parameter.
+func NewPropertyNode(name, datatype, description string) *Node_t {
+	return &Node_t{Name: name, NodeType: PROPERTY, Datatype: datatype, Description: description}
+}
+
 func PopulateDefault() {
 	j := 1
 	for i:=0; i < len(himForest); i++ {
