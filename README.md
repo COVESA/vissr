@@ -12,7 +12,7 @@ Peter Winzell - Volvo Cars
 
 # COVESA VISS Reference Implementation - VISSR 
 This project provides a reference implementation of the released [COVESA VISSv2.0 specification](https://github.com/COVESA/vehicle-information-service-specification/releases/tag/v2.0) on the v2.0 branch,
-and an ongoing development of a reference implementation of the [VISSv3.0 specification](https://github.com/COVESA/vehicle-information-service-specification) on the master branch.
+the master branch contains reference implementations of the [VISSv3.0 and the subsequent VISSv3.1](https://github.com/COVESA/vissr/releases/tag/v3.1.0) specifications.
 
 # Tutorial
 A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
