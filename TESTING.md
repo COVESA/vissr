@@ -76,6 +76,7 @@ fuzzers=(
     'FuzzProcessHistoryGet      ./server/vissv2server/serviceMgr'
     'FuzzMapRequest             ./utils'
     'FuzzJsonSchemaValidate     ./utils'
+    'FuzzIsGraphQL              ./server/vissv2server/vdmloader'
     'FuzzGetFileDescriptorData  ./server/vissv2server'
     'FuzzGetRangeBoundaries     ./server/vissv2server'
     'FuzzGetValueForKey         ./server/vissv2server/wsMgr'
@@ -194,6 +195,18 @@ points are tested via runtest.sh integration.
 Covers `fileExists`, `deSerializeUInt` (1/2/4-byte), `inFeederScope`,
 `splitToDomainDataAndTs`, `convertToDomainData`, `makeDataPoint`,
 `calcInputValue`, `incDpIndex`, `enumConversion`, `linearConversion`.
+
+#### VDM live-reload watcher (v4.1)
+
+| Area                                                   | Test file                                              |
+|--------------------------------------------------------|--------------------------------------------------------|
+| `isGraphQL` path filter + `FuzzIsGraphQL`              | `server/vissv2server/vdmloader/watcher_test.go`        |
+| `graphqlFiles` directory scan                          | `server/vissv2server/vdmloader/watcher_test.go`        |
+| `currentRootNames` (parse without registering)         | `server/vissv2server/vdmloader/watcher_test.go`        |
+| `NewWatcher` non-existent dir error                    | `server/vissv2server/vdmloader/watcher_test.go`        |
+| `Watcher.Stop` + stopped channel                       | `server/vissv2server/vdmloader/watcher_test.go`        |
+| Live reload on write, create, delete (end-to-end)      | `server/vissv2server/vdmloader/watcher_test.go`        |
+| `himForestMu` race — `RegisterServiceTree` + `GetForestRoot` concurrent | `server/vissv2server/vdmloader/watcher_test.go` (`-race`) |
 
 ## Functions that need code refactoring to be unit-testable
 

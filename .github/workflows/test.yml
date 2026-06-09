@@ -38,11 +38,34 @@ jobs:
         run: |
           go list ./... | grep -v 'paho-mqtt' | xargs go vet
 
+      - name: smoke - vdminfo
+        run: go run ./tools/vdminfo ./server/vissv2server/vdmloader/testdata/
+
       - name: test all packages (race)
         # paho-mqtt is excluded here; it is tested in the mqtt-tests job
         # below where a real Mosquitto broker is available.
         run: |
           go list ./... | grep -v 'paho-mqtt' | xargs go test -race -count=1 -timeout 5m
+
+  # ------------------------------------------------------------------ #
+  #  End-to-end smoke test — starts vissv2server, exercises WebSocket  #
+  # ------------------------------------------------------------------ #
+  smoke-test:
+    name: Smoke test (WS end-to-end)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: smoke - WebSocket GET + SET
+        # TestMain pre-builds the binary once; both tests reuse it.
+        # The none backend needs /var/tmp/vissv2/ for its feeder socket.
+        run: |
+          go test -v -tags smoke -timeout 120s ./server/vissv2server/smoketest/
 
   # ------------------------------------------------------------------ #
   #  MQTT integration tests - requires the mosquitto broker container   #
