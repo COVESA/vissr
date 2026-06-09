@@ -33,6 +33,7 @@ import (
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
+	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
 	"github.com/covesa/vissr/server/vissv2server/udsMgr"
@@ -416,6 +417,16 @@ func isUnsubscribeRequest(action string) bool {
 	return action == "unsubscribe"
 }
 
+// isServiceAction reports whether the action is one of the four VISSv3.2
+// service operations: invoke, monitor, cancel, discover.
+func isServiceAction(action string) bool {
+	switch action {
+	case "invoke", "monitor", "cancel", "discover":
+		return true
+	}
+	return false
+}
+
 // setErrorAndForward fills errorResponseMap with the given error code
 // and description (using the request fields from requestMap) and pushes
 // it to the backend channel for the transport manager identified by
@@ -484,7 +495,52 @@ func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanInde
 		serviceDataChan[sDChanIndex] <- requestMap
 		return
 	}
+	// VISSv3.2 service actions bypass the signal data pipeline and go to
+	// the vissServiceMgr. Cancel uses serviceId (no path), so we check it
+	// before the general path-based service action check.
+	if action, _ := requestMap["action"].(string); action == "cancel" {
+		requestMap["routerIndex"] = tDChanIndex
+		vissServiceMgr.HandleCancel(requestMap, backendChan[tDChanIndex])
+		return
+	}
+	if action, _ := requestMap["action"].(string); isServiceAction(action) {
+		if isServiceTree(requestMap) {
+			requestMap["routerIndex"] = tDChanIndex
+			dispatchServiceAction(requestMap, tDChanIndex)
+			return
+		}
+	}
 	issueServiceRequest(requestMap, tDChanIndex, sDChanIndex)
+}
+
+// isServiceTree returns true when the path in requestMap targets a HIM tree
+// whose domain ends in ".Service" (the VISSv3.2 service profile marker).
+func isServiceTree(requestMap map[string]interface{}) bool {
+	path, ok := requestMap["path"].(string)
+	if !ok {
+		return false
+	}
+	treeRoot := utils.SetRootNodePointer(path)
+	if treeRoot == nil {
+		return false
+	}
+	return utils.GetInfoType(treeRoot) == "Service"
+}
+
+// dispatchServiceAction routes VISSv3.2 service actions to vissServiceMgr.
+func dispatchServiceAction(requestMap map[string]interface{}, tDChanIndex int) {
+	action, _ := requestMap["action"].(string)
+	bc := backendChan[tDChanIndex]
+	switch action {
+	case "invoke":
+		vissServiceMgr.HandleInvoke(requestMap, bc)
+	case "monitor":
+		vissServiceMgr.HandleMonitor(requestMap, bc)
+	case "discover":
+		vissServiceMgr.HandleDiscover(requestMap, bc)
+	default:
+		utils.Error.Printf("dispatchServiceAction: unexpected action %q", action)
+	}
 }
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
