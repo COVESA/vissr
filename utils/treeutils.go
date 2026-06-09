@@ -369,6 +369,33 @@ func CreatePathListFile(pListPath string) {
 	}
 }
 
+// NewBranchNode creates a branch Node_t with the given name and children.
+func NewBranchNode(name string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: BRANCH, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewSignalNode creates a signal Node_t (sensor, actuator, or attribute).
+// nodeType must be one of the SENSOR, ACTUATOR, ATTRIBUTE constants.
+func NewSignalNode(name, nodeType, datatype, description, min, max, unit string) *Node_t {
+	return &Node_t{
+		Name:        name,
+		NodeType:    nodeType,
+		Datatype:    datatype,
+		Description: description,
+		Min:         min,
+		Max:         max,
+		Unit:        unit,
+	}
+}
+
 func PopulateDefault() {
 	j := 1
 	for i:=0; i < len(himForest); i++ {
