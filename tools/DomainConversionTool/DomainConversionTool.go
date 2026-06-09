@@ -81,12 +81,12 @@ type SignalMapElem struct {
 func initDb(dbFile string, db *sql.DB) *sql.DB {
 	var err error
 	db, err = sql.Open("sqlite3", dbFile)
-	if !fileExists(dbFile) {
-		createTables(db)
-	}
 	if err != nil {
 		fmt.Printf("\novdsServer: Unable to init db = %s, err = %s", dbFile, err)
 		os.Exit(1)
+	}
+	if !fileExists(dbFile) {
+		createTables(db)
 	}
 	return db
 }
@@ -321,12 +321,12 @@ func populateTable() {
 }
 
 func checkThisTable(db *sql.DB, tableName string) bool {
-	sqlQuery := "SELECT name FROM sqlite_master WHERE type='table' AND name='" + tableName + "';"
-	_, err := db.Query(sqlQuery)
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", tableName)
 	if err != nil {
 		return false
 	}
-	return true
+	defer rows.Close()
+	return rows.Next()
 }
 
 func clearDomainData(domainData *DomainData) {
@@ -388,6 +388,9 @@ func domainTable(tableNames []string, name string) bool {
 }
 
 func getTableNameList(nameArray []string) string {
+	if len(nameArray) == 0 {
+		return ""
+	}
 	tableNameList := ""
 	for i := 0; i < len(nameArray); i++ {
 		tableNameList += nameArray[i] + ", "
@@ -480,6 +483,7 @@ func readSignalMappingFile(fileName string) (string, string, []SignalMapElem) {
 		fmt.Printf("Error reading %s: %s\n", fileName, err)
 		return "", "", nil
 	}
+	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
 	var nbd string
@@ -634,7 +638,11 @@ func getConversionTypeForEnum(nbdEnums string, sbdEnums string) int {
 	for i := 0; i < len(nbdEnumMap); i++ {
 		enumMap += `"` + nbdEnumMap[i] + `":"` + sbdEnumMap[i] + `", `
 	}
-	enumMap = enumMap[:len(enumMap)-2] + "}"
+	if len(nbdEnumMap) > 0 {
+		enumMap = enumMap[:len(enumMap)-2] + "}"
+	} else {
+		enumMap += "}"
+	}
 	for i := 0; i < len(scaleDataList); i++ {
 		if scaleDataList[i] == enumMap {
 			return i
@@ -1021,7 +1029,13 @@ func decomposePath(path string) []string {
 	segments := strings.Count(path, ".")
 	lead := 0
 	for i := 0; i <= segments; i++ {
-		trail := strings.Index(path[lead:], ".") + lead
+		idx := strings.Index(path[lead:], ".")
+		var trail int
+		if idx < 0 {
+			trail = len(path)
+		} else {
+			trail = idx + lead
+		}
 		branchPaths = append(branchPaths, path[:trail])
 		lead = trail + 1
 	}
@@ -1081,7 +1095,10 @@ func writeYamlNode(treeFp *os.File, node DomainData) {
 	treeFp.Write([]byte("\n"))
 }
 
-func extractJsonData(jsonLiteral string) []string { // {"Key1":"value1", .., "KeyN":"valueN"} or ["value1", .., ++++++++-++"valueN"]
+func extractJsonData(jsonLiteral string) []string { // {"Key1":"value1", .., "KeyN":"valueN"} or ["value1", .., "valueN"]
+	if len(jsonLiteral) == 0 {
+		return nil
+	}
 	if jsonLiteral[0] == '[' {
 		var jsonArray []string
 		err := json.Unmarshal([]byte(jsonLiteral), &jsonArray)
@@ -1231,10 +1248,9 @@ func main() {
 		Help:     "DCT database filename",
 		Default:  "DCT.db"})
 
-	// Parse input
-	err := parser.Parse(os.Args)
-	if err != nil {
+	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
+		os.Exit(1)
 	}
 
 	readUnitScaleData("UnitScaling.yaml")

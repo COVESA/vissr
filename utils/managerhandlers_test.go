@@ -11,8 +11,10 @@ package utils
 import (
 	"bytes"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // snapshotWsClientIndexList captures and restores WsClientIndexList around a
@@ -239,32 +241,40 @@ func TestFrontendHttpAppSession_RejectsOversizedBody(t *testing.T) {
 
 // TestFrontendHttpAppSession_GetForwards verifies the GET path is
 // unaffected by the body-limit fix (no body, no rejection).
+// The handler runs in a goroutine so the test goroutine can drive
+// clientChannel directly, avoiding the scheduling race in the
+// old goroutine+respChannel pattern.
 func TestFrontendHttpAppSession_GetForwards(t *testing.T) {
 	clientChannel := make(chan string, 4)
-	respChannel := make(chan string, 4)
-
-	// frontendHttpAppSession forwards to clientChannel then waits on
-	// the same channel for the response. Spin up a goroutine that
-	// drains the forward and responds.
-	go func() {
-		req := <-clientChannel
-		// echo something resembling a response
-		respChannel <- req
-		clientChannel <- `{"action":"get","value":"ok"}`
-	}()
 
 	req := httptest.NewRequest("GET", "/Vehicle.Speed", nil)
 	rec := httptest.NewRecorder()
-	frontendHttpAppSession(rec, req, clientChannel)
 
-	// Confirm the GET was actually forwarded.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		frontendHttpAppSession(rec, req, clientChannel)
+	}()
+
+	// Wait for the handler to forward the GET to clientChannel.
+	var forwarded string
 	select {
-	case forwarded := <-respChannel:
-		if !bytes.Contains([]byte(forwarded), []byte("get")) {
-			t.Fatalf("forwarded request didn't look like a GET: %q", forwarded)
-		}
-	default:
-		t.Fatalf("GET was not forwarded to clientChannel")
+	case forwarded = <-clientChannel:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: GET was not forwarded to clientChannel")
+	}
+
+	if !strings.Contains(forwarded, "get") {
+		t.Fatalf("forwarded request didn't look like a GET: %q", forwarded)
+	}
+
+	// Send a response to unblock the handler.
+	clientChannel <- `{"action":"get","value":"ok"}`
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: frontendHttpAppSession did not complete")
 	}
 }
 

@@ -61,7 +61,11 @@ func jsonToStructList(jsonList string) int {
 		//        utils.Info.Println(jsonList, "is an array:, len=",strconv.Itoa(len(vv)))
 		requestList.Request = make([]string, len(vv))
 		for i := 0; i < len(vv); i++ {
-			requestList.Request[i] = retrieveRequest(vv[i].(map[string]interface{}))
+			m, ok := vv[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			requestList.Request[i] = retrieveRequest(m)
 		}
 	case map[string]interface{}:
 		//        utils.Info.Println(jsonList, "is a map:")
@@ -149,12 +153,19 @@ func performCommand(commandNumber int, conn *websocket.Conn, optionChannel chan 
 func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel chan string) {
 	compressedRequest := utils.JsonToProtobuf(requestList.Request[commandNumber])
 	fmt.Printf("JSON request size= %d, Protobuf request size=%d\n", len(requestList.Request[commandNumber]), len(compressedRequest))
-	fmt.Printf("Compression= %d\n", (100*len(requestList.Request[commandNumber]))/len(compressedRequest))
+	if len(compressedRequest) > 0 {
+		fmt.Printf("Compression= %d\n", (100*len(requestList.Request[commandNumber]))/len(compressedRequest))
+	}
 	compressedResponse := getResponse(conn, compressedRequest)
+	if compressedResponse == nil {
+		return
+	}
 	jsonResponse := utils.ProtobufToJson(compressedResponse)
 	fmt.Printf("Response: %s\n", jsonResponse)
 	fmt.Printf("JSON response size= %d, Protobuf response size=%d\n", len(jsonResponse), len(compressedResponse))
-	fmt.Printf("Compression= %d\n", (100*len(jsonResponse))/len(compressedResponse))
+	if len(compressedResponse) > 0 {
+		fmt.Printf("Compression= %d\n", (100*len(jsonResponse))/len(compressedResponse))
+	}
 	if strings.Contains(requestList.Request[commandNumber], "subscribe") == true {
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -165,7 +176,9 @@ func performPbCommand(commandNumber int, conn *websocket.Conn, optionChannel cha
 			jsonNotification := utils.ProtobufToJson(msg)
 			fmt.Printf("Notification: %s\n", jsonNotification)
 			fmt.Printf("JSON notification size= %d, Protobuf notification size=%d\n", len(jsonNotification), len(msg))
-			fmt.Printf("Compression= %d\n", (100*len(jsonNotification))/len(msg))
+			if len(msg) > 0 {
+				fmt.Printf("Compression= %d\n", (100*len(jsonNotification))/len(msg))
+			}
 			select {
 			case <-optionChannel:
 				// issue unsubscribe request
