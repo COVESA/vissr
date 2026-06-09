@@ -1,0 +1,150 @@
+name: S2DM SDL validation
+
+# Validates all VDM .graphql files in the repository with the COVESA s2dm
+# tool whenever SDL files change.  s2dm enforces semantic VDM authoring
+# rules beyond what the GraphQL parser checks.
+#
+# The job also runs the vdmloader unit tests to confirm that the Go
+# loader can still parse every SDL file — catching loader/spec drift.
+
+on:
+  push:
+    paths:
+      - "**/*.graphql"
+      - ".github/workflows/s2dm-validate.yml"
+  pull_request:
+    paths:
+      - "**/*.graphql"
+      - ".github/workflows/s2dm-validate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-s2dm-validate
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # ------------------------------------------------------------------ #
+  #  s2dm semantic validation                                           #
+  # ------------------------------------------------------------------ #
+  s2dm-validate:
+    name: S2DM SDL validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Discover VDM directories
+        id: vdm-dirs
+        run: |
+          # Find all directories that contain .graphql files.
+          # Exclude testdata/ (synthetic fixtures used for unit tests only)
+          # and hidden dirs.
+          dirs=$(
+            find . -name "*.graphql" \
+              -not -path "*/testdata/*" \
+              -not -path "*/.git/*" \
+            | xargs -I{} dirname {} 2>/dev/null \
+            | sort -u
+          )
+          if [ -z "$dirs" ]; then
+            echo "No VDM directories found outside testdata/."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "VDM directories: $dirs"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "dirs<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$dirs" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install s2dm
+        if: steps.vdm-dirs.outputs.found == 'true'
+        # PyPI package is "s2dm"; CLI entry-point is "s2dm check constraints".
+        run: uv tool install s2dm
+
+      - name: Validate SDL files
+        if: steps.vdm-dirs.outputs.found == 'true'
+        run: |
+          rc=0
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            echo "::group::Validating $dir"
+            s2dm check constraints --schema "$dir" || rc=$?
+            echo "::endgroup::"
+          done <<'DIRS'
+          ${{ steps.vdm-dirs.outputs.dirs }}
+          DIRS
+          exit $rc
+
+      - name: No non-testdata SDL files found
+        if: steps.vdm-dirs.outputs.found == 'false'
+        run: |
+          echo "No production SDL files found — only testdata/ fixtures exist."
+          echo "Add VDM .graphql files outside testdata/ to enable s2dm validation."
+
+  # ------------------------------------------------------------------ #
+  #  Go vdmloader unit tests (loader/spec parity)                      #
+  # ------------------------------------------------------------------ #
+  vdmloader-tests:
+    name: VDM loader unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test vdmloader
+        run: go test -race -count=1 -timeout 60s ./server/vissv2server/vdmloader/...
+
+      - name: Smoke - vdminfo on testdata
+        run: go run ./tools/vdminfo ./server/vissv2server/vdmloader/testdata/
+
+  # ------------------------------------------------------------------ #
+  #  SDL drift check — regenerate from VSS and diff (optional)         #
+  # ------------------------------------------------------------------ #
+  # This job is only meaningful when a reference VSS catalog and an
+  # s2dm generation script exist in the repository.  It is skipped
+  # automatically when neither is present.
+  sdl-drift:
+    name: SDL drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Check for generation script
+        id: check-gen
+        run: |
+          if [ -f "tools/gen-sdl.sh" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Regenerate SDL
+        if: steps.check-gen.outputs.found == 'true'
+        run: bash tools/gen-sdl.sh
+
+      - name: Diff generated vs committed SDL
+        if: steps.check-gen.outputs.found == 'true'
+        run: |
+          if git diff --exit-code -- '*.graphql'; then
+            echo "SDL is up to date."
+          else
+            echo "::error::SDL drift detected. Run tools/gen-sdl.sh and commit the changes."
+            exit 1
+          fi
+
+      - name: Generation script not present
+        if: steps.check-gen.outputs.found == 'false'
+        run: echo "tools/gen-sdl.sh not found; SDL drift check skipped."
