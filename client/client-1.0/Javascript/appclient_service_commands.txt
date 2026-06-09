@@ -1,0 +1,25 @@
+{
+    "action": "invoke",
+    "path": "VehicleService.Seating.Row1.DriverSide.MoveSeat",
+    "input": {"MovementType": "longitudinal", "Position": "40"},
+    "filter": {"variant": "timebased", "parameter": {"period": "250"}},
+    "requestId": "8756"
+}
+
+{
+    "action": "monitor",
+    "path": "VehicleService.Seating.MoveSeat",
+    "filter": {"variant": "all"},
+    "requestId": "8756"
+}
+
+{
+    "action": "cancel",
+    "serviceId": "8756"
+}
+
+{
+    "action": "discover",
+    "path": "VehicleService.Seating",
+    "requestId": "5687"
+}
