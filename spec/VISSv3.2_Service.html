@@ -681,8 +681,7 @@ message will be issued, when the service terminates successfully, or enters into
 <pre>{
     "action": "invoke",
     "path": "VehicleService.Seating.MoveSeat",
-    "input": {"SeatId": {"Row":"Row1", "Column": "DriverSide"},
-"Position": "40"},
+    "input": {"SeatId": {"Row":"Row1", "Column": "DriverSide"}, "MovementType": "longitudinal", "Position": "40"},
     "filter": {"variant": "timebased", "parameter": {"period": "250"}},
     "requestId": "8756"
 }</pre>
@@ -725,7 +724,8 @@ lead to that a monitoring session is started. This session can be canceled by th
 <pre>{
     "action": "monitor",
     "path": "VehicleService.Seating.MoveSeat",
-    "indata": {"input": {"SeatId": {"Row":"Row1", "Column": "DriverSide"}, "Position": "40"}, "ts": "2025-04-15T13:37:02Z"},
+    "indata": {"input": {"SeatId": {"Row":"Row1", "Column": "DriverSide"}, "MovementType": "longitudinal",
+ "Position": "40"}, "ts": "2025-04-15T13:37:02Z"},
     "outdata": {"output": {"Position": "20"}, "ts": "2025-04-15T13:37:04Z"},
     "serviceId": "123",
     "status": "ONGOING",
@@ -776,20 +776,24 @@ lead to that a monitoring session is started. This session can be canceled by th
     "action": "discover",
     "metadata": {
         "MoveSeat": {
-            "type": "procedure",
-            "Input": {
-                "SeatId":   {"type": 4, "datatype": "uint8"},
-                "Position": {"type": 4, "datatype": "uint8"}
-            },
-            "Output": {
-                "Position": {"type": 4, "datatype": "uint8"}
-            }
+          "type": "procedure",
+          "description": "Performs all supported seat movements."
         },
-        "ActivateMassage": {
-            "type": "procedure",
-            "Input":  {"Intensity": {"type": 4, "datatype": "uint8"}},
-            "Output": {}
-        }
+        "MoveSeat.Input": {
+          "type": "iostruct",
+          "description": "Input parameters= (MovementType, Position, Credentials)."
+        },
+        "MoveSeat.Input.MovementType": {
+          "type": "property",
+          "datatype": "string",
+          "description": "Type of movement. Supported types are retrieved via Seating.GetProperties()."
+        },
+        "MoveSeat.Input.Position": {
+          "type": "property",
+          "datatype": "Types.Common.Percentage",
+          "description": "Final position of the movement, expressed as a percentage."
+        },
+......
     },
     "requestId": "5687",
     "ts":"2025-04-15T13:37:05Z"
@@ -1047,10 +1051,10 @@ right-most dot-separated segment of its <code>domain</code> value is the literal
 
 <pre>HIM.VehicleService:
 type: direct
-domain: VehicleService.Car.Service
+domain: Vehicle.Car.Service
 version: 1.0
 local: forest/vservice.v1.0.binary
-description: Vehicle seating service tree (HIM service profile).</pre>
+description: Vehicle service tree (HIM service profile).</pre>
 
 <p>The server exposes the right-most segment via its internal <code>GetInfoType()</code> function.
 Any tree for which <code>GetInfoType()</code> returns <code>"Service"</code> is routed through the

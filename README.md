@@ -12,10 +12,23 @@ Peter Winzell - Volvo Cars
 
 # COVESA VISS Reference Implementation - VISSR 
 This project provides a reference implementation of the released [COVESA VISSv2.0 specification](https://github.com/COVESA/vehicle-information-service-specification/releases/tag/v2.0) on the v2.0 branch,
-and an ongoing development of a reference implementation of the [VISSv3.0 specification](https://github.com/COVESA/vehicle-information-service-specification) on the master branch.
+the master branch contains reference implementations of the [VISSv3.0 and the subsequent VISSv3.1](https://github.com/COVESA/vissr/releases/tag/v3.1.0) specifications.
+
+The branch v3.2 contains an implementation of an experimental version of VISS where the spec has been extended to support services.
+The service extension specification is available in the spec/VISSv3.2_Service.html document.
 
 # Tutorial
 A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
+
+## VISSv3.2 new features (EXPERIMENTAL)
+* Support for the HIM Service data profile.
+
+## VISSv3.1 new features
+* Support for the HIM Vehicle data profile.
+* This enables VISS to support not only the VSS tree but also other trees that are defined using the vspec syntax.
+  * It also enables a set of trees to be exposed to clients.
+* Support for the Unix Domain Socket transport protocol.
+* Support for Set request out-of-order evaluation (Issue#100). //Not yet implemented on VISSR
 
 ## VISSv3.0 new features
 * Multiple tree support. The server can be configured to manage multiple trees that a client can access.
