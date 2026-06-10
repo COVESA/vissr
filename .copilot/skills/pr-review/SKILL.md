@@ -26,6 +26,7 @@ Then follow the **[PR Review Checklist](CHECKLIST.md)** in your review.
 | **[SECURITY.md](../../guides/generic/SECURITY.md)** | Secrets, TLS, authorization | Reviewing security-related changes |
 | **[TESTING.md](../../guides/generic/TESTING.md)** | Test requirements, commands | Verifying test coverage |
 | **[REFERENCE.md](../../guides/generic/REFERENCE.md)** | Useful commands, examples, resources | Quick lookup |
+| **[PROCESS.md](../../guides/generic/PROCESS.md)** | PR practices, repo hygiene, releases | Reviewing PR process or repo changes |
 
 ## Core Principles
 

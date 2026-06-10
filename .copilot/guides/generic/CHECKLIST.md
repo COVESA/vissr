@@ -55,6 +55,14 @@ Checklist for reviewing pull requests to the VISSR repository.
 - [ ] Indirect deps reviewed for supply chain risk
 - [ ] No unnecessary new dependencies (stdlib alternative exists?)
 
+## PR & Repo Hygiene
+- [ ] PR has single concern (not mixing features, fixes, refactors)
+- [ ] PR size reasonable (< 500 lines, excluding testdata/generated)
+- [ ] No dead code, commented-out blocks, or orphaned files
+- [ ] No stale dependencies or unused imports
+- [ ] Branch name follows convention (`feat/`, `fix/`, `chore/`)
+- [ ] Commit messages follow `type(scope): description`
+
 ## Documentation
 - [ ] Package comment on all new packages
 - [ ] Doc comment on all exported functions
