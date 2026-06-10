@@ -239,6 +239,19 @@ Common error numbers: `400` (bad request), `404` (path not found), `503` (servic
 
 ---
 
+## Request validation
+
+Service requests (`invoke`, `monitor`, `cancel`, `discover`) are validated against
+`server/vissv2server/vissv3.2-service-schema.json` before they reach the service
+manager. Data requests (`get`, `set`, `subscribe`, …) continue to be validated
+against the base `vissv3.0-schema.json`. The server selects the schema from the
+request's `action` field, so a malformed service request — e.g. an `invoke`
+missing the required `path` or `filter` — is rejected with a `400` schema error
+rather than being forwarded. No configuration is needed; both schema files ship
+alongside the server binary.
+
+---
+
 ## Running the test suite
 
 Unit tests (with race detector) for the service manager:
