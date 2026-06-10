@@ -92,26 +92,26 @@ For input validation, atomic I/O, and error handling patterns, see [ARCHITECTURE
 
 ### Environment Variable Secrets
 ```go
-// ✅ GOOD: Load from env var
+// GOOD: Load from env var
 secret := os.Getenv("VISSR_AT_SECRET")
 if secret == "" {
     utils.Warning.Printf("VISSR_AT_SECRET not set; using ephemeral key")
     secret = generateEphemeralKey()
 }
 
-// ❌ BAD: Hardcoded
+// BAD: Hardcoded
 const secret = "super-secret-12345"
 ```
 
 ### Logging Patterns
 ```go
-// ✅ GOOD: Structured, contextual
+// GOOD: Structured, contextual
 utils.Info.Printf("Service registered: path=%s domain=%s", path, domain)
 utils.Error.Printf("Connection failed: %v", err)
 
-// ❌ BAD: Too verbose or leaks secrets
-utils.Info.Printf("Connecting with token: %s", token)  // ← LEAK!
-fmt.Println("Service started")  // ← Should use utils.Info
+// BAD: Too verbose or leaks secrets
+utils.Info.Printf("Connecting with token: %s", token)  // LEAK!
+fmt.Println("Service started")  // Should use utils.Info
 ```
 
 ## Commit Message Examples

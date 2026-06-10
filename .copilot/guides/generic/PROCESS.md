@@ -8,7 +8,7 @@ Repo hygiene, PR practices, release management, and content organization for VIS
 
 - One concern per PR (don't mix features, fixes, and refactors)
 - Target reasonable lines changed (excluding generated files, testdata)
-- Large changes: split into stacked PRs (A → B → C)
+- Large changes: split into stacked PRs (A then B then C)
 - PR description must explain: what, why, and how to test
 
 ### Commit Hygiene
@@ -32,7 +32,7 @@ docs/<description>             — Documentation
 ### Merge Strategy
 
 - **Squash merge** to master (default) — clean history
-- **Rebase** for stacked PRs (A → B → C)
+- **Rebase** for stacked PRs (A then B then C)
 - Never force-push to shared branches
 - Delete branch after merge
 

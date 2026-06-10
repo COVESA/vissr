@@ -14,56 +14,56 @@ VISSR requires these env vars in production. Flag PRs that mishandle them:
 | `VISSR_ECF_ALLOWED_ORIGIN` | CORS origin allowlist | Any origin accepted |
 
 **Review checklist:**
-- ✅ No hardcoded secrets, tokens, or passwords in code
-- ✅ Secrets accessed only via `os.Getenv()` or config
-- ✅ Warning logs emitted when env vars are unset
-- ✅ Test fixtures use dummy/ephemeral secrets only
-- ✅ Scan diff: `git diff | grep -iE 'secret|apikey|password|token\s*='`
-- ❌ Red flag: any `.env`, `.key`, or `.pem` file committed
+- No hardcoded secrets, tokens, or passwords in code
+- Secrets accessed only via `os.Getenv()` or config
+- Warning logs emitted when env vars are unset
+- Test fixtures use dummy/ephemeral secrets only
+- Scan diff: `git diff | grep -iE 'secret|apikey|password|token\s*='`
+- Red flag: any `.env`, `.key`, or `.pem` file committed
 
 ## TLS & Transport Security
 
 ```go
-// ✅ GOOD: Strict TLS config
+// GOOD: Strict TLS config
 cfg := &tls.Config{
     Certificates: []tls.Certificate{cert},
     MinVersion:   tls.VersionTLS12,
     // InsecureSkipVerify omitted (defaults false)
 }
 
-// ❌ BAD: Disabled verification
+// BAD: Disabled verification
 cfg := &tls.Config{InsecureSkipVerify: true}
 ```
 
 **Review checklist:**
-- ✅ `StartServiceRegServerTLS` used in production paths (not plain TCP)
-- ✅ Minimum TLS version is 1.2 (`tls.VersionTLS12`)
-- ✅ Certificate validation not disabled (`InsecureSkipVerify: false`)
-- ✅ Cipher suite restrictions appropriate for use case
+- `StartServiceRegServerTLS` used in production paths (not plain TCP)
+- Minimum TLS version is 1.2 (`tls.VersionTLS12`)
+- Certificate validation not disabled (`InsecureSkipVerify: false`)
+- Cipher suite restrictions appropriate for use case
 
 ## Authorization in Service Invocations
 
 ```go
-// ✅ GOOD: Auth token forwarded, service decides
+// GOOD: Auth token forwarded, service decides
 msg := map[string]interface{}{
     "action":        "invoke",
     "sessionId":     serviceId,
     "input":         input,
-    "authorization": authToken, // ← forwarded, not validated server-side
+    "authorization": authToken, // forwarded, not validated server-side
 }
 ```
 
 **Review checklist:**
-- ✅ `authorization` token forwarded from client to service
-- ✅ Service can reject unauthorized invocations
-- ✅ Error messages don't expose internal paths or system state
-- ✅ JWT/token contents not logged at info level
+- `authorization` token forwarded from client to service
+- Service can reject unauthorized invocations
+- Error messages don't expose internal paths or system state
+- JWT/token contents not logged at info level
 
 ## Common Security Violations to Flag
 
 ### Hardcoded Secrets
 ```go
-// ❌ NEVER DO THIS
+// NEVER DO THIS
 const SecretKey = "my-super-secret-key-12345"
 password := "admin123"
 apiToken := "ghp_xxxxxxxxxxxxxxxxxxxx"
@@ -80,7 +80,7 @@ if secretKey == "" {
 
 ### Disabled TLS Verification
 ```go
-// ❌ NEVER DO THIS
+// NEVER DO THIS
 cfg := &tls.Config{InsecureSkipVerify: true}
 ```
 
@@ -88,22 +88,22 @@ cfg := &tls.Config{InsecureSkipVerify: true}
 
 ### Logging Secrets
 ```go
-// ❌ NEVER DO THIS
+// NEVER DO THIS
 token := os.Getenv("AUTH_TOKEN")
-utils.Info.Printf("Connecting with token: %s", token)  // ← LEAKED
+utils.Info.Printf("Connecting with token: %s", token)  // LEAKED
 
-// ✅ GOOD: Log without sensitive data
-utils.Info.Printf("Connecting to service")  // ← Safe
+// GOOD: Log without sensitive data
+utils.Info.Printf("Connecting to service")  // Safe
 ```
 
 **Rule:** Never log tokens, keys, passwords, or full request bodies at any log level.
 
 ### Exposed Error Details
 ```go
-// ❌ BAD: Exposes internal paths
+// BAD: Exposes internal paths
 return fmt.Errorf("config file not found at /etc/vissr/secret.key")
 
-// ✅ GOOD: Generic error
+// GOOD: Generic error
 return fmt.Errorf("configuration error")
 ```
 
@@ -124,10 +124,10 @@ For heartbeat/health protocol patterns and timeout configuration, see [ARCHITECT
 File-loading flags (`--vdm`, `--him`) accept user-supplied paths.
 
 ```go
-// ❌ BAD: No validation — can escape intended directory
+// BAD: No validation — can escape intended directory
 root := vdmloader.LoadDir(userSuppliedPath)
 
-// ✅ GOOD: Resolve and verify path stays within allowed base
+// GOOD: Resolve and verify path stays within allowed base
 absPath, _ := filepath.Abs(userSuppliedPath)
 if !strings.HasPrefix(absPath, allowedBase) {
     return fmt.Errorf("path %q escapes allowed directory", userSuppliedPath)
@@ -135,28 +135,28 @@ if !strings.HasPrefix(absPath, allowedBase) {
 ```
 
 **Review checklist:**
-- ✅ File paths cleaned with `filepath.Clean` / `filepath.Abs`
-- ✅ Resolved path checked against allowed base directory
-- ✅ Symlinks resolved before check (`filepath.EvalSymlinks`)
-- ❌ Red flag: user-supplied path used directly in `os.Open` or `os.ReadDir`
+- File paths cleaned with `filepath.Clean` / `filepath.Abs`
+- Resolved path checked against allowed base directory
+- Symlinks resolved before check (`filepath.EvalSymlinks`)
+- Red flag: user-supplied path used directly in `os.Open` or `os.ReadDir`
 
 ## Input Size Limits
 
 Unbounded reads enable denial-of-service.
 
 ```go
-// ❌ BAD: Unlimited read
+// BAD: Unlimited read
 body, _ := io.ReadAll(r.Body)
 
-// ✅ GOOD: Bounded read
+// GOOD: Bounded read
 body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodySize))
 ```
 
 **Review checklist:**
-- ✅ HTTP/WebSocket payloads bounded (`io.LimitReader`, `MaxBytesReader`)
-- ✅ GraphQL SDL files checked for size before parsing
-- ✅ Recursive structures (instance tag expansion) bounded by depth/count limit
-- ❌ Red flag: `io.ReadAll` without size cap on network input
+- HTTP/WebSocket payloads bounded (`io.LimitReader`, `MaxBytesReader`)
+- GraphQL SDL files checked for size before parsing
+- Recursive structures (instance tag expansion) bounded by depth/count limit
+- Red flag: `io.ReadAll` without size cap on network input
 
 ## Secrets Scanning
 
@@ -184,10 +184,10 @@ git diff --cached | grep -iE 'secret|apikey|password|token\s*='
 For tests, use ephemeral/dummy values only:
 
 ```go
-// ✅ GOOD: Test-only dummy secret
+// GOOD: Test-only dummy secret
 const testSecret = "dummy-test-key-do-not-use"
 
-// ✅ GOOD: Ephemeral key for each test
+// GOOD: Ephemeral key for each test
 func TestWithAuth(t *testing.T) {
     secret := generateEphemeralKey()  // New key per test
     defer func() { secret = nil }()   // Cleanup

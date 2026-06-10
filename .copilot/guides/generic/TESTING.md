@@ -10,24 +10,24 @@ Every PR must pass:
 ```bash
 go build ./...
 ```
-- ✅ Compile all packages successfully
-- ✅ No missing imports or syntax errors
+- Compile all packages successfully
+- No missing imports or syntax errors
 
 ### 2. Vet Check
 ```bash
 go vet ./...
 ```
-- ✅ No obvious bugs or type errors
-- ✅ No unused variables or imports
-- ✅ Correct format strings
+- No obvious bugs or type errors
+- No unused variables or imports
+- Correct format strings
 
 ### 3. Unit Tests with Race Detector
 ```bash
 go list ./... | grep -v 'paho-mqtt' | grep -v 'smoketest' | xargs go test -race -count=1 -timeout 5m
 ```
-- ✅ All tests pass
-- ✅ **No race detector warnings**
-- ✅ Race detector is non-optional
+- All tests pass
+- **No race detector warnings**
+- Race detector is non-optional
 
 ## Conditional Tests (Run When Relevant)
 
@@ -83,13 +83,13 @@ go test -race -v -run TestName ./package/
 ### Use Fixtures, Not Live Services
 
 ```go
-// ✅ GOOD: net.Pipe for isolated tests
+// GOOD: net.Pipe for isolated tests
 client, server := net.Pipe()
 go handleConnection(server)
 // ... test client behavior
 
-// ❌ BAD: Requires live external service
-conn, err := net.Dial("tcp", "localhost:8300")  // ← What if port taken?
+// BAD: Requires live external service
+conn, err := net.Dial("tcp", "localhost:8300")  // What if port taken?
 ```
 
 ### Isolation with //go:build Tags
@@ -104,14 +104,14 @@ package smoketest
 ```
 
 **Review checklist:**
-- ✅ Integration tests use `//go:build` tags
-- ✅ Smoke tests don't run in CI by default
-- ✅ Standard `go test ./...` only runs unit tests
+- Integration tests use `//go:build` tags
+- Smoke tests don't run in CI by default
+- Standard `go test ./...` only runs unit tests
 
 ### Test-Only Configuration
 
 ```go
-// ✅ GOOD: Exported vars allow test overrides
+// GOOD: Exported vars allow test overrides
 var HeartbeatInterval = 15 * time.Second
 
 func TestFastHeartbeat(t *testing.T) {
@@ -124,9 +124,9 @@ func TestFastHeartbeat(t *testing.T) {
 ```
 
 **Review checklist:**
-- ✅ Timeout/interval variables exported (not hardcoded)
-- ✅ Tests override with small values for speed (< 100ms)
-- ✅ `t.Cleanup()` resets after test
+- Timeout/interval variables exported (not hardcoded)
+- Tests override with small values for speed (< 100ms)
+- `t.Cleanup()` resets after test
 
 ### All New Public Functions Have Tests
 
@@ -143,13 +143,13 @@ func TestNewService_InvalidPath(t *testing.T)
 ### No Real External Dependencies
 
 ```go
-// ❌ BAD: Requires real Redis
+// BAD: Requires real Redis
 func TestCacheWrite(t *testing.T) {
     client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
     // ... test fails if Redis not running
 }
 
-// ✅ GOOD: Mock or fixture
+// GOOD: Mock or fixture
 func TestCacheWrite(t *testing.T) {
     cache := &MockCache{}
     // ... test runs anywhere
@@ -157,9 +157,9 @@ func TestCacheWrite(t *testing.T) {
 ```
 
 **Red flags:**
-- ❌ Tests require real Redis, MQTT, or external process without build tag
-- ❌ Tests hardcode localhost ports
-- ❌ Integration tests in standard test suite (should use `//go:build`)
+- Tests require real Redis, MQTT, or external process without build tag
+- Tests hardcode localhost ports
+- Integration tests in standard test suite (should use `//go:build`)
 
 ## Coverage Report
 
