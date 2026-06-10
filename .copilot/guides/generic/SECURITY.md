@@ -119,6 +119,45 @@ For heartbeat/health protocol patterns and timeout configuration, see [ARCHITECT
 - All ONGOING invocations marked FAILED on disconnect
 - Service path deregistered from HIM forest on disconnect
 
+## Path Traversal
+
+File-loading flags (`--vdm`, `--him`) accept user-supplied paths.
+
+```go
+// ❌ BAD: No validation — can escape intended directory
+root := vdmloader.LoadDir(userSuppliedPath)
+
+// ✅ GOOD: Resolve and verify path stays within allowed base
+absPath, _ := filepath.Abs(userSuppliedPath)
+if !strings.HasPrefix(absPath, allowedBase) {
+    return fmt.Errorf("path %q escapes allowed directory", userSuppliedPath)
+}
+```
+
+**Review checklist:**
+- ✅ File paths cleaned with `filepath.Clean` / `filepath.Abs`
+- ✅ Resolved path checked against allowed base directory
+- ✅ Symlinks resolved before check (`filepath.EvalSymlinks`)
+- ❌ Red flag: user-supplied path used directly in `os.Open` or `os.ReadDir`
+
+## Input Size Limits
+
+Unbounded reads enable denial-of-service.
+
+```go
+// ❌ BAD: Unlimited read
+body, _ := io.ReadAll(r.Body)
+
+// ✅ GOOD: Bounded read
+body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodySize))
+```
+
+**Review checklist:**
+- ✅ HTTP/WebSocket payloads bounded (`io.LimitReader`, `MaxBytesReader`)
+- ✅ GraphQL SDL files checked for size before parsing
+- ✅ Recursive structures (instance tag expansion) bounded by depth/count limit
+- ❌ Red flag: `io.ReadAll` without size cap on network input
+
 ## Secrets Scanning
 
 Before committing, scan for secrets:

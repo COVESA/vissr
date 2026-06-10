@@ -10,6 +10,7 @@ Checklist for reviewing pull requests to the VISSR repository.
 - [ ] SOLID principles respected
 - [ ] `--vdm` / `--him` mutual exclusivity preserved
 - [ ] Correct package structure (vdmloader, webdash, vissServiceMgr, etc.)
+- [ ] Public API changes are backward-compatible (or breaking change justified)
 
 ## Security
 - [ ] No hardcoded secrets, tokens, or credentials
@@ -57,7 +58,7 @@ Checklist for reviewing pull requests to the VISSR repository.
 
 ## PR & Repo Hygiene
 - [ ] PR has single concern (not mixing features, fixes, refactors)
-- [ ] PR size reasonable (< 500 lines, excluding testdata/generated)
+- [ ] PR size reasonable (excluding testdata/generated)
 - [ ] No dead code, commented-out blocks, or orphaned files
 - [ ] No stale dependencies or unused imports
 - [ ] Branch name follows convention (`feat/`, `fix/`, `chore/`)
@@ -66,7 +67,6 @@ Checklist for reviewing pull requests to the VISSR repository.
 ## Documentation
 - [ ] Package comment on all new packages
 - [ ] Doc comment on all exported functions
-- [ ] Commit messages follow `type(scope): description` convention
 
 ## Error Handling
 - [ ] Optional components (webdash, serviceReg TLS) fail gracefully
