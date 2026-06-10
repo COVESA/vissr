@@ -31,6 +31,12 @@ const IpEnvVarName = "GEN2MODULEIP"
 
 var jsonSchema *jsonschema.Schema
 
+// serviceSchema validates VISSv3.2 service requests (invoke / monitor /
+// cancel / discover). These actions are absent from the base data
+// schema, so without this they were silently validated against
+// vissv3.0-schema.json — i.e. the service schema was never applied.
+var serviceSchema *jsonschema.Schema
+
 // Access control values: none=0, write-only=1. read-write=2, consent +=10
 // matrix preserving inherited value with read-write having priority over write-only and consent over no consent
 var validationMatrix [5][5]int = [5][5]int{{0, 1, 2, 11, 12}, {1, 1, 2, 11, 12}, {2, 2, 2, 12, 12}, {11, 11, 12, 11, 12}, {12, 12, 12, 12, 12}}
@@ -525,39 +531,81 @@ var jsonSchemaOnce sync.Once
 
 func JsonSchemaInit() {
 	jsonSchemaOnce.Do(func() {
-		if jsonSchema != nil {
-			Info.Printf("JSON schema already initiated")
-			return
-		}
-		jsonSchemaStr := readSchema()
-		if len(jsonSchemaStr) > 0 {
-			jsonSchema = jsonschema.Must(jsonSchemaStr) // jsonSchema string read from file
+		if jsonSchemaStr := readSchema(); len(jsonSchemaStr) > 0 {
+			jsonSchema = jsonschema.Must(jsonSchemaStr) // base data schema
 			Info.Printf("JSON schema initiated")
+		}
+		// VISSv3.2: service requests are validated against a separate
+		// service schema. Load it here so JsonSchemaValidate can route
+		// invoke/monitor/cancel/discover to it.
+		if serviceSchemaStr := readServiceSchema(); len(serviceSchemaStr) > 0 {
+			serviceSchema = jsonschema.Must(serviceSchemaStr)
+			Info.Printf("Service JSON schema initiated")
 		}
 	})
 }
 
 func readSchema() string {
-	data, err := os.ReadFile("vissv3.0-schema.json")
+	return readSchemaFile("vissv3.0-schema.json")
+}
+
+func readServiceSchema() string {
+	return readSchemaFile("vissv3.2-service-schema.json")
+}
+
+func readSchemaFile(filename string) string {
+	data, err := os.ReadFile(filename)
 	if err != nil {
-		Error.Printf("JSON schema could not be read, error=%s", err)
+		Error.Printf("JSON schema %q could not be read, error=%s", filename, err)
 		return ""
 	}
 	return string(data)
 }
 
-// JsonSchemaValidate validates request against the loaded schema.
-// Bug-6 fix: previously the function called jsonSchema.ValidateBytes
+// serviceActions are the VISSv3.2 service operations. Requests carrying
+// one of these actions are validated against serviceSchema rather than
+// the base data schema.
+var serviceActions = map[string]bool{
+	"invoke":   true,
+	"monitor":  true,
+	"cancel":   true,
+	"discover": true,
+}
+
+// schemaActionField returns the request's "action" value, used to pick
+// which schema applies. It parses the JSON properly (the request may be
+// arbitrarily ordered); on malformed input it returns "" so the request
+// falls through to the base schema, which then reports the syntax error.
+func schemaActionField(request string) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(request), &m); err != nil {
+		return ""
+	}
+	action, _ := m["action"].(string)
+	return action
+}
+
+// JsonSchemaValidate validates request against the appropriate schema:
+// the VISSv3.2 service schema for service actions, otherwise the base
+// data schema.
+//
+// Bug-6 fix: previously the function called ValidateBytes
 // unconditionally, panicking with a nil-pointer dereference when
 // schema-file loading had failed at init() (e.g. running from the
 // wrong working directory in tests). Now we surface the unavailable
 // state as a returned error string so callers can decide how to
 // degrade.
 func JsonSchemaValidate(request string) string {
-	if jsonSchema == nil {
-		return "JSON schema not loaded (call JsonSchemaInit and ensure the schema file is reachable)"
+	schema := jsonSchema
+	schemaName := "JSON"
+	if serviceActions[schemaActionField(request)] {
+		schema = serviceSchema
+		schemaName = "service JSON"
 	}
-	errs, err := jsonSchema.ValidateBytes(context.Background(), []byte(request))
+	if schema == nil {
+		return schemaName + " schema not loaded (call JsonSchemaInit and ensure the schema file is reachable)"
+	}
+	errs, err := schema.ValidateBytes(context.Background(), []byte(request))
 	if err != nil {
 		return fixSyntax(err.Error())
 	}
