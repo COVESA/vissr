@@ -22,6 +22,7 @@ A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 
 ## VISSv3.2 new features (EXPERIMENTAL)
 * Support for the HIM Service data profile.
+* **SET value validation** — `set` requests are validated against the signal's declared datatype, allowed-value list, and min/max range before reaching the state backend, returning typed `400`/`403` errors.
 
 ## VISSv3.1 new features
 * Support for the HIM Vehicle data profile.
