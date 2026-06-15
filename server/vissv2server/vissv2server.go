@@ -1188,6 +1188,8 @@ func main() {
 			serveRequest(request, 3, 0)
 		case request := <-transportDataChan[4]: // request from UDS mgr
 			serveRequest(request, 4, 0)
+		case request := <-transportDataChan[5]: // request from DDS mgr
+			serveRequest(request, 5, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			request := map[string]interface{}{}
