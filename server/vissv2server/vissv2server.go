@@ -559,7 +559,17 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	if !(rootPath == "HIM" && requestMap["action"] == "get" && requestMap["filter"] != nil) {
 		VSSTreeRoot = utils.SetRootNodePointer(rootPath)
 		if VSSTreeRoot == nil {
-			setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+			// No HIM tree is rooted at the first path segment. This is a
+			// "not found", not a malformed request: returning the generic
+			// bad_request ("The request is malformed.") here previously
+			// masked a forest/path root-name mismatch as a JSON-schema
+			// problem. Report it as unavailable_data with the offending root.
+			rootName := rootPath
+			if dot := strings.Index(rootPath, "."); dot != -1 {
+				rootName = rootPath[:dot]
+			}
+			setErrorAndForward(requestMap, tDChanIndex, 6,
+				"No tree found for path root \""+rootName+"\".") //unavailable_data
 			return
 		}
 		requestMap["infoType"] = utils.GetInfoType(VSSTreeRoot)

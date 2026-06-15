@@ -36,11 +36,46 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/covesa/vissr/utils"
 )
+
+// maxServiceNodes caps the result set when resolving a service path. A service
+// request addresses a single procedure (or, for discover, a single branch), so
+// a small cap is sufficient.
+const maxServiceNodes = 50
+
+// resolveServiceNode walks the HIM forest to the node addressed by the full
+// dot-delimited path and returns it, or nil if the path does not resolve to
+// exactly one node.
+//
+// utils.SetRootNodePointer only returns the *tree root* (it matches on the
+// first path segment), so it cannot address a procedure node deeper in the
+// tree. Callers that need the addressed node (invoke/monitor/discover) must
+// walk the full path from the root — using SetRootNodePointer alone made every
+// multi-segment service path resolve to the root branch, which then failed the
+// "must address a procedure node" check.
+func resolveServiceNode(path string) *utils.Node_t {
+	root := utils.SetRootNodePointer(path)
+	if root == nil {
+		return nil
+	}
+	// VSSsearchNodes (with leafNodesOnly=false) records every node along the
+	// matched path — root, intermediate branches, and the addressed node — so
+	// we pick the entry whose full path equals the request path exactly. This
+	// resolves both procedure targets (invoke/monitor) and branch targets
+	// (discover), unlike SetRootNodePointer which only ever returns the root.
+	searchData, matches := utils.VSSsearchNodes(path, root, maxServiceNodes, true, false, 0, nil, nil)
+	for i := 0; i < matches; i++ {
+		if searchData[i].NodePath == path {
+			return searchData[i].NodeHandle
+		}
+	}
+	return nil
+}
 
 // ServiceStatus is the set of allowed status values from VISSv3.2 §2.
 type ServiceStatus string
@@ -219,7 +254,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	}
 	bc := backendChans[tDChanIndex]
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
 			"400", "bad_request", "path must address a procedure node")
@@ -302,7 +337,7 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 	}
 	bc := backendChans[tDChanIndex]
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "monitor", requestId, "", StatusFailed,
 			"400", "bad_request", "path must address a procedure node")
@@ -444,7 +479,7 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil {
 		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
 			"400", "bad_request", "path not found in service tree")
@@ -773,11 +808,27 @@ func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{})
 			continue
 		}
 		name := utils.VSSgetName(child)
-		if _, ok := params[name]; !ok {
-			missing = append(missing, name)
+		if _, ok := params[name]; ok {
+			continue
 		}
+		if isOptionalParam(child) {
+			continue // optional parameters may be omitted (e.g. MoveSeat.Credentials)
+		}
+		missing = append(missing, name)
 	}
 	return len(missing) == 0, missing
+}
+
+// isOptionalParam reports whether an Input/Output parameter node is optional.
+//
+// The HIM Node_t model has no structured "optional" flag, so optionality is
+// currently only expressed in the node description prose (the COVESA HIM
+// service example marks MoveSeat.Credentials as "Optional parameter."). Until a
+// structured directive (e.g. @optional) is added to the vspec/HIM tooling and a
+// corresponding Node_t field, we honour that convention so a request omitting
+// an optional parameter is not rejected as missing a required field.
+func isOptionalParam(node *utils.Node_t) bool {
+	return strings.Contains(strings.ToLower(utils.VSSgetDescr(node)), "optional")
 }
 
 // ---- filter helpers --------------------------------------------------------

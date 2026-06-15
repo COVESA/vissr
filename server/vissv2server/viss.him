@@ -10,7 +10,7 @@ HIM.Vehicle:
   https://github.com/COVESA/vehicle_signal_specification/releases/tag/v5.0
   description: The VSS v5.0 tree.
 
-HIM.VehicleServices:
+HIM.VehicleService:
   type: direct
   domain: Vehicle.Car.Service
   version: 5.0.0
