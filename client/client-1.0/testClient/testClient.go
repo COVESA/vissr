@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 
 	"fmt"
@@ -198,7 +197,7 @@ func performWsCommand(command string, conn *websocket.Conn) {
 			if events == maxEvents {
 				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
+				fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
 				performWsCommand(unsubReq, conn)
 				return
 			}
@@ -239,7 +238,7 @@ func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
 			if events == maxEvents {
 				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
+				fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
 				performUdsCommand(unsubReq, conn, buf)
 				return
 			}
@@ -378,7 +377,7 @@ var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 		if events == maxEvents+1 {
 				subscriptionId := utils.ExtractSubscriptionId(string(msg.Payload()))
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Unsubscribing to subscription session\n")
+				fmt.Printf("%d events received. Unsubscribing to subscription session\n", maxEvents)
 				publishVissV2Request(brokerSocket, unsubReq, clientTopic, serverTopic)
 				events = 0
 		}
@@ -495,7 +494,7 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 				if events == maxEvents+1 {
 					subscriptionId := utils.ExtractSubscriptionId(vssResponse)
 					unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-					fmt.Printf(strconv.Itoa(maxEvents)+" events received. Terminating subscription session\n")
+					fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
 					performGrpcCommand(unsubReq, client)
 					break
 				}
@@ -536,7 +535,7 @@ func grpcTesterRun(grpcCommandList []string, doneChannel chan bool) {
 
 func waitForKey(message string) {
 	var anyKey string
-	fmt.Printf(message)
+	fmt.Printf("%s", message)
 	fmt.Scanf("%s", &anyKey)
 }
 

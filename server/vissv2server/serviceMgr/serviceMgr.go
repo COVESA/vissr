@@ -1904,7 +1904,7 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			// os.Exit(1) should terminate the process
 			return
 		}
-		utils.Info.Printf(addr)
+		utils.Info.Printf("%s", addr)
 		redisCli := redis.NewClient(&redis.Options{
 			Network:  "unix",
 			Addr:     addr,

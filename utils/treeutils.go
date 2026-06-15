@@ -249,7 +249,7 @@ func CreatePathListFile(pListPath string) {
 			os.Remove(pListFile)
 			VSSGetLeafNodesList(himForest[i].Handle, himForest[i].RootName, pListFile)
 			sortPathList(pListFile)
-			Info.Printf(pListFile + " created.")
+			Info.Printf("%s created.", pListFile)
 			j++
 		}
 	}

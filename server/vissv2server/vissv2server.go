@@ -28,7 +28,9 @@ import (
 	"strconv"
 	"strings"
 
+	dds "github.com/SoundMatt/go-DDS"
 	"github.com/covesa/vissr/server/vissv2server/atServer"
+	"github.com/covesa/vissr/server/vissv2server/ddsMgr"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
@@ -60,6 +62,7 @@ var serverComponents []string = []string{
 	"mqttMgr",
 	"grpcMgr",
 	"udsMgr",
+	"ddsMgr",
 	"atServer",
 }
 
@@ -67,7 +70,7 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
+ const NUMOFTRANSPORTMGRS = 6  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS
 var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
@@ -1081,6 +1084,8 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
+	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
+	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1151,6 +1156,17 @@ func main() {
 		case "udsMgr":
 			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
 			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
+		case "ddsMgr":
+			if *ddsEnable {
+				// DDS channel must be unbuffered: DdsMgrInit performs a
+				// synchronous VIN request/response on the same channel.
+				if *ddsDomain != 0 {
+					ddsMgr.SetDomain(dds.Domain(*ddsDomain))
+				}
+				transportMgrChannel[5] = make(chan string)
+				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
+				go transportDataSession(transportMgrChannel[5], transportDataChan[5], backendChan[5])
+			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
