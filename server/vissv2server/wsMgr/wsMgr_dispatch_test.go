@@ -97,6 +97,29 @@ func TestHandleWsTransportResponse_ForwardsToClient(t *testing.T) {
 	<-done
 }
 
+// TestHandleWsTransportResponse_NoRouterIdDropped is the regression for the
+// server-wide panic reported against v3.2: a service "monitoring" event with
+// no RouterId reached RemoveInternalData, which sliced response[-2:] and
+// crashed. The handler must now drop it (clientId -1) without panicking and
+// without sending to any wsClientChan.
+func TestHandleWsTransportResponse_NoRouterIdDropped(t *testing.T) {
+	transportMgrChan := make(chan string, 4)
+	// Exact shape from the crash report's server log.
+	resp := `{"action":"monitoring","path":"VehicleService.Seating.Row1.DriverSide.MoveSeat","serviceId":"769516","status":"ONGOING","ts":"2026-06-16T11:13:07Z"}`
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handleWsTransportResponse(resp, transportMgrChan) // must not panic
+	}()
+
+	select {
+	case <-done: // dropped cleanly
+	case forwarded := <-wsClientChan[0]:
+		t.Fatalf("unroutable event should be dropped, not forwarded: %q", forwarded)
+	}
+}
+
 // TestHandleWsTransportResponse_ErrorPassesThrough exercises the
 // short-circuit branch of checkCompressionResponse.
 func TestHandleWsTransportResponse_ErrorPassesThrough(t *testing.T) {

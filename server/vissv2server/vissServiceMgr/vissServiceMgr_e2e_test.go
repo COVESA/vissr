@@ -22,6 +22,7 @@ package vissServiceMgr
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/covesa/vissr/utils"
 )
@@ -155,6 +156,72 @@ func TestHandleInvoke_AppclientRequest_RoutesAndReturnsOngoing(t *testing.T) {
 		}
 	default:
 		t.Fatal("HandleInvoke produced no response")
+	}
+}
+
+// TestHandleInvoke_MonitoringEventCarriesRouterId is the regression for the
+// follow-up bug found after the path-resolution fix landed: the invoke
+// response routed fine (copyRouteFields), but the asynchronous "monitoring"
+// events emitted by the timebased ticker carried no RouterId. The transport
+// managers could not recover a clientId from them — wsMgr's RemoveInternalData
+// sliced response[-2:] and panicked the whole server. The monitoring session
+// must now remember the originating RouterId and stamp it onto every event.
+func TestHandleInvoke_MonitoringEventCarriesRouterId(t *testing.T) {
+	resetState()
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 16)
+	bcs := []chan map[string]interface{}{bc}
+
+	const routerId = "1?0"
+	req := map[string]interface{}{
+		"action": "invoke",
+		"path":   moveSeatPath,
+		"input": map[string]interface{}{
+			"MovementType": "longitudinal",
+			"Position":     "40",
+		},
+		"filter": map[string]interface{}{
+			"variant":   "timebased",
+			"parameter": map[string]interface{}{"period": "50"}, // fast ticker for the test
+		},
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    routerId,
+	}
+
+	HandleInvoke(req, bcs)
+
+	// The synchronous invoke ACK must carry the RouterId (copyRouteFields).
+	select {
+	case resp := <-bc:
+		if resp["action"] != "invoke" {
+			t.Fatalf("first message action = %v, want invoke ACK", resp["action"])
+		}
+		if resp["RouterId"] != routerId {
+			t.Errorf("invoke ACK RouterId = %v, want %q", resp["RouterId"], routerId)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleInvoke produced no invoke ACK")
+	}
+
+	// The asynchronous monitoring event(s) from the ticker must also carry it,
+	// otherwise the transport manager drops them (or, pre-fix, panicked).
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-bc:
+			if ev["action"] != "monitoring" {
+				continue
+			}
+			if ev["RouterId"] != routerId {
+				t.Fatalf("monitoring event RouterId = %v, want %q", ev["RouterId"], routerId)
+			}
+			return // success: routed monitoring event observed
+		case <-deadline:
+			t.Fatal("no monitoring event observed within 2s")
+		}
 	}
 }
 
