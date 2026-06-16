@@ -45,12 +45,13 @@ DS_Store
 .idea/
 
 
-# Server binaries
+# Server binaries (agt_server anchored to the built binary path so Go source
+# files in the like-named package dir — server/agt_server/*.go — are not ignored)
 server_core
 service_mgr
 ws_mgr
 http_mgr
-agt_server
+/server/agt_server/agt_server
 at_server
 mqtt_mgr
 vissv2server
