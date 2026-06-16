@@ -57,6 +57,10 @@ func initChannels() {
 }
 func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
+	if clientId < 0 || clientId >= NUMOFWSCLIENTS {
+		utils.Error.Printf("wsMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
+		return
+	}
 	if strings.Contains(trimmedResponse, "\"subscription\"") {
 		select {
 		case clientBackendChan[clientId] <- trimmedResponse: //subscription notification

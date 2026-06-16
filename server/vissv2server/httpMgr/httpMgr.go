@@ -21,6 +21,10 @@ var HttpClientChan = []chan string{
 
 func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
+	if clientId < 0 || clientId >= len(HttpClientChan) {
+		utils.Error.Printf("httpMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
+		return
+	}
 	HttpClientChan[clientId] <- trimmedResponse
 }
 

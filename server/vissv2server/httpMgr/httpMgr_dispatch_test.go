@@ -198,3 +198,28 @@ func TestHandleHttpClientRequest_ValidRequestForwarded(t *testing.T) {
 	}
 	<-done
 }
+
+// TestHandleHttpTransportResponse_NoRouterIdDropped is the regression for the
+// server-wide panic reported against v3.2: a service "monitoring" event with
+// no RouterId reached RemoveInternalData (clientId -1) and used to index
+// HttpClientChan[-1]. The handler must now drop it without panicking and
+// without sending to any client channel.
+func TestHandleHttpTransportResponse_NoRouterIdDropped(t *testing.T) {
+	for len(HttpClientChan[0]) > 0 {
+		<-HttpClientChan[0]
+	}
+	transportMgrChan := make(chan string, 4)
+	resp := `{"action":"monitoring","path":"VehicleService.Seating.Row1.DriverSide.MoveSeat","serviceId":"769516","status":"ONGOING","ts":"2026-06-16T11:13:07Z"}`
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handleHttpTransportResponse(resp, transportMgrChan) // must not panic
+	}()
+
+	select {
+	case <-done: // dropped cleanly
+	case forwarded := <-HttpClientChan[0]:
+		t.Fatalf("unroutable event should be dropped, not forwarded: %q", forwarded)
+	}
+}
