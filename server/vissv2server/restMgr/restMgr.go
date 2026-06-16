@@ -38,6 +38,10 @@ var (
 	mgrIdGlobal int
 )
 
+// responseTimeout bounds how long a handler waits for the hub to reply before
+// returning a gateway-timeout. A package var so tests can shorten it.
+var responseTimeout = 10 * time.Second
+
 // sseEntry tracks one active SSE subscription.
 type sseEntry struct {
 	cancel context.CancelFunc
@@ -144,7 +148,10 @@ func handleSet(w http.ResponseWriter, r *http.Request, signalPath string, ch cha
 // handleMetadata serves GET /viss/v2/metadata/{path}
 func handleMetadata(w http.ResponseWriter, r *http.Request, signalPath string, ch chan string) {
 	requestID := newRequestID()
-	reqJSON := fmt.Sprintf(`{"action":"get","path":"%s","filter":{"variant":"metadata"},"requestId":"%s"}`,
+	// The metadata filter requires a "parameter" (schema: string|array). Without
+	// it the request fails JSON-schema validation and the endpoint always 400s.
+	// "static" requests the static metadata tree for the node.
+	reqJSON := fmt.Sprintf(`{"action":"get","path":"%s","filter":{"variant":"metadata","parameter":"static"},"requestId":"%s"}`,
 		signalPath, requestID)
 	w.Header().Set("Content-Type", "application/json")
 	dispatch(w, reqJSON, requestID, ch)
@@ -187,7 +194,7 @@ func handleSubscribe(w http.ResponseWriter, r *http.Request, signalPath string, 
 			fmt.Fprint(w, ack)
 			return
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(responseTimeout):
 		http.Error(w, `{"error":{"number":503,"reason":"service_unavailable","message":"subscribe timeout"}}`, http.StatusServiceUnavailable)
 		return
 	case <-r.Context().Done():
@@ -319,7 +326,7 @@ func dispatch(w http.ResponseWriter, reqJSON, requestID string, ch chan string) 
 	select {
 	case resp := <-entry.ch:
 		fmt.Fprint(w, resp)
-	case <-time.After(10 * time.Second):
+	case <-time.After(responseTimeout):
 		w.WriteHeader(http.StatusGatewayTimeout)
 		fmt.Fprint(w, `{"error":{"number":503,"reason":"service_unavailable","message":"request timeout"}}`)
 	}
