@@ -196,17 +196,57 @@ func TestCopyMap_Independent(t *testing.T) {
 // ---- copyRouteFields -------------------------------------------------------
 
 func TestCopyRouteFields(t *testing.T) {
-	src := map[string]interface{}{"RouterId": "1?x", "routerIndex": 3, "other": "skip"}
+	src := map[string]interface{}{"RouterId": "1?x", "routerId": "9?9", "routerIndex": 3, "other": "skip"}
 	dst := map[string]interface{}{}
 	copyRouteFields(src, dst)
 	if dst["RouterId"] != "1?x" {
 		t.Error("RouterId not copied")
 	}
-	if dst["routerIndex"] != 3 {
-		t.Error("routerIndex not copied")
+	if dst["routerId"] != "9?9" {
+		t.Error("routerId not copied")
+	}
+	// routerIndex is a server-internal channel index and must NOT be copied
+	// onto a response — it would leak to the client (e.g. "routerIndex":1 in
+	// an invoke reply).
+	if _, ok := dst["routerIndex"]; ok {
+		t.Error("routerIndex leaked onto response — must not be copied")
 	}
 	if _, ok := dst["other"]; ok {
 		t.Error("unexpected key copied")
+	}
+}
+
+// TestHandleInvoke_ResponseHasNoRouterIndex is the regression for the leak:
+// an invoke reply forwarded to the client must not carry the internal
+// routerIndex field.
+func TestHandleInvoke_ResponseHasNoRouterIndex(t *testing.T) {
+	resetState()
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 8)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action":      "invoke",
+		"path":        moveSeatPath,
+		"input":       map[string]interface{}{"MovementType": "longitudinal", "Position": "40"},
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    "1?0",
+	}
+
+	HandleInvoke(req, bcs)
+
+	select {
+	case resp := <-bc:
+		if _, ok := resp["routerIndex"]; ok {
+			t.Errorf("invoke response leaked internal routerIndex: %v", resp)
+		}
+		if resp["RouterId"] != "1?0" {
+			t.Errorf("RouterId missing from response: %v", resp["RouterId"])
+		}
+	default:
+		t.Fatal("HandleInvoke produced no response")
 	}
 }
 
