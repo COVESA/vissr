@@ -89,34 +89,41 @@ func main() {
 		os.Exit(1)
 	}
 
-	switch *version {
-	case "2.2", "2.3", "3.0.1":
-	default:
-		fmt.Fprintf(os.Stderr, "unsupported SPDX version %q (use 2.2, 2.3, or 3.0.1)\n", *version)
+	if err := run(*version, *format, *outPath, *docName, *ns, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
 
-	switch *format {
+// run validates the options, enumerates module dependencies, builds the SPDX
+// document and writes it to outPath (or to stdout when outPath is ""). It is
+// the testable core of main(): main() only wires argparse flags to it.
+func run(version, format, outPath, docName, ns string, stdout io.Writer) error {
+	switch version {
+	case "2.2", "2.3", "3.0.1":
+	default:
+		return fmt.Errorf("unsupported SPDX version %q (use 2.2, 2.3, or 3.0.1)", version)
+	}
+
+	switch format {
 	case "tv", "json":
 	default:
-		fmt.Fprintf(os.Stderr, "unsupported format %q (use tv or json)\n", *format)
-		os.Exit(1)
+		return fmt.Errorf("unsupported format %q (use tv or json)", format)
 	}
 
 	pkgs, err := goListPackages()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "go list: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("go list: %w", err)
 	}
 
-	namespace := *ns
+	namespace := ns
 	if namespace == "" {
-		namespace = "https://spdx.org/spdxdocs/" + *docName + "-" + timestamp()
+		namespace = "https://spdx.org/spdxdocs/" + docName + "-" + timestamp()
 	}
 
 	doc := Document{
-		SpecVersion:  *version,
-		DocumentName: *docName,
+		SpecVersion:  version,
+		DocumentName: docName,
 		SPDXID:       "SPDXRef-DOCUMENT",
 		Namespace:    namespace,
 		Created:      time.Now().UTC().Format(time.RFC3339),
@@ -125,31 +132,23 @@ func main() {
 		Packages:     pkgs,
 	}
 
-	var w io.Writer = os.Stdout
-	if *outPath != "" {
-		if err := os.MkdirAll(filepath.Dir(*outPath), 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "mkdir: %v\n", err)
-			os.Exit(1)
+	w := stdout
+	if outPath != "" {
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("mkdir: %w", err)
 		}
-		f, err := os.Create(*outPath)
+		f, err := os.Create(outPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "create %s: %v\n", *outPath, err)
-			os.Exit(1)
+			return fmt.Errorf("create %s: %w", outPath, err)
 		}
 		defer f.Close()
 		w = f
 	}
 
-	switch *format {
-	case "json":
-		err = writeJSON(w, doc)
-	default:
-		err = writeTV(w, doc)
+	if format == "json" {
+		return writeJSON(w, doc)
 	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "write: %v\n", err)
-		os.Exit(1)
-	}
+	return writeTV(w, doc)
 }
 
 // ── go list integration ───────────────────────────────────────────────────────
