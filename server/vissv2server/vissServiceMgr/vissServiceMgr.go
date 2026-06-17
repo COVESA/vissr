@@ -921,8 +921,15 @@ func extractRouterId(requestMap map[string]interface{}) string {
 	return ""
 }
 
+// copyRouteFields copies the client-addressing RouterId from a request onto a
+// response so the transport manager can route it back and then strip it
+// (RemoveInternalData). It deliberately does NOT copy "routerIndex": that is a
+// server-internal transport-channel index injected by serveRequest and read
+// only from the request (extractRouterIndex). Copying it onto the response
+// leaked it to clients, who would receive e.g. "routerIndex":1 in an invoke
+// reply. No transport manager strips routerIndex, so it must never be added.
 func copyRouteFields(src, dst map[string]interface{}) {
-	for _, k := range []string{"RouterId", "routerId", "routerIndex"} {
+	for _, k := range []string{"RouterId", "routerId"} {
 		if v, ok := src[k]; ok {
 			dst[k] = v
 		}
