@@ -783,11 +783,9 @@ func TestSetTokenErrorResponse_PopulatesErrorMap(t *testing.T) {
 		"action": "get",
 		"path":   "Vehicle.Speed",
 	}
-	// Clean global side-effect from any prior test.
-	errorResponseMap = map[string]interface{}{}
-	setTokenErrorResponse(req, 1)
-	if errorResponseMap["error"] == nil {
-		t.Errorf("expected error populated; got %+v", errorResponseMap)
+	resp := setTokenErrorResponse(req, 1)
+	if resp["error"] == nil {
+		t.Errorf("expected error populated; got %+v", resp)
 	}
 }
 

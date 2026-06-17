@@ -27,6 +27,7 @@ package main
 import (
 	"os"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,15 +47,41 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// resetErrorResponseMap clears the shared errorResponseMap between
-// tests so leftover keys from a previous case don't taint the next
-// assertion. (errorResponseMap is a package-level global; the
-// production code mutates it in place under the assumption that only
-// one request is being processed at a time.)
-func resetErrorResponseMap() {
-	for k := range errorResponseMap {
-		delete(errorResponseMap, k)
+// TestErrorResponsesAreDistinctMaps guards against the concurrent-map fatal
+// fixed here: error responses used to reuse one package-global map, written on
+// the main goroutine while transportDataSession marshaled it asynchronously
+// (FinalizeMessage delete + json.Marshal). Each error response must now be a
+// freshly-allocated map so no two share storage.
+func TestErrorResponsesAreDistinctMaps(t *testing.T) {
+	req := map[string]interface{}{"action": "get", "requestId": "1", "RouterId": "0?0"}
+	a := newErrorResponse(req, 0, "")
+	b := newErrorResponse(req, 1, "")
+	if reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer() {
+		t.Fatal("error responses share the same map instance (shared-global regression)")
 	}
+	delete(a, "error") // as FinalizeMessage would mutate
+	if _, ok := b["error"]; !ok {
+		t.Error("mutating one error response affected another — maps are shared")
+	}
+}
+
+// TestErrorResponseProduceAndMarshalNoRace reproduces the production pipeline
+// (produce on one goroutine, FinalizeMessage on others) at volume. With the
+// former shared global this triggered "concurrent map iteration and map write";
+// with per-response maps it is race-free.
+func TestErrorResponseProduceAndMarshalNoRace(t *testing.T) {
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 3000; i++ {
+				req := map[string]interface{}{"action": "get", "requestId": "x", "RouterId": "1?0", "origin": "external"}
+				_ = utils.FinalizeMessage(newErrorResponse(req, 0, ""))
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // TestIsInternalAction covers the predicate that decides whether a
@@ -163,7 +190,6 @@ func TestSetErrorAndForward(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resetErrorResponseMap()
 			// Drain any leftover messages on backendChan[0].
 			drainBackendChan()
 
