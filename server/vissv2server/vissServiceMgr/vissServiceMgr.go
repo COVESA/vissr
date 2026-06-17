@@ -119,8 +119,9 @@ type monitorSession struct {
 	sessionId    string
 	serviceId    string // which invocation is being watched
 	path         string
-	isInvoke     bool // true = session owner invoked; false = monitor-only
-	routerIndex  int
+	isInvoke     bool   // true = session owner invoked; false = monitor-only
+	routerIndex  int    // transport-manager channel index (which transport)
+	routerId     string // originating "mgrId?clientId" (which client within it)
 	filterKind   string
 	filterPeriod time.Duration // >0 for timebased
 	lastEventAt  time.Time
@@ -224,6 +225,9 @@ func startTimebasedTicker(sess *monitorSession, period time.Duration,
 					"status":    string(inv.status),
 					"ts":        getTimestamp(),
 				}
+				if sess.routerId != "" {
+					event["RouterId"] = sess.routerId // address the event back to the requesting client
+				}
 				if inv.outdata != nil {
 					event["outdata"] = copyMap(inv.outdata)
 				}
@@ -296,6 +300,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 			path:        path,
 			isInvoke:    true,
 			routerIndex: tDChanIndex,
+			routerId:    extractRouterId(requestMap),
 			filterKind:  filterVariant,
 		}
 		if filterVariant == "timebased" {
@@ -370,6 +375,7 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 			path:        path,
 			isInvoke:    false,
 			routerIndex: tDChanIndex,
+			routerId:    extractRouterId(requestMap),
 			filterKind:  filterVariant,
 		}
 		if filterVariant == "timebased" {
@@ -629,6 +635,9 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 			"serviceId": t.sess.sessionId,
 			"status":    string(status),
 			"ts":        ts,
+		}
+		if t.sess.routerId != "" {
+			event["RouterId"] = t.sess.routerId // address the event back to the requesting client
 		}
 		if outdataWrapped != nil {
 			event["outdata"] = outdataWrapped
