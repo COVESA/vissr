@@ -69,16 +69,11 @@ func TestWsClientServer_RealSocketDeliversSyncResponseAndAsyncPush(t *testing.T)
 	if err != nil {
 		t.Fatalf("websocket dial: %v", err)
 	}
-	defer conn.Close()
-
-	// Keep a reader draining the frontend's per-client channel after the test so
-	// the frontend goroutine's shutdown sends (on conn close) never block.
-	defer func() {
-		go func() {
-			for range appClientChannel[clientId] {
-			}
-		}()
-	}()
+	// Close the connection and wait for its slot to be returned at test end, so
+	// a lingering frontend goroutine can't free the slot during a later test.
+	t.Cleanup(func() {
+		awaitWsConnCleanup(conn, appClientChannel[clientId], clientBackendChannel[clientId], clientId)
+	})
 
 	// --- 1. Synchronous request/response over the real socket ---------------
 	// Emulate the server core: read the request the frontend forwards, then send
