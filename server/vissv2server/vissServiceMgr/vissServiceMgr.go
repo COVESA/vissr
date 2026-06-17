@@ -908,6 +908,19 @@ func extractRouterIndex(requestMap map[string]interface{}) int {
 	return 0
 }
 
+// extractRouterId returns the originating "mgrId?clientId" RouterId string from
+// a request so that asynchronous monitoring events can be addressed back to the
+// requesting client. Without it the transport managers cannot recover a
+// clientId and (post-fix) drop the event. Returns "" when absent.
+func extractRouterId(requestMap map[string]interface{}) string {
+	for _, k := range []string{"RouterId", "routerId"} {
+		if v, ok := requestMap[k].(string); ok {
+			return v
+		}
+	}
+	return ""
+}
+
 // copyRouteFields copies the client-addressing RouterId from a request onto a
 // response so the transport manager can route it back and then strip it
 // (RemoveInternalData). It deliberately does NOT copy "routerIndex": that is a
