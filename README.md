@@ -69,6 +69,20 @@ See the tutorial for more information.
 ## Unit  testing
 Described in [TESTING.md](https://github.com/COVESA/vissr/blob/master/TESTING.md).
 
+## Branch policy
+The main principle is that the master branch shall featurewise be in synch with the latest version of the VISS specification.
+Experimental features that are not supported in the specification shall be kept on topic branches.
+If/when the experimental features on a topic branch become supported in the specification then the branch shall be merged to the master branch.
+The list below shows the current set of branches.
+* master: features that are not dependent on new features introduced on the branches below.
+* v3.1.5: features related to DDS support. Branched off master.
+* v3.2: features related to VISS Service profile support. Branched off master.
+* v4.0: features related to VDM support. Branched off v3.2.
+
+Features pushed to master shall be merged to the v3.1.5, v3.2 and v4.0 branches.
+Features pushed to v3.1.5 shall be merged to the v3.2 and v4.0 branches.
+Features pushed to v3.2 shall be merged to the v4.0 branch.
+
 ## Contributors
 VISSR is an open standard and we invite anybody to contribute. Currently VISSR contains - among others - significant  contributions from
 
