@@ -428,7 +428,10 @@ func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transport
 	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
 }
 
-func WsMgrInit(mgrId int, transportMgrChan chan string) {
+// WsMgrInit runs the WebSocket transport hub. reqChan carries client requests
+// to the server core; respChan carries responses back from the core. They are
+// separate channels so a response can never be read back here as a request.
+func WsMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	var reqMessage string
 	var clientId int
 	utils.ReadTransportSecConfig()
@@ -440,8 +443,8 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
-			handleWsTransportResponse(respMessage, transportMgrChan)
+		case respMessage := <-respChan:
+			handleWsTransportResponse(respMessage, respChan)
 			continue
 		case reqMessage = <-wsClientChan[0]: clientId = 0
 		case reqMessage = <-wsClientChan[1]: clientId = 1
@@ -464,6 +467,6 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-wsClientChan[18]: clientId = 18
 		case reqMessage = <-wsClientChan[19]: clientId = 19
 		}
-		handleWsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleWsClientRequest(reqMessage, mgrId, clientId, reqChan)
 	}
 }

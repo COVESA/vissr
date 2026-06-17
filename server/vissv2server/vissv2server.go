@@ -68,7 +68,8 @@ var serverComponents []string = []string{
  * If support for new transport protocol is added, add element to channel
  */
  const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
-var transportMgrChannel []chan string
+var transportMgrChannel []chan string // requests, transport mgr -> core (read by transportDataSession)
+var toTransportChannel []chan string   // responses, core -> transport mgr (written by transportDataSession)
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
 
@@ -122,11 +123,25 @@ func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDa
 	}
 }
 
-func transportDataSession(transportMgrChannel chan string, transportDataChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
+// transportDataSession bridges one transport manager and the server core.
+// reqChan carries inbound client requests (transport mgr -> core) and is read
+// here; respChan carries outbound responses/events (core -> transport mgr) and
+// is written here. The two directions MUST be separate channels.
+//
+// Previously a single channel was shared bidirectionally. Because that channel
+// was buffered, after this goroutine wrote a response it could read it straight
+// back from its own select (an echo/loopback) before the transport manager's
+// goroutine took it. The looped-back message was then treated as a fresh
+// inbound request: high-frequency service "monitoring" events were re-injected
+// into serveRequest, running a binary-tree search on every event and never
+// reaching the client. Two unidirectional channels remove the ambiguity — each
+// has exactly one sender and one receiver, so a message can only ever flow the
+// intended way.
+func transportDataSession(reqChan chan string, respChan chan string, transportDataChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
 	for {
 		select {
 
-		case msg := <-transportMgrChannel:
+		case msg := <-reqChan:
 			var msgMap map[string]interface{}
 			utils.MapRequest(msg, &msgMap)
 			// Bug fix: previously unconditional send could wedge the per-transport
@@ -139,7 +154,7 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 			}
 		case message := <-backendChannel:
 			select {
-			case transportMgrChannel <- utils.FinalizeMessage(message):
+			case respChan <- utils.FinalizeMessage(message):
 			default:
 				utils.Error.Printf("server hub: Event dropped")
 			}
@@ -1035,19 +1050,19 @@ func initChannels() {
 	serviceDataChan = make([]chan map[string]interface{}, 1)
 	serviceDataChan[0] = make(chan map[string]interface{}, pipelineBuf)
 	transportMgrChannel = make([]chan string, NUMOFTRANSPORTMGRS)
+	toTransportChannel = make([]chan string, NUMOFTRANSPORTMGRS)
 	transportDataChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
 	backendChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
 	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
-		transportMgrChannel[i] = make(chan string, pipelineBuf)
+		transportMgrChannel[i] = make(chan string, pipelineBuf) // requests: transport mgr -> core
+		toTransportChannel[i] = make(chan string, pipelineBuf)  // responses: core -> transport mgr
 		transportDataChan[i] = make(chan map[string]interface{}, pipelineBuf)
 		backendChan[i] = make(chan map[string]interface{}, pipelineBuf)
 	}
-	// MQTT's channel must stay unbuffered. MqttMgrInit performs a synchronous
-	// VIN-fetch by sending on and receiving from the same channel in one
-	// goroutine. A buffered channel causes an echo: the goroutine reads its own
-	// send before transportDataSession can consume it. Unbuffered forces the
-	// send to block until transportDataSession reads, preserving ordering.
-	transportMgrChannel[2] = make(chan string)
+	// Note: with the request and response directions on separate channels,
+	// buffering is safe for every transport (each channel has a single sender
+	// and a single receiver). The old MQTT "must stay unbuffered to avoid an
+	// echo on the shared channel" special case is no longer needed.
 	atsChannel = make([]chan string, 2)
 	atsChannel[0] = make(chan string) // access token verification (serialized by atsChannelMu)
 	atsChannel[1] = make(chan string) // token cancellation
@@ -1130,24 +1145,24 @@ func main() {
 	for _, serverComponent := range serverComponents {
 		switch serverComponent {
 		case "httpMgr":
-			go httpMgr.HttpMgrInit(0, transportMgrChannel[0])
-			go transportDataSession(transportMgrChannel[0], transportDataChan[0], backendChan[0])
+			go httpMgr.HttpMgrInit(0, transportMgrChannel[0], toTransportChannel[0])
+			go transportDataSession(transportMgrChannel[0], toTransportChannel[0], transportDataChan[0], backendChan[0])
 		case "wsMgr":
-			go wsMgr.WsMgrInit(1, transportMgrChannel[1])
-			go transportDataSession(transportMgrChannel[1], transportDataChan[1], backendChan[1])
+			go wsMgr.WsMgrInit(1, transportMgrChannel[1], toTransportChannel[1])
+			go transportDataSession(transportMgrChannel[1], toTransportChannel[1], transportDataChan[1], backendChan[1])
 		case "wsMgrFT":
 			go wsMgrFT.WsMgrFTInit(ftChannel)
 		case "mqttMgr":
 			if *mqttEnable {
-				go mqttMgr.MqttMgrInit(2, transportMgrChannel[2])
-				go transportDataSession(transportMgrChannel[2], transportDataChan[2], backendChan[2])
+				go mqttMgr.MqttMgrInit(2, transportMgrChannel[2], toTransportChannel[2])
+				go transportDataSession(transportMgrChannel[2], toTransportChannel[2], transportDataChan[2], backendChan[2])
 			}
 		case "grpcMgr":
-			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3])
-			go transportDataSession(transportMgrChannel[3], transportDataChan[3], backendChan[3])
+			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3], toTransportChannel[3])
+			go transportDataSession(transportMgrChannel[3], toTransportChannel[3], transportDataChan[3], backendChan[3])
 		case "udsMgr":
-			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
-			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
+			go udsMgr.UdsMgrInit(4, transportMgrChannel[4], toTransportChannel[4])
+			go transportDataSession(transportMgrChannel[4], toTransportChannel[4], transportDataChan[4], backendChan[4])
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
