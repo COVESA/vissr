@@ -418,9 +418,9 @@ func TestGetVissV2Topic_EnvVarFastPath(t *testing.T) {
 	os.Setenv("MQTT_VIN", "TESTVIN123")
 	defer os.Unsetenv("MQTT_VIN")
 
-	// We pass a nil channel: if the code tried to use the channel it
-	// would panic — so this also proves the fast path is taken.
-	got := getVissV2Topic(nil, 0)
+	// We pass nil channels: if the code tried to use them it would
+	// panic — so this also proves the fast path is taken.
+	got := getVissV2Topic(nil, nil, 0)
 	want := "/TESTVIN123/Vehicle"
 	if got != want {
 		t.Fatalf("getVissV2Topic with MQTT_VIN = %q; want %q", got, want)
@@ -428,22 +428,24 @@ func TestGetVissV2Topic_EnvVarFastPath(t *testing.T) {
 }
 
 // TestGetVissV2Topic_ChannelPath: with no MQTT_VIN env var set,
-// getVissV2Topic sends the VIN request on the channel and waits for
-// a response. We simulate the server core with a goroutine.
+// getVissV2Topic sends the VIN request on reqChan and waits for a response
+// on respChan. We simulate the server core with a goroutine. Note the request
+// and response now travel on separate channels — no shared-channel echo risk,
+// so the channels may be buffered.
 func TestGetVissV2Topic_ChannelPath(t *testing.T) {
 	os.Unsetenv("MQTT_VIN")
 
-	// Use an unbuffered channel to match the production constraint.
-	ch := make(chan string)
+	reqChan := make(chan string, 1)
+	respChan := make(chan string, 1)
 	vinResp := `{"action":"get","data":{"dp":{"value":"WVWZZZ1JZ3W386752","ts":"2026-01-01T00:00:00Z"}}}`
 
 	// Simulate the server core: consume the VIN request and reply.
 	go func() {
-		<-ch       // consume the VIN request sent by getVissV2Topic
-		ch <- vinResp // send the VIN response
+		<-reqChan          // consume the VIN request sent by getVissV2Topic
+		respChan <- vinResp // send the VIN response
 	}()
 
-	got := getVissV2Topic(ch, 2)
+	got := getVissV2Topic(reqChan, respChan, 2)
 	want := "/WVWZZZ1JZ3W386752/Vehicle"
 	if got != want {
 		t.Fatalf("getVissV2Topic channel path = %q; want %q", got, want)
@@ -455,16 +457,17 @@ func TestGetVissV2Topic_ChannelPath(t *testing.T) {
 func TestGetVissV2Topic_ChannelPathInvalidVin(t *testing.T) {
 	os.Unsetenv("MQTT_VIN")
 
-	ch := make(chan string)
+	reqChan := make(chan string, 1)
+	respChan := make(chan string, 1)
 	// Response with a VIN containing MQTT wildcards — should be rejected.
 	badVinResp := `{"action":"get","data":{"dp":{"value":"+bad#vin","ts":"2026-01-01T00:00:00Z"}}}`
 
 	go func() {
-		<-ch
-		ch <- badVinResp
+		<-reqChan
+		respChan <- badVinResp
 	}()
 
-	got := getVissV2Topic(ch, 2)
+	got := getVissV2Topic(reqChan, respChan, 2)
 	if got != "" {
 		t.Fatalf("getVissV2Topic with invalid VIN = %q; want \"\"", got)
 	}
@@ -651,15 +654,16 @@ func TestGetVissV2Topic_TimeoutPath(t *testing.T) {
 	t.Parallel()
 	os.Unsetenv("MQTT_VIN")
 
-	ch := make(chan string) // unbuffered, matches production constraint
+	reqChan := make(chan string, 1)
+	respChan := make(chan string, 1)
 
-	// Consume the outgoing VIN request but never reply.
+	// Consume the outgoing VIN request but never reply on respChan.
 	go func() {
-		<-ch // drain the send; never send back
+		<-reqChan // drain the send; never send back
 	}()
 
 	start := time.Now()
-	got := getVissV2Topic(ch, 99)
+	got := getVissV2Topic(reqChan, respChan, 99)
 	elapsed := time.Since(start)
 
 	if got != "" {

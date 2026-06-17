@@ -636,7 +636,11 @@ func isKillSubscriptions(reqMessage string) bool {
 	return action == "internal-killsubscriptions"
 }
 
-func UdsMgrInit(mgrId int, transportMgrChan chan string) {
+// UdsMgrInit runs the Unix-domain-socket transport hub. reqChan carries client
+// requests to the server core; respChan carries responses back from the core.
+// They are separate channels so a response can never be read back here as a
+// request.
+func UdsMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	var reqMessage string
 	var clientId int
 	utils.ReadTransportSecConfig()
@@ -648,8 +652,8 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
-			handleUdsTransportResponse(respMessage, transportMgrChan)
+		case respMessage := <-respChan:
+			handleUdsTransportResponse(respMessage, respChan)
 			continue
 		// NOTE: the case list below is hand-coupled to NUMOFUDSCLIENTS. If
 		// NUMOFUDSCLIENTS changes, this select must change to match - extend
@@ -695,7 +699,7 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-udsClientChan[19]:
 			clientId = 19
 		}
-		handleUdsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleUdsClientRequest(reqMessage, mgrId, clientId, reqChan)
 	}
 }
 
