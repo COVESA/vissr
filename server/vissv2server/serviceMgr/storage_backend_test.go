@@ -29,7 +29,39 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/go-redis/redis"
 )
+
+// TestRedisBackend_GetConnectionError covers the redisBackend.Get error branch
+// without a live server: a client pointed at a closed port fails the GET (a
+// non-"redis: nil" error) and the adapter must return the Database-error
+// sentinel JSON rather than panic. (The success and cache-miss branches need a
+// real redis and stay integration-only.)
+func TestRedisBackend_GetConnectionError(t *testing.T) {
+	c := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 200 * time.Millisecond})
+	defer c.Close()
+	got := newRedisBackend(c, nil).Get("Vehicle.Speed")
+	if !strings.Contains(got, "Database-error") {
+		t.Errorf("expected Database-error sentinel on connection failure, got %q", got)
+	}
+	if !strings.Contains(got, `"ts"`) {
+		t.Errorf("sentinel missing ts field: %q", got)
+	}
+}
+
+// TestMemcacheBackend_GetConnectionError covers the memcacheBackend.Get error
+// branch the same way: a dead-port client yields a non-"cache miss" error and
+// the adapter returns the Database-error sentinel.
+func TestMemcacheBackend_GetConnectionError(t *testing.T) {
+	mc := memcache.New("127.0.0.1:1")
+	mc.Timeout = 200 * time.Millisecond
+	got := newMemcacheBackend(mc, nil).Get("Vehicle.Speed")
+	if !strings.Contains(got, "Database-error") && !strings.Contains(got, "Data-not-available") {
+		t.Errorf("expected sentinel JSON on connection failure, got %q", got)
+	}
+}
 
 // fakeBackend is a test double implementing StorageBackend. Use it
 // to verify that getVehicleData / setVehicleData dispatch correctly
