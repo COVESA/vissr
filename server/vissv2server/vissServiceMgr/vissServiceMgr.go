@@ -273,7 +273,48 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 
 	authToken, _ := requestMap["authorization"].(string)
 
-	deadline := time.Now().Add(timeoutFromRequest(requestMap))
+	// Built-in (in-process) simulation: used only when no external service
+	// process has registered for this path (instance paths resolve too). It
+	// lets the demo run without a separate service binary and, crucially, makes
+	// the invocation actually terminate instead of emitting content-less
+	// ONGOING events until the timeout watchdog fires.
+	var builtinRun func(string, []chan map[string]interface{})
+	var builtinMinDuration time.Duration
+	if resolveRegistration(path) == nil {
+		if bh, ok := builtinServices[procedureName(path)]; ok {
+			decision := bh(path, inputParams)
+			switch {
+			case decision.errNum != "":
+				sendServiceError(bc, "invoke", requestId, "", StatusFailed,
+					decision.errNum, decision.errReason, decision.errDesc, requestMap)
+				return
+			case decision.immediate != "":
+				ts := getTimestamp()
+				response := map[string]interface{}{
+					"action":    "invoke",
+					"path":      path,
+					"status":    string(decision.immediate),
+					"requestId": requestId,
+					"ts":        ts,
+				}
+				if decision.outdata != nil {
+					response["outdata"] = map[string]interface{}{"output": decision.outdata, "ts": ts}
+				}
+				copyRouteFields(requestMap, response)
+				bc <- response
+				return
+			default:
+				builtinRun = decision.run
+				builtinMinDuration = decision.minDuration
+			}
+		}
+	}
+
+	timeout := timeoutFromRequest(requestMap)
+	if builtinMinDuration > timeout {
+		timeout = builtinMinDuration
+	}
+	deadline := time.Now().Add(timeout)
 
 	mu.Lock()
 	ts := getTimestamp()
@@ -313,7 +354,11 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	inv.cancelFn = startTimeoutWatchdog(inv, backendChans)
 	mu.Unlock()
 
-	forwardInvokeToService(path, serviceId, inputParams, authToken)
+	if builtinRun != nil {
+		go builtinRun(serviceId, backendChans)
+	} else {
+		forwardInvokeToService(path, serviceId, inputParams, authToken)
+	}
 
 	response := map[string]interface{}{
 		"action":    "invoke",

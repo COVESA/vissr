@@ -331,13 +331,58 @@ func handleHealth(msg map[string]interface{}, sc *serviceConn) {
 	utils.Info.Printf("serviceReg: health update for %q: healthy=%v", sc.path, healthy)
 }
 
+// resolveRegistration returns the service connection registered for path, or
+// nil. It matches either exactly, or via instance generalization: a service
+// that registers a template path (e.g. VehicleService.Seating.MoveSeat) also
+// serves instance paths (e.g. VehicleService.Seating.Row1.DriverSide.MoveSeat)
+// whose template is an ordered sub-sequence of the instance path's segments,
+// sharing the same root and procedure name. The most specific (longest) match
+// wins. It acquires regMu itself; callers must not hold it.
+func resolveRegistration(path string) *serviceConn {
+	regMu.Lock()
+	defer regMu.Unlock()
+	if sc := registrations[path]; sc != nil {
+		return sc
+	}
+	instSeg := strings.Split(path, ".")
+	var best *serviceConn
+	bestLen := -1
+	for rp, sc := range registrations {
+		tmplSeg := strings.Split(rp, ".")
+		if len(tmplSeg) >= len(instSeg) {
+			continue // exact-length already handled by the direct lookup above
+		}
+		if isInstanceGeneralization(tmplSeg, instSeg) && len(tmplSeg) > bestLen {
+			best, bestLen = sc, len(tmplSeg)
+		}
+	}
+	return best
+}
+
+// isInstanceGeneralization reports whether tmpl is an instance generalization
+// of inst: same root segment, same procedure (last) segment, and tmpl is an
+// ordered sub-sequence of inst.
+func isInstanceGeneralization(tmpl, inst []string) bool {
+	if len(tmpl) == 0 || len(inst) == 0 {
+		return false
+	}
+	if tmpl[0] != inst[0] || tmpl[len(tmpl)-1] != inst[len(inst)-1] {
+		return false
+	}
+	i := 0
+	for _, seg := range inst {
+		if i < len(tmpl) && tmpl[i] == seg {
+			i++
+		}
+	}
+	return i == len(tmpl)
+}
+
 // forwardInvokeToService sends an invoke notification to the registered service
 // process for path (if any). authToken is forwarded from the client request so
 // services can perform their own access checks (VISSv3.3 §21).
 func forwardInvokeToService(path, serviceId string, input map[string]interface{}, authToken string) {
-	regMu.Lock()
-	sc := registrations[path]
-	regMu.Unlock()
+	sc := resolveRegistration(path)
 	if sc == nil {
 		return // no service registered; caller must handle via UpdateServiceState
 	}
@@ -356,9 +401,7 @@ func forwardInvokeToService(path, serviceId string, input map[string]interface{}
 // forwardCancelToService notifies the registered service process that
 // invocation serviceId has been cancelled so it can stop cleanly (VISSv3.3 §26).
 func forwardCancelToService(path, serviceId string) {
-	regMu.Lock()
-	sc := registrations[path]
-	regMu.Unlock()
+	sc := resolveRegistration(path)
 	if sc == nil {
 		return
 	}
