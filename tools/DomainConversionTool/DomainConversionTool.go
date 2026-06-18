@@ -192,6 +192,10 @@ func getInternalToolNbdTableNames() (string, string) {
 		fmt.Printf("getInternalToolNbdTableNames: SQL query error=%s\n", err)
 		return "", ""
 	}
+	// defer Close so the connection is released on every path; the previous
+	// code leaked rows on the scan-error return, which held a read lock and
+	// could block a following write (SQLITE_BUSY).
+	defer rows.Close()
 	var nbdTableName string
 	var sbdTableName string
 
@@ -201,7 +205,6 @@ func getInternalToolNbdTableNames() (string, string) {
 		fmt.Printf("getInternalToolNbdTableNames: SQL result scan error=%s\n", err)
 		return "", ""
 	}
-	rows.Close()
 	return nbdTableName, sbdTableName
 }
 
@@ -573,6 +576,7 @@ func getDomainData(tbl string, signalName string) ToolConversionData {
 		fmt.Printf("getDomainData: SQL query error=%s\n", err)
 		return data
 	}
+	defer rows.Close() // release the connection on every path (was leaked on scan error)
 
 	rows.Next()
 	err = rows.Scan(&(data.Name), &(data.Type), &(data.Datatype), &(data.Unit), &(data.EnumValues))
@@ -580,7 +584,6 @@ func getDomainData(tbl string, signalName string) ToolConversionData {
 		fmt.Printf("getDomainData: SQL result scan error=%s\n", err)
 		return data
 	}
-	rows.Close()
 	return data
 }
 
@@ -938,6 +941,7 @@ func readMapElementDatamodel(nbd string, mapSignalName string) DomainData {
 		fmt.Printf("readMapElementDatamodel: SQL query error=%s\n", err)
 		return (DomainData{})
 	}
+	defer rows.Close() // release the connection on every path (was leaked on scan error)
 
 	rows.Next()
 	var node DomainData
@@ -947,7 +951,6 @@ func readMapElementDatamodel(nbd string, mapSignalName string) DomainData {
 		fmt.Printf("readMapElementDatamodel: SQL result scan error=%s\n", err)
 		return (DomainData{})
 	}
-	rows.Close()
 	return node
 }
 
@@ -958,6 +961,7 @@ func readDomainDatamodel(nbd string) []DomainData {
 		fmt.Printf("readDomainDatamodel: SQL query error=%s\n", err)
 		return nil
 	}
+	defer rows.Close() // release the connection on every path (was leaked on scan error)
 	var nodeArray []DomainData
 
 	for rows.Next() {
@@ -970,7 +974,6 @@ func readDomainDatamodel(nbd string) []DomainData {
 		}
 		nodeArray = append(nodeArray, node)
 	}
-	rows.Close()
 	return nodeArray
 }
 

@@ -27,7 +27,6 @@ vsspathlist.json
 vss_vissv2.binary
 certificate.pem
 config.json
-feeder
 feeder/feeder-rl/config.json
 
 
