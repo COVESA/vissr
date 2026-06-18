@@ -261,13 +261,13 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
-			"400", "bad_request", "path must address a procedure node")
+			"400", "bad_request", "path must address a procedure node", requestMap)
 		return
 	}
 
 	inputParams, _ := requestMap["input"].(map[string]interface{})
 	if ok, missingFields := validateInputSignature(node, inputParams); !ok {
-		sendValidationError(bc, "invoke", requestId, missingFields)
+		sendValidationError(bc, "invoke", requestId, missingFields, requestMap)
 		return
 	}
 
@@ -345,7 +345,7 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "monitor", requestId, "", StatusFailed,
-			"400", "bad_request", "path must address a procedure node")
+			"400", "bad_request", "path must address a procedure node", requestMap)
 		return
 	}
 
@@ -415,7 +415,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	serviceId, _ := requestMap["serviceId"].(string)
 	if serviceId == "" {
 		sendServiceError(backendChan, "cancel", "", serviceId, StatusFailed,
-			"400", "bad_request", "serviceId is required for cancel")
+			"400", "bad_request", "serviceId is required for cancel", requestMap)
 		return
 	}
 
@@ -424,7 +424,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	if !ok {
 		mu.Unlock()
 		sendServiceError(backendChan, "cancel", "", serviceId, StatusFailed,
-			"400", "bad_request", "serviceId not found")
+			"400", "bad_request", "serviceId not found", requestMap)
 		return
 	}
 
@@ -488,14 +488,14 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 	node := resolveServiceNode(path)
 	if node == nil {
 		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
-			"400", "bad_request", "path not found in service tree")
+			"400", "bad_request", "path not found in service tree", requestMap)
 		return
 	}
 
 	nodeType := utils.VSSgetType(node)
 	if nodeType != utils.BRANCH && nodeType != utils.PROCEDURE {
 		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
-			"400", "bad_request", "path must address a branch or procedure node")
+			"400", "bad_request", "path must address a branch or procedure node", requestMap)
 		return
 	}
 
@@ -949,8 +949,14 @@ func copyMap(src map[string]interface{}) map[string]interface{} {
 
 // sendValidationError sends a 400 error that lists the missing input field
 // names, providing callers with actionable detail (VISSv3.3 §29).
+//
+// requestMap is the originating request: its RouterId is copied onto the error
+// so the transport manager can route the reply back to the requesting client.
+// Without it the WS/UDS managers recover clientId=-1 and drop the response,
+// wedging the client's synchronous request/response channel.
 func sendValidationError(backendChan chan map[string]interface{},
-	action, requestId string, missingFields []string) {
+	action, requestId string, missingFields []string,
+	requestMap map[string]interface{}) {
 
 	errMap := map[string]interface{}{
 		"action": action,
@@ -966,12 +972,17 @@ func sendValidationError(backendChan chan map[string]interface{},
 	if requestId != "" {
 		errMap["requestId"] = requestId
 	}
+	copyRouteFields(requestMap, errMap)
 	backendChan <- errMap
 }
 
+// sendServiceError sends a structured error response. As with
+// sendValidationError, requestMap supplies the RouterId so the reply can be
+// addressed back to the originating client rather than dropped.
 func sendServiceError(backendChan chan map[string]interface{},
 	action, requestId, serviceId string,
-	status ServiceStatus, errNum, errReason, errDesc string) {
+	status ServiceStatus, errNum, errReason, errDesc string,
+	requestMap map[string]interface{}) {
 
 	errMap := map[string]interface{}{
 		"action": action,
@@ -989,5 +1000,6 @@ func sendServiceError(backendChan chan map[string]interface{},
 	if serviceId != "" {
 		errMap["serviceId"] = serviceId
 	}
+	copyRouteFields(requestMap, errMap)
 	backendChan <- errMap
 }
