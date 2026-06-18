@@ -76,6 +76,7 @@ fuzzers=(
     'FuzzProcessHistoryGet      ./server/vissv2server/serviceMgr'
     'FuzzMapRequest             ./utils'
     'FuzzJsonSchemaValidate     ./utils'
+    'FuzzValidateSetValue       ./utils'
     'FuzzGetFileDescriptorData  ./server/vissv2server'
     'FuzzGetRangeBoundaries     ./server/vissv2server'
     'FuzzGetValueForKey         ./server/vissv2server/wsMgr'
@@ -201,6 +202,19 @@ points are tested via runtest.sh integration.
 Covers `fileExists`, `deSerializeUInt` (1/2/4-byte), `inFeederScope`,
 `splitToDomainDataAndTs`, `convertToDomainData`, `makeDataPoint`,
 `calcInputValue`, `incDpIndex`, `enumConversion`, `linearConversion`.
+
+#### SET value validation
+
+| Area                                      | Test file                          |
+|-------------------------------------------|------------------------------------|
+| `ValidateSetValue` — node-type guard      | `utils/setvalidate_test.go`        |
+| `ValidateSetValue` — allowed-value check  | `utils/setvalidate_test.go`        |
+| `ValidateSetValue` — all datatypes        | `utils/setvalidate_test.go`        |
+| `ValidateSetValue` — range checks         | `utils/setvalidate_test.go`        |
+| `containsAllowed`                         | `utils/setvalidate_test.go`        |
+| `FuzzValidateSetValue`                    | `utils/setvalidate_test.go`        |
+
+45 unit tests + fuzz.
 
 ### SBOM generator (`tools/sbom`)
 
