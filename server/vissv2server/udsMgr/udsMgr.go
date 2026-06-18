@@ -115,11 +115,11 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 		utils.Error.Printf("udsMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
 		return
 	}
-	if strings.Contains(trimmedResponse, "\"subscription\"") {
+	if isAsyncServerPush(trimmedResponse) {
 		select {
-		case clientBackendChan[clientId] <- trimmedResponse: //subscription notification
+		case clientBackendChan[clientId] <- trimmedResponse: // subscription notification or service monitoring event
 		default:
-			utils.Error.Printf("udsMgr:subscription event dropped, clientId=%d", clientId)
+			utils.Error.Printf("udsMgr:async push dropped, clientId=%d", clientId)
 		}
 		return
 	}
@@ -131,6 +131,16 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 	case <-time.After(channelSendTimeout):
 		utils.Error.Printf("udsMgr:response dropped (clientId=%d not consuming after %s)", clientId, channelSendTimeout)
 	}
+}
+
+// isAsyncServerPush reports whether a message is an unsolicited server push
+// (a subscribe notification carrying "subscription", or a VISSv3.2 service
+// monitoring event carrying "action":"monitoring") rather than the response to
+// a client request. Pushes must go to the asynchronous clientBackendChan, not
+// the synchronous udsClientChan that only carries request/response pairs.
+func isAsyncServerPush(message string) bool {
+	return strings.Contains(message, "\"subscription\"") ||
+		strings.Contains(message, "\"action\":\"monitoring\"")
 }
 
 func checkCompressionRequest(reqMessage string) {

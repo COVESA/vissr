@@ -61,15 +61,32 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 		utils.Error.Printf("wsMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
 		return
 	}
-	if strings.Contains(trimmedResponse, "\"subscription\"") {
+	if isAsyncServerPush(trimmedResponse) {
 		select {
-		case clientBackendChan[clientId] <- trimmedResponse: //subscription notification
-		default: 
+		case clientBackendChan[clientId] <- trimmedResponse: // subscription notification or service monitoring event
+		default:
 			utils.Error.Printf("wsmgr:Event dropped")
 		}
 	} else {
 		wsClientChan[clientId] <- trimmedResponse
 	}
+}
+
+// isAsyncServerPush reports whether a message is an unsolicited server push
+// rather than the response to a client request. Pushes must go to the
+// asynchronous write-pump channel (clientBackendChan), which backendWSAppSession
+// drains continuously. The synchronous wsClientChan is only read by the
+// frontend goroutine in the window between sending a request and receiving its
+// response; once a request handshake completes the frontend is parked on
+// conn.ReadMessage(), so a blocking send of a push to wsClientChan would wedge
+// the hub and back up the transport channel ("server hub: Event dropped").
+//
+// Two kinds of push exist:
+//   - subscribe notifications, carrying a "subscription":"<id>" field, and
+//   - VISSv3.2 service monitoring events, carrying "action":"monitoring".
+func isAsyncServerPush(message string) bool {
+	return strings.Contains(message, "\"subscription\"") ||
+		strings.Contains(message, "\"action\":\"monitoring\"")
 }
 
 func checkCompressionRequest(reqMessage string) {
