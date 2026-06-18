@@ -1,0 +1,52 @@
+# cabin.graphql — VDM instance tag fixture for vdmloader unit tests.
+# Models Vehicle.Cabin with multi-instance Seat (Row × Side) and
+# single-instance Door (Row only).
+
+type Vehicle @vspec(element: BRANCH, fqn: "Vehicle", description: "Top-level vehicle object") {
+  Cabin: VehicleCabin @vspec(element: BRANCH, fqn: "Vehicle.Cabin")
+}
+
+type VehicleCabin @vspec(element: BRANCH, fqn: "Vehicle.Cabin", description: "Vehicle cabin") {
+  Seat: VehicleCabinSeat @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat")
+  Door: VehicleCabinDoor @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Door")
+}
+
+# ── Seat — 2D instance (Row × Side) ──────────────────────────────────────────
+
+type VehicleCabinSeat @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat", description: "Individual seat") {
+  IsOccupied: Boolean @vspec(element: SENSOR,   fqn: "Vehicle.Cabin.Seat.IsOccupied", description: "Seat is occupied")
+  IsBelted:   Boolean @vspec(element: SENSOR,   fqn: "Vehicle.Cabin.Seat.IsBelted",   description: "Seatbelt fastened")
+  Position:   UInt8   @vspec(element: ACTUATOR, fqn: "Vehicle.Cabin.Seat.Position",   description: "Longitudinal position") @range(min: 0, max: 100)
+}
+
+type VehicleCabinSeat_InstanceTag @instanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Seat") {
+  dimension1: VehicleCabinSeat_InstanceTag_Dimension1
+  dimension2: VehicleCabinSeat_InstanceTag_Dimension2
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension1 {
+  ROW1 @vspec(originalName: "Row1")
+  ROW2 @vspec(originalName: "Row2")
+}
+
+enum VehicleCabinSeat_InstanceTag_Dimension2 {
+  DRIVER_SIDE    @vspec(originalName: "DriverSide")
+  PASSENGER_SIDE @vspec(originalName: "PassengerSide")
+}
+
+# ── Door — 1D instance (Row only) ────────────────────────────────────────────
+
+type VehicleCabinDoor @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Door", description: "Individual door") {
+  IsOpen:   Boolean @vspec(element: SENSOR,   fqn: "Vehicle.Cabin.Door.IsOpen",   description: "Door is open")
+  IsLocked: Boolean @vspec(element: ACTUATOR, fqn: "Vehicle.Cabin.Door.IsLocked", description: "Door is locked")
+}
+
+type VehicleCabinDoor_InstanceTag @instanceTag @vspec(element: BRANCH, fqn: "Vehicle.Cabin.Door") {
+  dimension1: VehicleCabinDoor_InstanceTag_Dimension1
+}
+
+enum VehicleCabinDoor_InstanceTag_Dimension1 {
+  ROW1 @vspec(originalName: "Row1")
+  ROW2 @vspec(originalName: "Row2")
+  ROW3 @vspec(originalName: "Row3")
+}

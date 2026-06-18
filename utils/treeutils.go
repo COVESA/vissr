@@ -54,6 +54,32 @@ type HimTree struct {
 
 var himForest []HimTree
 
+// ForestInfo is a JSON-serialisable summary of one tree in the HIM forest.
+type ForestInfo struct {
+	RootName string `json:"rootName"`
+	Domain   string `json:"domain"`
+	Version  string `json:"version"`
+}
+
+// ForestInfoList returns metadata for every tree currently in the HIM forest.
+func ForestInfoList() []ForestInfo {
+	out := make([]ForestInfo, 0, len(himForest))
+	for _, t := range himForest {
+		out = append(out, ForestInfo{RootName: t.RootName, Domain: t.Domain, Version: t.Version})
+	}
+	return out
+}
+
+// GetForestRoot returns the root Node_t for the named tree, or nil.
+func GetForestRoot(rootName string) *Node_t {
+	for i := range himForest {
+		if himForest[i].RootName == rootName {
+			return himForest[i].Handle
+		}
+	}
+	return nil
+}
+
 type LeafPathList struct {
 	LeafPaths []string
 }
@@ -241,73 +267,6 @@ func GetInfoType(treeHandle *Node_t) string {
 	return "Missing" //???
 }
 
-func CreatePathListFile(pListPath string) {
-	j := 1
-	for i:=0; i < len(himForest); i++ {
-		if himForest[i].Handle != nil {
-			pListFile := pListPath + "pathlist" + strconv.Itoa(j) + ".json"
-			os.Remove(pListFile)
-			VSSGetLeafNodesList(himForest[i].Handle, himForest[i].RootName, pListFile)
-			sortPathList(pListFile)
-			Info.Printf(pListFile + " created.")
-			j++
-		}
-	}
-}
-
-// NewBranchNode creates a branch Node_t with the given name and children.
-func NewBranchNode(name string, children ...*Node_t) *Node_t {
-	n := &Node_t{Name: name, NodeType: BRANCH, Children: uint8(len(children))}
-	if len(children) > 0 {
-		n.Child = make([]*Node_t, len(children))
-		for i, c := range children {
-			n.Child[i] = c
-			c.Parent = n
-		}
-	}
-	return n
-}
-
-// NewSignalNode creates a signal Node_t (sensor, actuator, or attribute).
-// nodeType must be one of the SENSOR, ACTUATOR, ATTRIBUTE constants.
-func NewSignalNode(name, nodeType, datatype, description, min, max, unit string) *Node_t {
-	return &Node_t{
-		Name:        name,
-		NodeType:    nodeType,
-		Datatype:    datatype,
-		Description: description,
-		Min:         min,
-		Max:         max,
-		Unit:        unit,
-	}
-}
-
-// ForestInfo is a JSON-serialisable summary of one tree in the HIM forest.
-type ForestInfo struct {
-	RootName string `json:"rootName"`
-	Domain   string `json:"domain"`
-	Version  string `json:"version"`
-}
-
-// ForestInfoList returns metadata for every tree currently in the HIM forest.
-func ForestInfoList() []ForestInfo {
-	out := make([]ForestInfo, 0, len(himForest))
-	for _, t := range himForest {
-		out = append(out, ForestInfo{RootName: t.RootName, Domain: t.Domain, Version: t.Version})
-	}
-	return out
-}
-
-// GetForestRoot returns the root Node_t for the named tree, or nil.
-func GetForestRoot(rootName string) *Node_t {
-	for i := range himForest {
-		if himForest[i].RootName == rootName {
-			return himForest[i].Handle
-		}
-	}
-	return nil
-}
-
 // RegisterServiceTree adds a dynamically-built service tree to the HIM forest.
 // Called by vissServiceMgr when a service process registers its procedure path.
 // domain must end in ".Service" so GetInfoType returns "Service".
@@ -338,7 +297,20 @@ func DeregisterServiceTree(rootName string) {
 	}
 }
 
-// NewProcedureNode creates a procedure Node_t for a VISSv3.3 service procedure.
+// NewBranchNode creates a branch Node_t with the given name and children.
+func NewBranchNode(name string, children ...*Node_t) *Node_t {
+	n := &Node_t{Name: name, NodeType: BRANCH, Children: uint8(len(children))}
+	if len(children) > 0 {
+		n.Child = make([]*Node_t, len(children))
+		for i, c := range children {
+			n.Child[i] = c
+			c.Parent = n
+		}
+	}
+	return n
+}
+
+// NewProcedureNode creates a procedure Node_t for a VISSv3.2 service procedure.
 func NewProcedureNode(name, description string, children ...*Node_t) *Node_t {
 	n := &Node_t{Name: name, NodeType: PROCEDURE, Description: description, Children: uint8(len(children))}
 	if len(children) > 0 {
@@ -367,6 +339,34 @@ func NewIoStructNode(name string, children ...*Node_t) *Node_t {
 // NewPropertyNode creates a property Node_t for a service parameter.
 func NewPropertyNode(name, datatype, description string) *Node_t {
 	return &Node_t{Name: name, NodeType: PROPERTY, Datatype: datatype, Description: description}
+}
+
+// NewSignalNode creates a signal Node_t (sensor, actuator, or attribute).
+// nodeType must be one of the SENSOR, ACTUATOR, ATTRIBUTE constants.
+func NewSignalNode(name, nodeType, datatype, description, min, max, unit string) *Node_t {
+	return &Node_t{
+		Name:        name,
+		NodeType:    nodeType,
+		Datatype:    datatype,
+		Description: description,
+		Min:         min,
+		Max:         max,
+		Unit:        unit,
+	}
+}
+
+func CreatePathListFile(pListPath string) {
+	j := 1
+	for i:=0; i < len(himForest); i++ {
+		if himForest[i].Handle != nil {
+			pListFile := pListPath + "pathlist" + strconv.Itoa(j) + ".json"
+			os.Remove(pListFile)
+			VSSGetLeafNodesList(himForest[i].Handle, himForest[i].RootName, pListFile)
+			sortPathList(pListFile)
+			Info.Printf(pListFile + " created.")
+			j++
+		}
+	}
 }
 
 func PopulateDefault() {

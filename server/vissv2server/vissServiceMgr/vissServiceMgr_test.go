@@ -196,17 +196,57 @@ func TestCopyMap_Independent(t *testing.T) {
 // ---- copyRouteFields -------------------------------------------------------
 
 func TestCopyRouteFields(t *testing.T) {
-	src := map[string]interface{}{"RouterId": "1?x", "routerIndex": 3, "other": "skip"}
+	src := map[string]interface{}{"RouterId": "1?x", "routerId": "9?9", "routerIndex": 3, "other": "skip"}
 	dst := map[string]interface{}{}
 	copyRouteFields(src, dst)
 	if dst["RouterId"] != "1?x" {
 		t.Error("RouterId not copied")
 	}
-	if dst["routerIndex"] != 3 {
-		t.Error("routerIndex not copied")
+	if dst["routerId"] != "9?9" {
+		t.Error("routerId not copied")
+	}
+	// routerIndex is a server-internal channel index and must NOT be copied
+	// onto a response — it would leak to the client (e.g. "routerIndex":1 in
+	// an invoke reply).
+	if _, ok := dst["routerIndex"]; ok {
+		t.Error("routerIndex leaked onto response — must not be copied")
 	}
 	if _, ok := dst["other"]; ok {
 		t.Error("unexpected key copied")
+	}
+}
+
+// TestHandleInvoke_ResponseHasNoRouterIndex is the regression for the leak:
+// an invoke reply forwarded to the client must not carry the internal
+// routerIndex field.
+func TestHandleInvoke_ResponseHasNoRouterIndex(t *testing.T) {
+	resetState()
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 8)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action":      "invoke",
+		"path":        moveSeatPath,
+		"input":       map[string]interface{}{"MovementType": "longitudinal", "Position": "40"},
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    "1?0",
+	}
+
+	HandleInvoke(req, bcs)
+
+	select {
+	case resp := <-bc:
+		if _, ok := resp["routerIndex"]; ok {
+			t.Errorf("invoke response leaked internal routerIndex: %v", resp)
+		}
+		if resp["RouterId"] != "1?0" {
+			t.Errorf("RouterId missing from response: %v", resp["RouterId"])
+		}
+	default:
+		t.Fatal("HandleInvoke produced no response")
 	}
 }
 
@@ -214,7 +254,8 @@ func TestCopyRouteFields(t *testing.T) {
 
 func TestSendServiceError_RequiredFields(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
-	sendServiceError(ch, "invoke", "req-1", "", StatusFailed, "400", "bad_request", "oops")
+	req := map[string]interface{}{"RouterId": "1?0"}
+	sendServiceError(ch, "invoke", "req-1", "", StatusFailed, "400", "bad_request", "oops", req)
 	select {
 	case m := <-ch:
 		if m["action"] != "invoke" {
@@ -232,6 +273,36 @@ func TestSendServiceError_RequiredFields(t *testing.T) {
 		}
 		if m["ts"] == nil {
 			t.Error("ts missing")
+		}
+		// Regression (Issue C): the RouterId must be copied onto the error so the
+		// transport manager can route the reply back; otherwise clientId=-1 and
+		// the response is dropped, wedging the client's synchronous channel.
+		if m["RouterId"] != "1?0" {
+			t.Errorf("RouterId not copied onto error response: %v", m["RouterId"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// TestSendValidationError_CopiesRouterId is the validation-path half of the
+// Issue C regression: a SET/invoke that fails input validation must still
+// address its error reply back to the originating client.
+func TestSendValidationError_CopiesRouterId(t *testing.T) {
+	ch := make(chan map[string]interface{}, 4)
+	req := map[string]interface{}{"routerId": "2?7"}
+	sendValidationError(ch, "invoke", "req-9", []string{"Position"}, req)
+	select {
+	case m := <-ch:
+		if m["routerId"] != "2?7" {
+			t.Errorf("routerId not copied onto validation error: %v", m["routerId"])
+		}
+		errObj, ok := m["error"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("missing error object: %v", m)
+		}
+		if fields, ok := errObj["fields"].([]string); !ok || len(fields) != 1 || fields[0] != "Position" {
+			t.Errorf("missing/incorrect fields: %v", errObj["fields"])
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout")
@@ -262,6 +333,63 @@ func TestHandleCancel_UnknownServiceId(t *testing.T) {
 	case m := <-ch:
 		if _, ok := m["error"]; !ok {
 			t.Error("expected error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// TestHandleCancel_UnknownServiceId_PreservesRouterId reproduces Ulf's hang:
+// a cancel arriving after the invocation has already terminated (timeout) hits
+// the "serviceId not found" error path. Before the fix that error reply carried
+// no RouterId, so wsMgr resolved clientId=-1 and dropped it; because cancel
+// replies ride the synchronous request/response channel, the client blocked
+// forever and the next Get got no answer. The reply must carry the RouterId.
+func TestHandleCancel_UnknownServiceId_PreservesRouterId(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	HandleCancel(map[string]interface{}{"serviceId": "608688", "RouterId": "1?0"}, ch)
+	select {
+	case m := <-ch:
+		if m["status"] != string(StatusFailed) {
+			t.Errorf("want FAILED, got %v", m["status"])
+		}
+		if m["RouterId"] != "1?0" {
+			t.Errorf("cancel error dropped RouterId (Issue C): %v", m)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// TestHandleInvoke_ErrorPathPreservesRouterId guards the invoke/monitor/discover
+// error returns that also go through sendServiceError/sendValidationError.
+func TestHandleInvoke_ErrorPathPreservesRouterId(t *testing.T) {
+	resetState()
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{bc}
+	// Address a non-procedure node so HandleInvoke takes the error return.
+	req := map[string]interface{}{
+		"action":      "invoke",
+		"path":        "VehicleService.Seating",
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    "1?0",
+	}
+	HandleInvoke(req, bcs)
+	select {
+	case m := <-bc:
+		if _, ok := m["error"]; !ok {
+			t.Fatalf("expected error response, got %v", m)
+		}
+		if m["RouterId"] != "1?0" {
+			t.Errorf("invoke error dropped RouterId (Issue C): %v", m)
+		}
+		if _, leaked := m["routerIndex"]; leaked {
+			t.Errorf("invoke error leaked internal routerIndex: %v", m)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout")
@@ -749,7 +877,7 @@ func TestHandleMonitor_BadRouterIndex_DoesNotPanic(t *testing.T) {
 
 func TestSendValidationError_IncludesFields(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
-	sendValidationError(ch, "invoke", "req-v", []string{"SeatId", "Position"})
+	sendValidationError(ch, "invoke", "req-v", []string{"SeatId", "Position"}, nil)
 	select {
 	case m := <-ch:
 		if m["action"] != "invoke" {
@@ -791,7 +919,7 @@ func TestSendValidationError_IncludesFields(t *testing.T) {
 
 func TestSendValidationError_NilFields(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
-	sendValidationError(ch, "invoke", "req-nil", nil)
+	sendValidationError(ch, "invoke", "req-nil", nil, nil)
 	select {
 	case m := <-ch:
 		errObj, ok := m["error"].(map[string]interface{})

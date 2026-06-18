@@ -36,11 +36,46 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/covesa/vissr/utils"
 )
+
+// maxServiceNodes caps the result set when resolving a service path. A service
+// request addresses a single procedure (or, for discover, a single branch), so
+// a small cap is sufficient.
+const maxServiceNodes = 50
+
+// resolveServiceNode walks the HIM forest to the node addressed by the full
+// dot-delimited path and returns it, or nil if the path does not resolve to
+// exactly one node.
+//
+// utils.SetRootNodePointer only returns the *tree root* (it matches on the
+// first path segment), so it cannot address a procedure node deeper in the
+// tree. Callers that need the addressed node (invoke/monitor/discover) must
+// walk the full path from the root — using SetRootNodePointer alone made every
+// multi-segment service path resolve to the root branch, which then failed the
+// "must address a procedure node" check.
+func resolveServiceNode(path string) *utils.Node_t {
+	root := utils.SetRootNodePointer(path)
+	if root == nil {
+		return nil
+	}
+	// VSSsearchNodes (with leafNodesOnly=false) records every node along the
+	// matched path — root, intermediate branches, and the addressed node — so
+	// we pick the entry whose full path equals the request path exactly. This
+	// resolves both procedure targets (invoke/monitor) and branch targets
+	// (discover), unlike SetRootNodePointer which only ever returns the root.
+	searchData, matches := utils.VSSsearchNodes(path, root, maxServiceNodes, true, false, 0, nil, nil)
+	for i := 0; i < matches; i++ {
+		if searchData[i].NodePath == path {
+			return searchData[i].NodeHandle
+		}
+	}
+	return nil
+}
 
 // ServiceStatus is the set of allowed status values from VISSv3.2 §2.
 type ServiceStatus string
@@ -84,8 +119,9 @@ type monitorSession struct {
 	sessionId    string
 	serviceId    string // which invocation is being watched
 	path         string
-	isInvoke     bool // true = session owner invoked; false = monitor-only
-	routerIndex  int
+	isInvoke     bool   // true = session owner invoked; false = monitor-only
+	routerIndex  int    // transport-manager channel index (which transport)
+	routerId     string // originating "mgrId?clientId" (which client within it)
 	filterKind   string
 	filterPeriod time.Duration // >0 for timebased
 	lastEventAt  time.Time
@@ -189,6 +225,9 @@ func startTimebasedTicker(sess *monitorSession, period time.Duration,
 					"status":    string(inv.status),
 					"ts":        getTimestamp(),
 				}
+				if sess.routerId != "" {
+					event["RouterId"] = sess.routerId // address the event back to the requesting client
+				}
 				if inv.outdata != nil {
 					event["outdata"] = copyMap(inv.outdata)
 				}
@@ -219,22 +258,63 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	}
 	bc := backendChans[tDChanIndex]
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
-			"400", "bad_request", "path must address a procedure node")
+			"400", "bad_request", "path must address a procedure node", requestMap)
 		return
 	}
 
 	inputParams, _ := requestMap["input"].(map[string]interface{})
 	if ok, missingFields := validateInputSignature(node, inputParams); !ok {
-		sendValidationError(bc, "invoke", requestId, missingFields)
+		sendValidationError(bc, "invoke", requestId, missingFields, requestMap)
 		return
 	}
 
 	authToken, _ := requestMap["authorization"].(string)
 
-	deadline := time.Now().Add(timeoutFromRequest(requestMap))
+	// Built-in (in-process) simulation: used only when no external service
+	// process has registered for this path (instance paths resolve too). It
+	// lets the demo run without a separate service binary and, crucially, makes
+	// the invocation actually terminate instead of emitting content-less
+	// ONGOING events until the timeout watchdog fires.
+	var builtinRun func(string, []chan map[string]interface{})
+	var builtinMinDuration time.Duration
+	if resolveRegistration(path) == nil {
+		if bh, ok := builtinServices[procedureName(path)]; ok {
+			decision := bh(path, inputParams)
+			switch {
+			case decision.errNum != "":
+				sendServiceError(bc, "invoke", requestId, "", StatusFailed,
+					decision.errNum, decision.errReason, decision.errDesc, requestMap)
+				return
+			case decision.immediate != "":
+				ts := getTimestamp()
+				response := map[string]interface{}{
+					"action":    "invoke",
+					"path":      path,
+					"status":    string(decision.immediate),
+					"requestId": requestId,
+					"ts":        ts,
+				}
+				if decision.outdata != nil {
+					response["outdata"] = map[string]interface{}{"output": decision.outdata, "ts": ts}
+				}
+				copyRouteFields(requestMap, response)
+				bc <- response
+				return
+			default:
+				builtinRun = decision.run
+				builtinMinDuration = decision.minDuration
+			}
+		}
+	}
+
+	timeout := timeoutFromRequest(requestMap)
+	if builtinMinDuration > timeout {
+		timeout = builtinMinDuration
+	}
+	deadline := time.Now().Add(timeout)
 
 	mu.Lock()
 	ts := getTimestamp()
@@ -261,6 +341,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 			path:        path,
 			isInvoke:    true,
 			routerIndex: tDChanIndex,
+			routerId:    extractRouterId(requestMap),
 			filterKind:  filterVariant,
 		}
 		if filterVariant == "timebased" {
@@ -273,7 +354,11 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	inv.cancelFn = startTimeoutWatchdog(inv, backendChans)
 	mu.Unlock()
 
-	forwardInvokeToService(path, serviceId, inputParams, authToken)
+	if builtinRun != nil {
+		go builtinRun(serviceId, backendChans)
+	} else {
+		forwardInvokeToService(path, serviceId, inputParams, authToken)
+	}
 
 	response := map[string]interface{}{
 		"action":    "invoke",
@@ -302,10 +387,10 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 	}
 	bc := backendChans[tDChanIndex]
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil || utils.VSSgetType(node) != utils.PROCEDURE {
 		sendServiceError(bc, "monitor", requestId, "", StatusFailed,
-			"400", "bad_request", "path must address a procedure node")
+			"400", "bad_request", "path must address a procedure node", requestMap)
 		return
 	}
 
@@ -335,6 +420,7 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 			path:        path,
 			isInvoke:    false,
 			routerIndex: tDChanIndex,
+			routerId:    extractRouterId(requestMap),
 			filterKind:  filterVariant,
 		}
 		if filterVariant == "timebased" {
@@ -374,7 +460,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	serviceId, _ := requestMap["serviceId"].(string)
 	if serviceId == "" {
 		sendServiceError(backendChan, "cancel", "", serviceId, StatusFailed,
-			"400", "bad_request", "serviceId is required for cancel")
+			"400", "bad_request", "serviceId is required for cancel", requestMap)
 		return
 	}
 
@@ -383,7 +469,7 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 	if !ok {
 		mu.Unlock()
 		sendServiceError(backendChan, "cancel", "", serviceId, StatusFailed,
-			"400", "bad_request", "serviceId not found")
+			"400", "bad_request", "serviceId not found", requestMap)
 		return
 	}
 
@@ -444,17 +530,17 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
 
-	node := utils.SetRootNodePointer(path)
+	node := resolveServiceNode(path)
 	if node == nil {
 		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
-			"400", "bad_request", "path not found in service tree")
+			"400", "bad_request", "path not found in service tree", requestMap)
 		return
 	}
 
 	nodeType := utils.VSSgetType(node)
 	if nodeType != utils.BRANCH && nodeType != utils.PROCEDURE {
 		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
-			"400", "bad_request", "path must address a branch or procedure node")
+			"400", "bad_request", "path must address a branch or procedure node", requestMap)
 		return
 	}
 
@@ -594,6 +680,9 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 			"serviceId": t.sess.sessionId,
 			"status":    string(status),
 			"ts":        ts,
+		}
+		if t.sess.routerId != "" {
+			event["RouterId"] = t.sess.routerId // address the event back to the requesting client
 		}
 		if outdataWrapped != nil {
 			event["outdata"] = outdataWrapped
@@ -773,11 +862,27 @@ func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{})
 			continue
 		}
 		name := utils.VSSgetName(child)
-		if _, ok := params[name]; !ok {
-			missing = append(missing, name)
+		if _, ok := params[name]; ok {
+			continue
 		}
+		if isOptionalParam(child) {
+			continue // optional parameters may be omitted (e.g. MoveSeat.Credentials)
+		}
+		missing = append(missing, name)
 	}
 	return len(missing) == 0, missing
+}
+
+// isOptionalParam reports whether an Input/Output parameter node is optional.
+//
+// The HIM Node_t model has no structured "optional" flag, so optionality is
+// currently only expressed in the node description prose (the COVESA HIM
+// service example marks MoveSeat.Credentials as "Optional parameter."). Until a
+// structured directive (e.g. @optional) is added to the vspec/HIM tooling and a
+// corresponding Node_t field, we honour that convention so a request omitting
+// an optional parameter is not rejected as missing a required field.
+func isOptionalParam(node *utils.Node_t) bool {
+	return strings.Contains(strings.ToLower(utils.VSSgetDescr(node)), "optional")
 }
 
 // ---- filter helpers --------------------------------------------------------
@@ -848,8 +953,28 @@ func extractRouterIndex(requestMap map[string]interface{}) int {
 	return 0
 }
 
+// extractRouterId returns the originating "mgrId?clientId" RouterId string from
+// a request so that asynchronous monitoring events can be addressed back to the
+// requesting client. Without it the transport managers cannot recover a
+// clientId and (post-fix) drop the event. Returns "" when absent.
+func extractRouterId(requestMap map[string]interface{}) string {
+	for _, k := range []string{"RouterId", "routerId"} {
+		if v, ok := requestMap[k].(string); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// copyRouteFields copies the client-addressing RouterId from a request onto a
+// response so the transport manager can route it back and then strip it
+// (RemoveInternalData). It deliberately does NOT copy "routerIndex": that is a
+// server-internal transport-channel index injected by serveRequest and read
+// only from the request (extractRouterIndex). Copying it onto the response
+// leaked it to clients, who would receive e.g. "routerIndex":1 in an invoke
+// reply. No transport manager strips routerIndex, so it must never be added.
 func copyRouteFields(src, dst map[string]interface{}) {
-	for _, k := range []string{"RouterId", "routerId", "routerIndex"} {
+	for _, k := range []string{"RouterId", "routerId"} {
 		if v, ok := src[k]; ok {
 			dst[k] = v
 		}
@@ -869,8 +994,14 @@ func copyMap(src map[string]interface{}) map[string]interface{} {
 
 // sendValidationError sends a 400 error that lists the missing input field
 // names, providing callers with actionable detail (VISSv3.3 §29).
+//
+// requestMap is the originating request: its RouterId is copied onto the error
+// so the transport manager can route the reply back to the requesting client.
+// Without it the WS/UDS managers recover clientId=-1 and drop the response,
+// wedging the client's synchronous request/response channel.
 func sendValidationError(backendChan chan map[string]interface{},
-	action, requestId string, missingFields []string) {
+	action, requestId string, missingFields []string,
+	requestMap map[string]interface{}) {
 
 	errMap := map[string]interface{}{
 		"action": action,
@@ -886,12 +1017,17 @@ func sendValidationError(backendChan chan map[string]interface{},
 	if requestId != "" {
 		errMap["requestId"] = requestId
 	}
+	copyRouteFields(requestMap, errMap)
 	backendChan <- errMap
 }
 
+// sendServiceError sends a structured error response. As with
+// sendValidationError, requestMap supplies the RouterId so the reply can be
+// addressed back to the originating client rather than dropped.
 func sendServiceError(backendChan chan map[string]interface{},
 	action, requestId, serviceId string,
-	status ServiceStatus, errNum, errReason, errDesc string) {
+	status ServiceStatus, errNum, errReason, errDesc string,
+	requestMap map[string]interface{}) {
 
 	errMap := map[string]interface{}{
 		"action": action,
@@ -909,5 +1045,6 @@ func sendServiceError(backendChan chan map[string]interface{},
 	if serviceId != "" {
 		errMap["serviceId"] = serviceId
 	}
+	copyRouteFields(requestMap, errMap)
 	backendChan <- errMap
 }

@@ -115,11 +115,11 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 		utils.Error.Printf("udsMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
 		return
 	}
-	if strings.Contains(trimmedResponse, "\"subscription\"") {
+	if isAsyncServerPush(trimmedResponse) {
 		select {
-		case clientBackendChan[clientId] <- trimmedResponse: //subscription notification
+		case clientBackendChan[clientId] <- trimmedResponse: // subscription notification or service monitoring event
 		default:
-			utils.Error.Printf("udsMgr:subscription event dropped, clientId=%d", clientId)
+			utils.Error.Printf("udsMgr:async push dropped, clientId=%d", clientId)
 		}
 		return
 	}
@@ -131,6 +131,16 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 	case <-time.After(channelSendTimeout):
 		utils.Error.Printf("udsMgr:response dropped (clientId=%d not consuming after %s)", clientId, channelSendTimeout)
 	}
+}
+
+// isAsyncServerPush reports whether a message is an unsolicited server push
+// (a subscribe notification carrying "subscription", or a VISSv3.2 service
+// monitoring event carrying "action":"monitoring") rather than the response to
+// a client request. Pushes must go to the asynchronous clientBackendChan, not
+// the synchronous udsClientChan that only carries request/response pairs.
+func isAsyncServerPush(message string) bool {
+	return strings.Contains(message, "\"subscription\"") ||
+		strings.Contains(message, "\"action\":\"monitoring\"")
 }
 
 func checkCompressionRequest(reqMessage string) {
@@ -636,7 +646,11 @@ func isKillSubscriptions(reqMessage string) bool {
 	return action == "internal-killsubscriptions"
 }
 
-func UdsMgrInit(mgrId int, transportMgrChan chan string) {
+// UdsMgrInit runs the Unix-domain-socket transport hub. reqChan carries client
+// requests to the server core; respChan carries responses back from the core.
+// They are separate channels so a response can never be read back here as a
+// request.
+func UdsMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	var reqMessage string
 	var clientId int
 	utils.ReadTransportSecConfig()
@@ -648,8 +662,8 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
-			handleUdsTransportResponse(respMessage, transportMgrChan)
+		case respMessage := <-respChan:
+			handleUdsTransportResponse(respMessage, respChan)
 			continue
 		// NOTE: the case list below is hand-coupled to NUMOFUDSCLIENTS. If
 		// NUMOFUDSCLIENTS changes, this select must change to match - extend
@@ -695,7 +709,7 @@ func UdsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-udsClientChan[19]:
 			clientId = 19
 		}
-		handleUdsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleUdsClientRequest(reqMessage, mgrId, clientId, reqChan)
 	}
 }
 
