@@ -87,3 +87,10 @@ logs/
 # the SPDX workflow writes generated SBOMs into an sbom/ directory, so a file
 # named sbom at repo root makes os.MkdirAll("sbom") fail with ENOTDIR.
 /sbom
+
+# Compiled serviceMgr helper binaries and the Redis runtime snapshot. These are
+# build/runtime artifacts (go build output, Redis dbfilename) and must not be
+# committed.
+/server/vissv2server/serviceMgr/redisInit/redisInit
+/server/vissv2server/serviceMgr/redisVinFeeder/vin_feeder
+*.rdb
