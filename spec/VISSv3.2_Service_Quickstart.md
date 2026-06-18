@@ -36,6 +36,13 @@ description: Vehicle seating service tree.
 The `domain` value **must** end in `.Service`. The server detects this suffix and routes
 `invoke`, `monitor`, `cancel`, and `discover` requests through `vissServiceMgr`.
 
+> **Root name must match the request path.** The HIM key (`HIM.<RootName>`) becomes the
+> addressable root of the tree, so client paths must begin with that exact `<RootName>`.
+> For the bundled example tree the key is `HIM.VehicleService`, so requests address
+> `VehicleService.Seating.Row1.DriverSide.MoveSeat`. A mismatch between the HIM key and
+> the path root makes the request fall through service routing and return
+> `404 unavailable_data` ("No tree found for path root …").
+
 ---
 
 ## Step 2: Add procedure nodes to the binary tree

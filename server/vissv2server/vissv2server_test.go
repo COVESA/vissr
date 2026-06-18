@@ -347,18 +347,16 @@ func TestInitChannels_BuffersPipeline(t *testing.T) {
 		t.Errorf("serviceDataChan[0] should be buffered")
 	}
 	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
-		// MQTT (index 2) is intentionally unbuffered: MqttMgrInit performs a
-		// synchronous VIN-fetch handshake in one goroutine. A buffered channel
-		// causes the goroutine to echo-read its own send before
-		// transportDataSession can consume it.
-		if i == 2 {
-			if cap(transportMgrChannel[i]) != 0 {
-				t.Errorf("transportMgrChannel[%d] (MQTT) should be unbuffered", i)
-			}
-		} else {
-			if cap(transportMgrChannel[i]) == 0 {
-				t.Errorf("transportMgrChannel[%d] should be buffered", i)
-			}
+		// Every transport channel is buffered, including MQTT (index 2). The
+		// request and response directions now have separate channels
+		// (transportMgrChannel = requests, toTransportChannel = responses), each
+		// with a single sender and single receiver, so the old shared-channel
+		// echo hazard that forced MQTT to stay unbuffered no longer exists.
+		if cap(transportMgrChannel[i]) == 0 {
+			t.Errorf("transportMgrChannel[%d] should be buffered", i)
+		}
+		if cap(toTransportChannel[i]) == 0 {
+			t.Errorf("toTransportChannel[%d] should be buffered", i)
 		}
 		if cap(transportDataChan[i]) == 0 {
 			t.Errorf("transportDataChan[%d] should be buffered", i)
@@ -421,18 +419,19 @@ func TestServiceDataSession_BadRouterIdIsSafe(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestTransportDataSession_DropsOnFullDispatcher(t *testing.T) {
-	mgrChan := make(chan string, 1)
+	reqChan := make(chan string, 1)
+	respChan := make(chan string, 1)
 	dataChan := make(chan map[string]interface{}, 1)
 	beChan := make(chan map[string]interface{}, 1)
 
-	go transportDataSession(mgrChan, dataChan, beChan)
+	go transportDataSession(reqChan, respChan, dataChan, beChan)
 
 	// Fill the data channel first
 	dataChan <- map[string]interface{}{"filler": true}
 
 	// Now push two requests — second should be dropped, not block.
-	mgrChan <- `{"action":"get","path":"X"}`
-	mgrChan <- `{"action":"get","path":"Y"}`
+	reqChan <- `{"action":"get","path":"X"}`
+	reqChan <- `{"action":"get","path":"Y"}`
 
 	done := make(chan struct{})
 	go func() {
@@ -783,11 +782,9 @@ func TestSetTokenErrorResponse_PopulatesErrorMap(t *testing.T) {
 		"action": "get",
 		"path":   "Vehicle.Speed",
 	}
-	// Clean global side-effect from any prior test.
-	errorResponseMap = map[string]interface{}{}
-	setTokenErrorResponse(req, 1)
-	if errorResponseMap["error"] == nil {
-		t.Errorf("expected error populated; got %+v", errorResponseMap)
+	resp := setTokenErrorResponse(req, 1)
+	if resp["error"] == nil {
+		t.Errorf("expected error populated; got %+v", resp)
 	}
 }
 

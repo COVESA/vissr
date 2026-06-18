@@ -389,27 +389,11 @@ func TestInBranchList_AddAndFind(t *testing.T) {
 	branchPathList = nil // clean up
 }
 
-// Integration-only functions — NOT unit-tested here:
+// The DB-backed, file-IO and stdin-driven functions formerly listed here as
+// "integration-only" are now exercised in DomainConversionTool_db_test.go,
+// which gives them a temporary file-backed sqlite database, temp YAML
+// fixtures, redirected stdin for the Scanf prompts, and a temp working
+// directory for the generated artefacts.
 //
-//   initDb                   — opens a real sqlite3 file
-//   createTables             — requires *sql.DB
-//   createConversionDataTable — requires *sql.DB
-//   createInternalToolTable  — requires *sql.DB
-//   initializeInternalToolTable — requires *sql.DB
-//   checkThisTable           — requires *sql.DB
-//   getDomainTableNames      — requires global db
-//   getInternalToolNbdTableNames — requires global db
-//   updateInternalToolTableNames — requires global db
-//   insertTableRow           — requires global db
-//   insertFeederData         — requires global db
-//   getDomainData            — requires global db
-//   createDomainTable        — requires global db
-//   populateTable            — reads stdin + db
-//   createConversionTable    — reads stdin + db
-//   createDomainDatamodel    — reads stdin + db
-//   showDomains              — requires global db
-//   createConversionFiles    — requires global db
-//   writescaleDataList       — writes to filesystem (output artefact)
-//   readUnitScaleData        — reads an external YAML file
-//   readSignalMappingFile    — reads an external YAML file
-//   main                     — interactive CLI
+// The only remaining untested function is:
+//   main — the interactive argparse command loop (genuine CLI entry point).

@@ -216,7 +216,7 @@ func getVissV2TopicFromEnv() string {
 	return "/" + vin + "/Vehicle"
 }
 
-func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
+func getVissV2Topic(reqChan chan string, respChan chan string, mgrId int) string {
 	// Fast path: MQTT_VIN env var bypasses the channel round-trip (useful for
 	// local development where state storage has no VIN populated yet).
 	if topic := getVissV2TopicFromEnv(); topic != "" {
@@ -224,16 +224,14 @@ func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
 	}
 
 	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get", "path":"Vehicle.VehicleIdentification.VIN", "requestId":"570415", "origin":"internal"}`
-	transportMgrChan <- vinRequest
+	reqChan <- vinRequest
 
-	// transportMgrChan is bidirectional (requests go server-ward, responses
-	// come back on the same channel via transportDataSession). We rely on the
-	// channel being unbuffered: if it were buffered our own send would sit in
-	// the buffer and we'd echo-read it before transportDataSession consumes it.
-	// vissv2server.initChannels explicitly keeps transportMgrChannel[2] unbuffered
-	// for exactly this reason.
+	// The VIN request goes server-ward on reqChan; the response comes back on
+	// respChan. Because the two directions are distinct channels there is no
+	// echo risk (the send can never be read back here), so reqChan/respChan may
+	// be buffered like every other transport.
 	select {
-	case response := <-transportMgrChan:
+	case response := <-respChan:
 		vin := extractVin(string(response))
 		utils.Info.Printf("VIN=%s", vin)
 		if !isValidVin(vin) {
@@ -311,14 +309,17 @@ func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, transp
 	transportMgrChan <- request
 }
 
-func MqttMgrInit(mgrId int, transportMgrChan chan string) {
+// MqttMgrInit runs the MQTT transport hub. reqChan carries client requests to
+// the server core; respChan carries responses back from the core. They are
+// separate channels so a response can never be read back here as a request.
+func MqttMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	mqttChannel = make(chan string)
 	vissv2Channel := make(chan string)
 
 	brokerSocket := getBrokerSocket(false)
 	// wait for 2 seconds to allow the server and feeder to start
 	time.Sleep(2 * time.Second)
-	topic := getVissV2Topic(transportMgrChan, mgrId)
+	topic := getVissV2Topic(reqChan, respChan, mgrId)
 	if topic == "" {
 		// Refused by isValidVin in getVissV2Topic — don't even try.
 		utils.Error.Printf("MqttMgrInit: refusing to start; could not derive a valid VISS v2 topic")
@@ -334,7 +335,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 
 	utils.JsonSchemaInit()
 
-	go vissV2Receiver(transportMgrChan, vissv2Channel) //message reception from server core
+	go vissV2Receiver(respChan, vissv2Channel) //message reception from server core
 
 	utils.Info.Println("**** MQTT manager hub entering server loop... ****")
 
@@ -370,7 +371,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 				continue
 			}
 			pushTopic(topic, topicId)
-			AddRoutingInfoAndForward(payload, mgrId, topicId, transportMgrChan)
+			AddRoutingInfoAndForward(payload, mgrId, topicId, reqChan)
 			topicId++
 
 		case vissv2Message := <-vissv2Channel:
