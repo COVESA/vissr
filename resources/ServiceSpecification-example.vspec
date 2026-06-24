@@ -66,7 +66,12 @@ VehicleService.Seating.ActivateMassage:
 
 VehicleService.Seating.ActivateMassage.Input:
   type: iostruct
-  description:  Input parameters= (Duration, Credentials).
+  description:  Input parameters= (MassageType, Duration, Credentials).
+
+VehicleService.Seating.ActivateMassage.Input.MassageType:
+  type: property
+  datatype: string
+  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
 
 VehicleService.Seating.ActivateMassage.Input.Duration:
   type: property

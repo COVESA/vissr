@@ -19,7 +19,7 @@ VehicleService.Seating.Row1.DriverSide.ActivateMassage:
   type: procedure
 
 VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input:
-  description: Input parameters= (Duration, Credentials).
+  description: Input parameters= (MassageType, Duration, Credentials).
   type: iostruct
 
 VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.Credentials:
@@ -30,6 +30,11 @@ VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.Credentials:
 VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.Duration:
   datatype: uint32
   description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.MassageType:
+  datatype: string
+  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
   type: property
 
 VehicleService.Seating.Row1.DriverSide.ActivateMassage.Output:
@@ -168,6 +173,11 @@ VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input.Credentials:
 VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input.Duration:
   datatype: uint32
   description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input.MassageType:
+  datatype: string
+  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
   type: property
 
 VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Output:
@@ -312,6 +322,11 @@ VehicleService.Seating.Row2.DriverSide.ActivateMassage.Input.Duration:
   description: Duration of massage session in seconds.
   type: property
 
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Input.MassageType:
+  datatype: string
+  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
+  type: property
+
 VehicleService.Seating.Row2.DriverSide.ActivateMassage.Output:
   description: Output parameters= (Status, ServiceId).
   type: iostruct
@@ -448,6 +463,11 @@ VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input.Credentials:
 VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input.Duration:
   datatype: uint32
   description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input.MassageType:
+  datatype: string
+  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
   type: property
 
 VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Output:
