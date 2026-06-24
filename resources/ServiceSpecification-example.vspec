@@ -1,0 +1,123 @@
+# The service tree example builds on input from the Capabilities project:
+# https://covesa.atlassian.net/wiki/spaces/WIK4/pages/39059848/Capabilities+Project+-+Seating+Capabilities#CapabilitiesProject-SeatingCapabilities-InformationTypes
+
+VehicleService:
+  type: branch
+  description: The Vehicle services.
+
+VehicleService.Seating:
+  type: branch
+  instances:
+    - Row[1,2]
+    - ["DriverSide","PassengerSide"]
+  description: The Seating service group.
+
+VehicleService.Seating.MoveSeat:
+  type: procedure
+  description: Performs all supported seat movements.
+
+VehicleService.Seating.MoveSeat.Input:
+  type: iostruct
+  description:  Input parameters= (MovementType, Position, Credentials).
+
+VehicleService.Seating.MoveSeat.Input.MovementType:
+  type: property
+  datatype: string
+  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+
+VehicleService.Seating.MoveSeat.Input.Position:
+  type: property
+  datatype: Types.Common.Percentage
+  description: Final position of the movement, expressed as a percentage.
+
+VehicleService.Seating.MoveSeat.Input.Credentials:
+  type: property
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+
+VehicleService.Seating.MoveSeat.Output:
+  type: iostruct
+  description:  Output parameters= (Status, Position, ServiceId).
+
+VehicleService.Seating.MoveSeat.Output.Status:
+  type: property
+  datatype: Types.Common.Service.Status
+  description: Status of the MoveSeat service.
+
+VehicleService.Seating.MoveSeat.Output.Position:
+  type: property
+  datatype: Types.Common.Percentage
+  description: Final position of the movement, expressed as a percentage.
+
+VehicleService.Seating.MoveSeat.Output.ServiceId:
+  type: property
+  datatype: uint32
+  description: A reference to the service execution session.
+
+VehicleService.Seating.MoveSeat.Version:
+  type: attribute
+  datatype: string
+  default: 1.0.0
+  description: The MoveSeat service version.
+
+VehicleService.Seating.ActivateMassage:
+  type: procedure
+  description: Performs all supported seat massage.
+
+VehicleService.Seating.ActivateMassage.Input:
+  type: iostruct
+  description:  Input parameters= (Duration, Credentials).
+
+VehicleService.Seating.ActivateMassage.Input.Duration:
+  type: property
+  datatype: uint32
+  description: Duration of massage session in seconds.
+
+VehicleService.Seating.ActivateMassage.Input.Credentials:
+  type: property
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+
+VehicleService.Seating.ActivateMassage.Output:
+  type: iostruct
+  description:  Output parameters= (Status, ServiceId).
+
+VehicleService.Seating.ActivateMassage.Output.Status:
+  type: property
+  datatype: Types.Common.Service.Status
+  description: Status of the ActivateMassage service.
+
+VehicleService.Seating.ActivateMassage.Output.ServiceId:
+  type: property
+  datatype: uint32
+  description: A reference to the service execution session.
+
+VehicleService.Seating.ActivateMassage.Version:
+  type: attribute
+  datatype: string
+  default: 1.0.0
+  description: The ActivateMassage service version.
+
+VehicleService.Seating.GetCapabilities:
+  type: procedure
+  description:  Get the tokens representing supported seat capabilities.
+
+VehicleService.Seating.GetCapabilities.Output:
+  type: iostruct
+  description:  Output parameters= (Status, Capabilities[]).
+
+VehicleService.Seating.GetCapabilities.Output.Status:
+  type: property
+  datatype: Types.Common.Service.Status
+  description: Status of the GetCapabilities service.
+
+VehicleService.Seating.GetCapabilities.Output.Capabilities:
+  type: property
+  datatype: Types.Struct.Service.Capability[]
+  description: Array member contains definition of a capability.
+
+VehicleService.Seating.GetCapabilities.Version:
+  type: attribute
+  datatype: string
+  default: 1.0.0
+  description: The GetCapabilities service version.

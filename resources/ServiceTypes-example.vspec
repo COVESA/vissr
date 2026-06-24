@@ -1,0 +1,106 @@
+Types:
+  type: branch
+  description: Root node for the datatype definition tree.
+
+Types.Struct:
+  type: branch
+  description: Struct definitions.
+
+Types.Struct.Service:
+  type: branch
+  description: Service struct definitions.
+
+Types.Struct.Service.Capability:
+  type: struct
+  description: Service capability definition.
+
+Types.Struct.Service.Capability.Name:
+  type: property
+  datatype: string
+  description: Capability name.
+
+Types.Struct.Service.Capability.Data:
+  type: property
+  datatype: Types.Struct.Service.CapabilityData[]
+  description: Capability name.
+
+Types.Struct.Service.CapabilityData:
+  type: struct
+  description: Capability support definition.
+
+Types.Struct.Service.CapabilityData.Name:
+  type: property
+  datatype: string
+  description: Capability name.
+
+Types.Struct.Service.CapabilityData.Description:
+  type: property
+  datatype: string
+  description: Capability description.
+
+Types.Struct.Service.Seating:
+  type: branch
+  description: Seating related struct definitions.
+
+Types.Struct.Service.Seating.SeatId:
+  type: struct
+  description: Identity by position.
+
+Types.Struct.Service.Seating.SeatId.Row:
+  type: property
+  datatype: string
+  description: Row name.
+
+Types.Struct.Service.Seating.SeatId.Column:
+  type: property
+  datatype: string
+  description: Column name.
+
+Types.Common:
+  type: branch
+  description: Common definitions.
+
+Types.Common.Service:
+  type: branch
+  description: Service enum definitions.
+
+Types.Common.Service.Status:
+  type: typedef
+  datatype: int8
+  enum:
+    'SUCCESSFUL': 0
+    'ONGOING': 1
+    'CANCELED': 2
+    'FAILED': -1
+  default: 0
+  description: The execution status of a service.
+
+Types.Common.Percentage:
+  type: typedef
+  datatype: float
+  unit: percent
+  min: 0
+  max: 100
+  description: Percent definition.
+
+Types.Version:
+  type: branch
+  description: Supported Version.
+
+Types.Version.Major:
+  datatype: uint32
+  type: attribute
+  default: 1
+  description: Major version number.
+
+Types.Version.Minor:
+  datatype: uint32
+  type: attribute
+  default: 0
+  description: Minor version number.
+
+Types.Version.Patch:
+  datatype: uint32
+  type: attribute
+  default: 0
+  description: Patch version number.

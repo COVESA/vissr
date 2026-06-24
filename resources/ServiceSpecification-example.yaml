@@ -1,0 +1,567 @@
+VehicleService:
+  description: The Vehicle services.
+  type: branch
+
+VehicleService.Seating:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row1:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row1.DriverSide:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage:
+  description: Performs all supported seat massage.
+  type: procedure
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input:
+  description: Input parameters= (Duration, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Input.Duration:
+  datatype: uint32
+  description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Output:
+  description: Output parameters= (Status, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the ActivateMassage service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.ActivateMassage.Version:
+  datatype: string
+  default: 1.0.0
+  description: The ActivateMassage service version.
+  type: attribute
+
+VehicleService.Seating.Row1.DriverSide.GetCapabilities:
+  description: Get the tokens representing supported seat capabilities.
+  type: procedure
+
+VehicleService.Seating.Row1.DriverSide.GetCapabilities.Output:
+  description: Output parameters= (Status, Capabilities[]).
+  type: iostruct
+
+VehicleService.Seating.Row1.DriverSide.GetCapabilities.Output.Capabilities:
+  datatype: Types.Struct.Service.Capability[]
+  description: Array member contains definition of a capability.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.GetCapabilities.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the GetCapabilities service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.GetCapabilities.Version:
+  datatype: string
+  default: 1.0.0
+  description: The GetCapabilities service version.
+  type: attribute
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat:
+  description: Performs all supported seat movements.
+  type: procedure
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Input:
+  description: Input parameters= (MovementType, Position, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Input.MovementType:
+  datatype: string
+  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Input.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Output:
+  description: Output parameters= (Status, Position, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Output.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the MoveSeat service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.DriverSide.MoveSeat.Version:
+  datatype: string
+  default: 1.0.0
+  description: The MoveSeat service version.
+  type: attribute
+
+VehicleService.Seating.Row1.PassengerSide:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage:
+  description: Performs all supported seat massage.
+  type: procedure
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input:
+  description: Input parameters= (Duration, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Input.Duration:
+  datatype: uint32
+  description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Output:
+  description: Output parameters= (Status, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the ActivateMassage service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.ActivateMassage.Version:
+  datatype: string
+  default: 1.0.0
+  description: The ActivateMassage service version.
+  type: attribute
+
+VehicleService.Seating.Row1.PassengerSide.GetCapabilities:
+  description: Get the tokens representing supported seat capabilities.
+  type: procedure
+
+VehicleService.Seating.Row1.PassengerSide.GetCapabilities.Output:
+  description: Output parameters= (Status, Capabilities[]).
+  type: iostruct
+
+VehicleService.Seating.Row1.PassengerSide.GetCapabilities.Output.Capabilities:
+  datatype: Types.Struct.Service.Capability[]
+  description: Array member contains definition of a capability.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.GetCapabilities.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the GetCapabilities service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.GetCapabilities.Version:
+  datatype: string
+  default: 1.0.0
+  description: The GetCapabilities service version.
+  type: attribute
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat:
+  description: Performs all supported seat movements.
+  type: procedure
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Input:
+  description: Input parameters= (MovementType, Position, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Input.MovementType:
+  datatype: string
+  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Input.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Output:
+  description: Output parameters= (Status, Position, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Output.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the MoveSeat service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row1.PassengerSide.MoveSeat.Version:
+  datatype: string
+  default: 1.0.0
+  description: The MoveSeat service version.
+  type: attribute
+
+VehicleService.Seating.Row2:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row2.DriverSide:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage:
+  description: Performs all supported seat massage.
+  type: procedure
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Input:
+  description: Input parameters= (Duration, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Input.Duration:
+  datatype: uint32
+  description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Output:
+  description: Output parameters= (Status, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the ActivateMassage service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.ActivateMassage.Version:
+  datatype: string
+  default: 1.0.0
+  description: The ActivateMassage service version.
+  type: attribute
+
+VehicleService.Seating.Row2.DriverSide.GetCapabilities:
+  description: Get the tokens representing supported seat capabilities.
+  type: procedure
+
+VehicleService.Seating.Row2.DriverSide.GetCapabilities.Output:
+  description: Output parameters= (Status, Capabilities[]).
+  type: iostruct
+
+VehicleService.Seating.Row2.DriverSide.GetCapabilities.Output.Capabilities:
+  datatype: Types.Struct.Service.Capability[]
+  description: Array member contains definition of a capability.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.GetCapabilities.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the GetCapabilities service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.GetCapabilities.Version:
+  datatype: string
+  default: 1.0.0
+  description: The GetCapabilities service version.
+  type: attribute
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat:
+  description: Performs all supported seat movements.
+  type: procedure
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Input:
+  description: Input parameters= (MovementType, Position, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Input.MovementType:
+  datatype: string
+  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Input.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Output:
+  description: Output parameters= (Status, Position, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Output.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the MoveSeat service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.DriverSide.MoveSeat.Version:
+  datatype: string
+  default: 1.0.0
+  description: The MoveSeat service version.
+  type: attribute
+
+VehicleService.Seating.Row2.PassengerSide:
+  description: The Seating service group.
+  type: branch
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage:
+  description: Performs all supported seat massage.
+  type: procedure
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input:
+  description: Input parameters= (Duration, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Input.Duration:
+  datatype: uint32
+  description: Duration of massage session in seconds.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Output:
+  description: Output parameters= (Status, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the ActivateMassage service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.ActivateMassage.Version:
+  datatype: string
+  default: 1.0.0
+  description: The ActivateMassage service version.
+  type: attribute
+
+VehicleService.Seating.Row2.PassengerSide.GetCapabilities:
+  description: Get the tokens representing supported seat capabilities.
+  type: procedure
+
+VehicleService.Seating.Row2.PassengerSide.GetCapabilities.Output:
+  description: Output parameters= (Status, Capabilities[]).
+  type: iostruct
+
+VehicleService.Seating.Row2.PassengerSide.GetCapabilities.Output.Capabilities:
+  datatype: Types.Struct.Service.Capability[]
+  description: Array member contains definition of a capability.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.GetCapabilities.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the GetCapabilities service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.GetCapabilities.Version:
+  datatype: string
+  default: 1.0.0
+  description: The GetCapabilities service version.
+  type: attribute
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat:
+  description: Performs all supported seat movements.
+  type: procedure
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Input:
+  description: Input parameters= (MovementType, Position, Credentials).
+  type: iostruct
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Input.Credentials:
+  datatype: string
+  description: A token with client credentials. Optional parameter.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Input.MovementType:
+  datatype: string
+  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Input.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Output:
+  description: Output parameters= (Status, Position, ServiceId).
+  type: iostruct
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Output.Position:
+  datatype: float
+  description: Final position of the movement, expressed as a percentage.
+  max: 100
+  min: 0
+  type: property
+  unit: percent
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Output.ServiceId:
+  datatype: uint32
+  description: A reference to the service execution session.
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Output.Status:
+  datatype: int8
+  default: 0
+  description: Status of the MoveSeat service.
+  enum:
+    CANCELED: 2
+    FAILED: -1
+    ONGOING: 1
+    SUCCESSFUL: 0
+  type: property
+
+VehicleService.Seating.Row2.PassengerSide.MoveSeat.Version:
+  datatype: string
+  default: 1.0.0
+  description: The MoveSeat service version.
+  type: attribute
