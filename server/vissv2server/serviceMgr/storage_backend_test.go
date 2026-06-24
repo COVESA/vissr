@@ -245,6 +245,86 @@ func TestHandleServiceSet_WithSuccessfulBackend(t *testing.T) {
 	}
 }
 
+// TestHandleServiceSet_NonStringPath is a regression for the audit finding:
+// a "set" whose path is missing or not a string previously panicked on an
+// unchecked type assertion (crashing the whole server). It must now return a
+// bad_request error instead.
+func TestHandleServiceSet_NonStringPath(t *testing.T) {
+	fake := &fakeBackend{setReturn: "2026-01-01T00:00:00Z"}
+	withBackend(fake, func() {
+		resetErrorResponseMap()
+		dataChan := make(chan map[string]interface{}, 1)
+		req := map[string]interface{}{
+			"RouterId":  "0?0",
+			"action":    "set",
+			"requestId": "1",
+			"path":      []interface{}{"not", "a", "string"},
+			"value":     "100",
+		}
+		resp := buildServiceResponseMap(req)
+		go handleServiceSet(req, resp, dataChan)
+		select {
+		case got := <-dataChan:
+			errMap, ok := got["error"].(map[string]interface{})
+			if !ok || errMap["reason"] != "bad_request" {
+				t.Errorf("expected bad_request error; got %v", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("handleServiceSet did not reply on dataChan")
+		}
+	})
+}
+
+// TestHandleServiceGet_NonStringPath is the get-path half of the same
+// regression.
+func TestHandleServiceGet_NonStringPath(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?0",
+		"action":    "get",
+		"requestId": "1",
+		"path":      42.0, // JSON number, not a string
+	}
+	resp := buildServiceResponseMap(req)
+	go handleServiceGet(req, resp, dataChan)
+	select {
+	case got := <-dataChan:
+		errMap, ok := got["error"].(map[string]interface{})
+		if !ok || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleServiceGet did not reply on dataChan")
+	}
+}
+
+// TestHandleServiceSubscribe_BadRouting covers the subscribe path: a missing
+// RouterId (or non-string path) must yield bad_request rather than a panic.
+func TestHandleServiceSubscribe_BadRouting(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 1)
+	req := map[string]interface{}{
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		// no RouterId
+	}
+	resp := buildServiceResponseMap(req)
+	go func() {
+		handleServiceSubscribe(req, resp, dataChan, nil, 0, nil, nil, nil)
+	}()
+	select {
+	case got := <-dataChan:
+		errMap, ok := got["error"].(map[string]interface{})
+		if !ok || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleServiceSubscribe did not reply on dataChan")
+	}
+}
+
 // TestHandleServiceSet_WithFailingBackend pins the existing failure
 // behaviour — a backend that returns "" from Set still triggers
 // service_unavailable. This duplicates a check from
