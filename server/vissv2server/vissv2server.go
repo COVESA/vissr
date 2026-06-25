@@ -28,10 +28,13 @@ import (
 	"strconv"
 	"strings"
 
+	dds "github.com/SoundMatt/go-DDS"
 	"github.com/covesa/vissr/server/vissv2server/atServer"
+	"github.com/covesa/vissr/server/vissv2server/ddsMgr"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
+	"github.com/covesa/vissr/server/vissv2server/restMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
 	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
@@ -60,6 +63,8 @@ var serverComponents []string = []string{
 	"mqttMgr",
 	"grpcMgr",
 	"udsMgr",
+	"ddsMgr",
+	"restMgr",
 	"atServer",
 }
 
@@ -67,9 +72,9 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
-var transportMgrChannel []chan string // requests, transport mgr -> core (read by transportDataSession)
-var toTransportChannel []chan string   // responses, core -> transport mgr (written by transportDataSession)
+ const NUMOFTRANSPORTMGRS = 7  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS, REST
+var toTransportChannel []chan string
+var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
 
@@ -1101,6 +1106,10 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
+	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
+	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
+	restEnable := parser.Flag("", "restenable", &argparse.Options{Required: false, Help: "enable REST+SSE transport (GET/PUT /viss/v2/{path})", Default: false})
+	restPort := parser.Int("", "restport", &argparse.Options{Required: false, Help: "port for REST+SSE transport (default 8081)", Default: 8081})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1171,6 +1180,23 @@ func main() {
 		case "udsMgr":
 			go udsMgr.UdsMgrInit(4, transportMgrChannel[4], toTransportChannel[4])
 			go transportDataSession(transportMgrChannel[4], toTransportChannel[4], transportDataChan[4], backendChan[4])
+		case "ddsMgr":
+			if *ddsEnable {
+				// DDS channel must be unbuffered: DdsMgrInit performs a
+				// synchronous VIN request/response on the same channel.
+				if *ddsDomain != 0 {
+					ddsMgr.SetDomain(dds.Domain(*ddsDomain))
+				}
+				transportMgrChannel[5] = make(chan string)
+				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
+				go transportDataSession(transportMgrChannel[5], toTransportChannel[5], transportDataChan[5], backendChan[5])
+			}
+		case "restMgr":
+			if *restEnable {
+				addr := fmt.Sprintf(":%d", *restPort)
+				go restMgr.RestMgrInit(6, transportMgrChannel[6], addr)
+				go transportDataSession(transportMgrChannel[6], toTransportChannel[6], transportDataChan[6], backendChan[6])
+			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
@@ -1192,6 +1218,10 @@ func main() {
 			serveRequest(request, 3, 0)
 		case request := <-transportDataChan[4]: // request from UDS mgr
 			serveRequest(request, 4, 0)
+		case request := <-transportDataChan[5]: // request from DDS mgr
+			serveRequest(request, 5, 0)
+		case request := <-transportDataChan[6]: // request from REST mgr
+			serveRequest(request, 6, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			request := map[string]interface{}{}

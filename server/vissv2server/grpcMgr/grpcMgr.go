@@ -247,12 +247,12 @@ func initGrpcServer() {
 	for {
 		lis, err := net.Listen("tcp", "0.0.0.0:"+portNo)
 		if err != nil {
-			utils.Error.Printf("failed to listen: " + err.Error())
+			utils.Error.Printf("failed to listen: %v", err)
 			break
 		}
 		err = server.Serve(lis)
 		if err != nil {
-			utils.Error.Printf("failed to start grpc: " + err.Error())
+			utils.Error.Printf("failed to start grpc: %v", err)
 			break
 		}
 	}
