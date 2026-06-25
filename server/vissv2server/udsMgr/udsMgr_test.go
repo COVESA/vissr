@@ -734,6 +734,48 @@ func TestRemoveRoutingForwardResponse_ResponseRouted(t *testing.T) {
 	wg.Wait()
 }
 
+// A VISSv3.2 service "monitoring" event is an unsolicited push and must be
+// routed to the asynchronous clientBackendChan, like a subscription
+// notification — not to the synchronous udsClientChan (where a missing reader
+// would otherwise stall the hub for channelSendTimeout per event).
+func TestRemoveRoutingForwardResponse_MonitoringRouted(t *testing.T) {
+	resetChannels(t)
+	resp := `{"RouterId":"0?0","action":"monitoring","path":"VehicleService.Seating.Row1.DriverSide.MoveSeat","serviceId":"860818","status":"ONGOING","ts":"2026-06-17T14:29:37Z"}`
+	target := clientBackendChan[0]
+	got := make(chan string, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case v := <-target:
+			got <- v
+		case <-time.After(2 * time.Second):
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	// No reader on udsClientChan[0]; routing to the async channel must let this
+	// return promptly (well under channelSendTimeout).
+	done := make(chan struct{})
+	go func() { RemoveRoutingForwardResponse(resp, nil); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("RemoveRoutingForwardResponse stalled on a monitoring event (should use the async channel)")
+	}
+
+	select {
+	case msg := <-got:
+		if !strings.Contains(msg, `"action":"monitoring"`) {
+			t.Errorf("got %q", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("monitoring event not routed to clientBackendChan")
+	}
+	wg.Wait()
+}
+
 func TestRemoveRoutingForwardResponse_DeadReaderTimesOut(t *testing.T) {
 	// Pre-fix would block forever. Now bounded by channelSendTimeout.
 	// We use a very short test by overriding the const in the test only

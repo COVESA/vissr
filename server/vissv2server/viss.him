@@ -13,18 +13,18 @@ HIM.Vehicle:
 HIM.VehicleService:
   type: direct
   domain: Vehicle.Car.Service
-  version: 5.0.0
-  local: forest/VehicleServices.v1.0.binary
-  public: https://github.com/COVESA/hierarchical_information_model/blob/master/examples/HIM_Service_example.v1.0.0.vspec
-  description: The HIM repo example service tree .
+  version: 1.0.0
+  local: forest/ServiceSpecification-example.binary
+  public: https://github.com/COVESA/vissr/tree/v3.2/resources/ServiceSpecification-example.yaml
+  description: The VISSR repo example service tree.
 
 HIM.Types:
   type: direct
   domain: Vehicle.Car.TypeDefinition
-  version: 0.1
-  local: forest/Typedef.v1.0.binary
-  public: https://github.com/COVESA/hierarchical_information_model/blob/master/examples/TypeDefinition_example.v1.0.0.vspec
-  description: The HIM repo example type definition tree.
+  version: 0.5
+  local: forest/ServiceTypes-example.binary
+  public: https://github.com/COVESA/vissr/tree/v3.2/resources/ServiceTypes-example.yaml
+  description: The VISSR repo example type definition tree.
 
 HIM.Server:
   type: direct

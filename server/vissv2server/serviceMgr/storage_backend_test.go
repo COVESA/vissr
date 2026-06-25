@@ -29,7 +29,39 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/go-redis/redis"
 )
+
+// TestRedisBackend_GetConnectionError covers the redisBackend.Get error branch
+// without a live server: a client pointed at a closed port fails the GET (a
+// non-"redis: nil" error) and the adapter must return the Database-error
+// sentinel JSON rather than panic. (The success and cache-miss branches need a
+// real redis and stay integration-only.)
+func TestRedisBackend_GetConnectionError(t *testing.T) {
+	c := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 200 * time.Millisecond})
+	defer c.Close()
+	got := newRedisBackend(c, nil).Get("Vehicle.Speed")
+	if !strings.Contains(got, "Database-error") {
+		t.Errorf("expected Database-error sentinel on connection failure, got %q", got)
+	}
+	if !strings.Contains(got, `"ts"`) {
+		t.Errorf("sentinel missing ts field: %q", got)
+	}
+}
+
+// TestMemcacheBackend_GetConnectionError covers the memcacheBackend.Get error
+// branch the same way: a dead-port client yields a non-"cache miss" error and
+// the adapter returns the Database-error sentinel.
+func TestMemcacheBackend_GetConnectionError(t *testing.T) {
+	mc := memcache.New("127.0.0.1:1")
+	mc.Timeout = 200 * time.Millisecond
+	got := newMemcacheBackend(mc, nil).Get("Vehicle.Speed")
+	if !strings.Contains(got, "Database-error") && !strings.Contains(got, "Data-not-available") {
+		t.Errorf("expected sentinel JSON on connection failure, got %q", got)
+	}
+}
 
 // fakeBackend is a test double implementing StorageBackend. Use it
 // to verify that getVehicleData / setVehicleData dispatch correctly
@@ -210,6 +242,86 @@ func TestHandleServiceSet_WithSuccessfulBackend(t *testing.T) {
 	}
 	if fake.setValue != "100" {
 		t.Errorf("backend got setValue=%q; want 100", fake.setValue)
+	}
+}
+
+// TestHandleServiceSet_NonStringPath is a regression for the audit finding:
+// a "set" whose path is missing or not a string previously panicked on an
+// unchecked type assertion (crashing the whole server). It must now return a
+// bad_request error instead.
+func TestHandleServiceSet_NonStringPath(t *testing.T) {
+	fake := &fakeBackend{setReturn: "2026-01-01T00:00:00Z"}
+	withBackend(fake, func() {
+		resetErrorResponseMap()
+		dataChan := make(chan map[string]interface{}, 1)
+		req := map[string]interface{}{
+			"RouterId":  "0?0",
+			"action":    "set",
+			"requestId": "1",
+			"path":      []interface{}{"not", "a", "string"},
+			"value":     "100",
+		}
+		resp := buildServiceResponseMap(req)
+		go handleServiceSet(req, resp, dataChan)
+		select {
+		case got := <-dataChan:
+			errMap, ok := got["error"].(map[string]interface{})
+			if !ok || errMap["reason"] != "bad_request" {
+				t.Errorf("expected bad_request error; got %v", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("handleServiceSet did not reply on dataChan")
+		}
+	})
+}
+
+// TestHandleServiceGet_NonStringPath is the get-path half of the same
+// regression.
+func TestHandleServiceGet_NonStringPath(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 1)
+	req := map[string]interface{}{
+		"RouterId":  "0?0",
+		"action":    "get",
+		"requestId": "1",
+		"path":      42.0, // JSON number, not a string
+	}
+	resp := buildServiceResponseMap(req)
+	go handleServiceGet(req, resp, dataChan)
+	select {
+	case got := <-dataChan:
+		errMap, ok := got["error"].(map[string]interface{})
+		if !ok || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleServiceGet did not reply on dataChan")
+	}
+}
+
+// TestHandleServiceSubscribe_BadRouting covers the subscribe path: a missing
+// RouterId (or non-string path) must yield bad_request rather than a panic.
+func TestHandleServiceSubscribe_BadRouting(t *testing.T) {
+	resetErrorResponseMap()
+	dataChan := make(chan map[string]interface{}, 1)
+	req := map[string]interface{}{
+		"action":    "subscribe",
+		"requestId": "1",
+		"path":      "Vehicle.Speed",
+		// no RouterId
+	}
+	resp := buildServiceResponseMap(req)
+	go func() {
+		handleServiceSubscribe(req, resp, dataChan, nil, 0, nil, nil, nil)
+	}()
+	select {
+	case got := <-dataChan:
+		errMap, ok := got["error"].(map[string]interface{})
+		if !ok || errMap["reason"] != "bad_request" {
+			t.Errorf("expected bad_request error; got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("handleServiceSubscribe did not reply on dataChan")
 	}
 }
 

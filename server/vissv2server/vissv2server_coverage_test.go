@@ -279,26 +279,86 @@ func TestServiceDataSession_ForwardsRequestUpstream(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // The existing test (TestTransportDataSession_DropsOnFullDispatcher) covers
-// the transportMgrChannel → transportDataChannel direction. This test covers
-// the backendChan → transportMgrChannel direction.
+// the reqChan → transportDataChannel direction. This test covers the
+// backendChan → respChan direction, and also asserts the response does NOT
+// leak onto reqChan (the loopback that misrouted monitoring events).
 func TestTransportDataSession_BackendToTransport(t *testing.T) {
-	mgrChan := make(chan string, 2)
+	reqChan := make(chan string, 2)
+	respChan := make(chan string, 2)
 	dataChan := make(chan map[string]interface{}, 2)
 	beChan := make(chan map[string]interface{}, 2)
 
-	go transportDataSession(mgrChan, dataChan, beChan)
+	go transportDataSession(reqChan, respChan, dataChan, beChan)
 
 	// Push a response from the backend
 	beChan <- map[string]interface{}{"action": "get", "path": "Vehicle.Speed"}
 
 	select {
-	case got := <-mgrChan:
+	case got := <-respChan:
 		// Should be a JSON string (from FinalizeMessage)
 		if got == "" {
 			t.Errorf("expected non-empty JSON from FinalizeMessage; got empty")
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("timeout — backend response not forwarded to transportMgrChannel")
+		t.Fatal("timeout — backend response not forwarded to respChan")
+	}
+
+	// The response must never appear on the request channel: that loopback was
+	// the root cause of monitoring events being re-run through serveRequest.
+	select {
+	case leaked := <-reqChan:
+		t.Fatalf("response looped back onto request channel: %q", leaked)
+	default:
+	}
+}
+
+// TestTransportDataSession_MonitoringStreamNoLoopback reproduces the failure
+// Ulf reported: a service "monitoring" event stream (one every ~250ms) was
+// being re-injected into the request pipeline (serveRequest), which ran a
+// binary-tree search ("Matches=2") on every event and never delivered them to
+// the client. With request and response on separate channels, every event must
+// arrive on respChan and none may ever reach transportDataChannel (the request
+// side feeding serveRequest).
+func TestTransportDataSession_MonitoringStreamNoLoopback(t *testing.T) {
+	const events = 50
+	reqChan := make(chan string, events)
+	respChan := make(chan string, events)
+	// transportDataChannel is what feeds serveRequest. A looped-back event
+	// would land here; it must stay empty for the whole run.
+	dataChan := make(chan map[string]interface{}, events)
+	beChan := make(chan map[string]interface{}, events)
+
+	go transportDataSession(reqChan, respChan, dataChan, beChan)
+
+	for i := 0; i < events; i++ {
+		beChan <- map[string]interface{}{
+			"action":    "monitoring",
+			"path":      "VehicleService.Seating.Row1.DriverSide.MoveSeat",
+			"serviceId": "659839",
+			"status":    "ONGOING",
+		}
+	}
+
+	deadline := time.After(2 * time.Second)
+	for got := 0; got < events; {
+		select {
+		case msg := <-respChan:
+			if msg == "" {
+				t.Fatalf("empty event on respChan")
+			}
+			got++
+		case leaked := <-dataChan:
+			t.Fatalf("monitoring event looped back into request pipeline: %+v", leaked)
+		case <-deadline:
+			t.Fatalf("only %d/%d monitoring events reached the transport before timeout", got, events)
+		}
+	}
+
+	// Nothing should have leaked into the request pipeline.
+	select {
+	case leaked := <-dataChan:
+		t.Fatalf("monitoring event looped back into request pipeline: %+v", leaked)
+	default:
 	}
 }
 
@@ -331,25 +391,26 @@ func TestCalculateHash_ReadError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTransportDataSession_DropsWhenTransportMgrFull(t *testing.T) {
-	// Use a 0-capacity (unbuffered) mgrChan with no reader so sends are
+	// Use a 0-capacity (unbuffered) respChan with no reader so sends are
 	// immediately non-blocking-and-dropped, exercising the default branch.
-	mgrChan := make(chan string) // unbuffered — sends will drop
+	reqChan := make(chan string, 4)
+	respChan := make(chan string) // unbuffered — sends will drop
 	dataChan := make(chan map[string]interface{}, 4)
 	beChan := make(chan map[string]interface{}, 4)
 
-	go transportDataSession(mgrChan, dataChan, beChan)
+	go transportDataSession(reqChan, respChan, dataChan, beChan)
 
-	// Push a backend response: the session tries to send on mgrChan (unbuffered),
+	// Push a backend response: the session tries to send on respChan (unbuffered),
 	// which has no reader → hits the default/drop branch.
 	beChan <- map[string]interface{}{"action": "get"}
 
 	// Give the goroutine time to process and drop.
 	time.Sleep(50 * time.Millisecond)
 
-	// mgrChan should be empty (drop path taken).
+	// respChan should be empty (drop path taken).
 	select {
-	case <-mgrChan:
-		t.Error("expected drop but got delivery on unbuffered mgrChan")
+	case <-respChan:
+		t.Error("expected drop but got delivery on unbuffered respChan")
 	default:
 		// Good — was dropped
 	}

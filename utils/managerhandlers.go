@@ -584,12 +584,45 @@ func GetTLSConfig(host string, caCertFile string, certOpt tls.ClientAuthType, se
 	}
 }
 
+// RemoveInternalData strips the internal "RouterId":"mgrId?clientId" property
+// that AddRoutingForwardRequest prepends to a request, returning the cleaned
+// response together with the clientId used for transport-side routing.
+//
+// A response that carries no RouterId (e.g. a service "monitoring" event
+// emitted without one) used to panic here: strings.Index returned -1, making
+// routerIdStart == -2 and response[-2:] an out-of-range slice that crashed the
+// whole server. It now returns the response unchanged with clientId == -1 on
+// any malformed/missing RouterId, so callers can detect the missing route and
+// drop the message instead of crashing or misrouting it.
 func RemoveInternalData(response string) (string, int) { // "RouterId":"mgrId?clientId",
-	routerIdStart := strings.Index(response, "RouterId") - 1
-	clientIdStart := strings.Index(response[routerIdStart:], "?") + 1 + routerIdStart
+	routerIdKey := strings.Index(response, "RouterId")
+	if routerIdKey <= 0 { // must be preceded by at least the opening quote
+		return response, -1
+	}
+	routerIdStart := routerIdKey - 1
+	qMark := strings.Index(response[routerIdStart:], "?")
+	if qMark < 0 {
+		return response, -1
+	}
+	clientIdStart := qMark + 1 + routerIdStart
 	clientIdStop := NextQuoteMark([]byte(response), clientIdStart)
-	clientId, _ := strconv.Atoi(response[clientIdStart:clientIdStop])
-	routerIdStop := strings.Index(response[clientIdStop:], ",") + 1 + clientIdStop
+	if clientIdStop <= clientIdStart || clientIdStop > len(response) {
+		return response, -1 // no closing quote on the clientId
+	}
+	clientId, err := strconv.Atoi(response[clientIdStart:clientIdStop])
+	if err != nil {
+		return response, -1 // non-numeric clientId
+	}
+	// Remove the RouterId property. It is normally the first field and
+	// comma-terminated, but tolerate it being last (no trailing comma): the
+	// clientId is still valid, so we route rather than drop.
+	routerIdStop := clientIdStop + 1 // past the closing quote of the value
+	if comma := strings.Index(response[clientIdStop:], ","); comma >= 0 {
+		routerIdStop = comma + 1 + clientIdStop
+	}
+	if routerIdStop > len(response) {
+		routerIdStop = len(response)
+	}
 	trimmedResponse := response[:routerIdStart] + response[routerIdStop:]
 	//Info.Printf("response=%s, trimmedResponse=%s, clientId=%d", response, trimmedResponse, clientId)
 	return trimmedResponse, clientId

@@ -1576,13 +1576,19 @@ func buildServiceResponseMap(requestMap map[string]interface{}) map[string]inter
 // service_unavailable response back on dataChan. Extracted from
 // ServiceMgrInit's dataChan switch in PR #129.
 func handleServiceSet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	path, ok := requestMap["path"].(string)
+	if !ok {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return
+	}
 	var ts string
-	switch requestMap["value"].(type) {
+	switch value := requestMap["value"].(type) {
 	case string:
-		ts = setVehicleData(requestMap["path"].(string), requestMap["value"].(string))
+		ts = setVehicleData(path, value)
 	case map[string]interface{}:
-		data, _ := json.Marshal(requestMap["value"])
-		ts = setVehicleData(requestMap["path"].(string), string(data))
+		data, _ := json.Marshal(value)
+		ts = setVehicleData(path, string(data))
 	}
 	if len(ts) == 0 {
 		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
@@ -1599,7 +1605,13 @@ func handleServiceSet(requestMap map[string]interface{}, responseMap map[string]
 // ServiceMgrInit in PR #129. Error paths emit invalid_data or
 // bad_request as appropriate.
 func handleServiceGet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
-	pathArray := unpackPaths(requestMap["path"].(string))
+	path, ok := requestMap["path"].(string)
+	if !ok {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return
+	}
+	pathArray := unpackPaths(path)
 	if pathArray == nil {
 		utils.Error.Printf("Unmarshal of path array failed.")
 		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
@@ -1651,8 +1663,15 @@ func handleServiceSubscribe(
 ) ([]SubscriptionState, int) {
 	var subscriptionState SubscriptionState
 	subscriptionState.SubscriptionId = subscriptionId
-	subscriptionState.RouterId = requestMap["RouterId"].(string)
-	subscriptionState.Path = unpackPaths(requestMap["path"].(string))
+	routerId, routerOk := requestMap["RouterId"].(string)
+	path, pathOk := requestMap["path"].(string)
+	if !routerOk || !pathOk { // RouterId is injected by the transport mgr; path is client-supplied
+		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
+		dataChan <- errorResponseMap
+		return subscriptionList, subscriptionId
+	}
+	subscriptionState.RouterId = routerId
+	subscriptionState.Path = unpackPaths(path)
 	if len(subscriptionState.Path) == 0 { // Fix bug 2: unpackPaths returned nil for malformed JSON
 		utils.SetErrorResponse(requestMap, errorResponseMap, 0, "") //bad_request
 		dataChan <- errorResponseMap
@@ -1669,8 +1688,8 @@ func handleServiceSubscribe(
 		dataChan <- errorResponseMap
 		return subscriptionList, subscriptionId // Fix bug 1: return instead of falling through
 	}
-	if requestMap["gatingId"] != nil {
-		subscriptionState.GatingId = requestMap["gatingId"].(string)
+	if gatingId, ok := requestMap["gatingId"].(string); ok {
+		subscriptionState.GatingId = gatingId
 	}
 	subscriptionState.LatestDataPoint = getVehicleData(subscriptionState.Path[0])
 	subscriptionList = append(subscriptionList, subscriptionState)
@@ -1717,10 +1736,15 @@ func handleServiceUnsubscribe(requestMap map[string]interface{}, responseMap map
 // is emitted — this is an internal cleanup message. Returns the
 // updated subscriptionList. Extracted from ServiceMgrInit in PR #129.
 func handleInternalKillSubscriptions(requestMap map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
+	routerId, ok := requestMap["RouterId"].(string)
+	if !ok {
+		utils.Error.Printf("internal-killsubscriptions: missing/invalid RouterId; nothing to remove")
+		return subscriptionList
+	}
 	isRemoved := true
 	for isRemoved == true {
-		isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, requestMap["RouterId"].(string))
-		utils.Info.Printf("internal-killsubscriptions: RouterId = %s", requestMap["RouterId"].(string))
+		isRemoved, subscriptionList = scanAndRemoveListItem(subscriptionList, routerId)
+		utils.Info.Printf("internal-killsubscriptions: RouterId = %s", routerId)
 	}
 	return subscriptionList
 }
@@ -1733,7 +1757,12 @@ func handleInternalKillSubscriptions(requestMap map[string]interface{}, subscrip
 // updated subscriptionList. If the gatingId is not found, the list is
 // returned unchanged. Extracted from ServiceMgrInit in PR #129.
 func handleInternalCancelSubscription(requestMap map[string]interface{}, dataChan chan map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
-	routerId, subscriptionId := getSubscriptionData(subscriptionList, requestMap["gatingId"].(string))
+	gatingId, ok := requestMap["gatingId"].(string)
+	if !ok {
+		utils.Error.Printf("internal-cancelsubscription: missing/invalid gatingId; ignoring")
+		return subscriptionList
+	}
+	routerId, subscriptionId := getSubscriptionData(subscriptionList, gatingId)
 	if routerId != "" {
 		requestMap["RouterId"] = routerId
 		requestMap["action"] = "subscription"

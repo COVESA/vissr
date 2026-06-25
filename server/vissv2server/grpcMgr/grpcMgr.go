@@ -379,10 +379,13 @@ func handleGrpcNewClientSession(reqMessage GrpcRequestMessage, mgrId int, transp
 	reqMessage.GrpcRespChan <- `{"action": "get","requestId": "9999","error": {"number": "404", "reason": "max_client_sessions", "description": "Max no of gRPC client sessions reached."},"ts": "2000-01-01T13:37:00Z"}` // requestId and ts values incorrect
 }
 
-func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
+// GrpcMgrInit runs the gRPC transport hub. reqChan carries client requests to
+// the server core; respChan carries responses back from the core. They are
+// separate channels so a response can never be read back here as a request.
+func GrpcMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	utils.ReadTransportSecConfig()
 	grpcMgrId = mgrId
-	grpcMgrChan = transportMgrChan
+	grpcMgrChan = reqChan // request side: used by the subscription-kill forward
 	grpcClientIndexList = make([]bool, MAXGRPCCLIENTS)
 	grpcRoutingDataList = make([]GrpcRoutingData, MAXGRPCCLIENTS)
 	grpcCompression = utils.PROTOBUF // set via viss2server command line param?
@@ -393,10 +396,10 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
+		case respMessage := <-respChan:
 			handleGrpcTransportResponse(respMessage)
 		case reqMessage := <-grpcClientChan[0]:
-			handleGrpcNewClientSession(reqMessage, mgrId, transportMgrChan)
+			handleGrpcNewClientSession(reqMessage, mgrId, reqChan)
 		}
 	}
 }

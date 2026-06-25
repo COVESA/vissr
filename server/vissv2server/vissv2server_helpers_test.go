@@ -121,15 +121,10 @@ func TestSetTokenErrorResponse(t *testing.T) {
 		"path":      "Vehicle.Speed",
 		"requestId": "42",
 	}
-	// Reset the package-level errorResponseMap so the assertion is
-	// deterministic. Tests in this package may share it.
-	for k := range errorResponseMap {
-		delete(errorResponseMap, k)
-	}
-	setTokenErrorResponse(reqMap, 1) // 1 = "Invalid Access Token"
+	resp := setTokenErrorResponse(reqMap, 1) // 1 = "Invalid Access Token"
 	// At minimum, the response should now carry some error indication.
-	if len(errorResponseMap) == 0 {
-		t.Fatalf("setTokenErrorResponse left errorResponseMap empty")
+	if len(resp) == 0 {
+		t.Fatalf("setTokenErrorResponse returned an empty map")
 	}
 }
 

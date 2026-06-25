@@ -1,0 +1,71 @@
+name: SPDX SBOM
+
+on:
+  push:
+    branches: [master, v4.1]
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  build-test:
+    name: Build & test sbom tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests
+        run: go test -race -count=1 ./tools/sbom/
+
+  generate:
+    name: Generate SBOMs
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Generate SPDX 2.2 (tag-value)
+        run: >
+          go run ./tools/sbom
+          --version 2.2 --format tv
+          --name vissr
+          --ns "https://spdx.org/spdxdocs/vissr-${{ github.sha }}-2.2"
+          --out sbom/vissr-2.2.spdx
+
+      - name: Generate SPDX 2.3 (JSON)
+        run: >
+          go run ./tools/sbom
+          --version 2.3 --format json
+          --name vissr
+          --ns "https://spdx.org/spdxdocs/vissr-${{ github.sha }}-2.3"
+          --out sbom/vissr-2.3.spdx.json
+
+      - name: Generate SPDX 3.0.1 (JSON)
+        run: >
+          go run ./tools/sbom
+          --version 3.0.1 --format json
+          --name vissr
+          --ns "https://spdx.org/spdxdocs/vissr-${{ github.sha }}-3.0.1"
+          --out sbom/vissr-3.0.1.spdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom/
+          retention-days: 90
+
+      - name: Attach SBOMs to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom/vissr-2.2.spdx
+            sbom/vissr-2.3.spdx.json
+            sbom/vissr-3.0.1.spdx.json
