@@ -73,6 +73,7 @@ var serverComponents []string = []string{
  * If support for new transport protocol is added, add element to channel
  */
  const NUMOFTRANSPORTMGRS = 7  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS, REST
+var toTransportChannel []chan string
 var transportMgrChannel []chan string
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
