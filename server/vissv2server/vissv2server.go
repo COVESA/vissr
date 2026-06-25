@@ -1178,8 +1178,8 @@ func main() {
 			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3], toTransportChannel[3])
 			go transportDataSession(transportMgrChannel[3], toTransportChannel[3], transportDataChan[3], backendChan[3])
 		case "udsMgr":
-			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
-			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
+			go udsMgr.UdsMgrInit(4, transportMgrChannel[4], toTransportChannel[4])
+			go transportDataSession(transportMgrChannel[4], toTransportChannel[4], transportDataChan[4], backendChan[4])
 		case "ddsMgr":
 			if *ddsEnable {
 				// DDS channel must be unbuffered: DdsMgrInit performs a
@@ -1189,13 +1189,13 @@ func main() {
 				}
 				transportMgrChannel[5] = make(chan string)
 				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5])
-				go transportDataSession(transportMgrChannel[5], transportDataChan[5], backendChan[5])
+				go transportDataSession(transportMgrChannel[5], toTransportChannel[5], transportDataChan[5], backendChan[5])
 			}
 		case "restMgr":
 			if *restEnable {
 				addr := fmt.Sprintf(":%d", *restPort)
 				go restMgr.RestMgrInit(6, transportMgrChannel[6], addr)
-				go transportDataSession(transportMgrChannel[6], transportDataChan[6], backendChan[6])
+				go transportDataSession(transportMgrChannel[6], toTransportChannel[6], transportDataChan[6], backendChan[6])
 			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
