@@ -1,25 +1,40 @@
 {
     "action": "invoke",
-    "path": "VehicleService.Seating.Row1.DriverSide.MoveSeat",
+    "path": "VehicleService.Seating.MoveSeat",
     "input": {"MovementType": "longitudinal", "Position": "40"},
-    "filter": {"variant": "timebased", "parameter": {"period": "250"}},
+    "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "timebased", "parameter": {"period": "250"}}],
     "requestId": "8756"
 }
 
 {
     "action": "monitor",
     "path": "VehicleService.Seating.MoveSeat",
-    "filter": {"variant": "all"},
-    "requestId": "8756"
+    "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "all"}],
+    "requestId": "8757"
 }
 
 {
     "action": "cancel",
-    "serviceId": "8756"
+    "serviceId": "1234"
 }
 
 {
     "action": "discover",
     "path": "VehicleService.Seating",
-    "requestId": "5687"
+    "requestId": "8758"
+}
+
+{
+    "action": "invoke",
+    "path": "VehicleService.Seating.ActivateMassage",
+    "input": {"MassageType": "roll", "Duration": "300"},
+    "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "status"}],
+    "requestId": "8759"
+}
+
+{
+    "action": "invoke",
+    "path": "VehicleService.Seating.GetCapabilities",
+    "filter": {"variant": "none"},
+    "requestId": "8760"
 }
