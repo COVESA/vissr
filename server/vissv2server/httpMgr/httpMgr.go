@@ -21,6 +21,10 @@ var HttpClientChan = []chan string{
 
 func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
+	if clientId < 0 || clientId >= len(HttpClientChan) {
+		utils.Error.Printf("httpMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
+		return
+	}
 	HttpClientChan[clientId] <- trimmedResponse
 }
 
@@ -53,7 +57,10 @@ func handleHttpTransportResponse(respMessage string, transportMgrChan chan strin
 	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
 }
 
-func HttpMgrInit(mgrId int, transportMgrChan chan string) {
+// HttpMgrInit runs the HTTP transport hub. reqChan carries client requests
+// to the server core; respChan carries responses back from the core. They are
+// separate channels so a response can never be read back here as a request.
+func HttpMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	utils.ReadTransportSecConfig()
 	utils.JsonSchemaInit()
 
@@ -64,9 +71,9 @@ func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case reqMessage := <-HttpClientChan[0]:
-			handleHttpClientRequest(reqMessage, mgrId, transportMgrChan)
-		case respMessage := <-transportMgrChan:
-			handleHttpTransportResponse(respMessage, transportMgrChan)
+			handleHttpClientRequest(reqMessage, mgrId, reqChan)
+		case respMessage := <-respChan:
+			handleHttpTransportResponse(respMessage, respChan)
 		}
 	}
 }

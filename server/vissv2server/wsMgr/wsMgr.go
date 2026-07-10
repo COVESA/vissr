@@ -57,15 +57,36 @@ func initChannels() {
 }
 func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
-	if strings.Contains(trimmedResponse, "\"subscription\"") {
+	if clientId < 0 || clientId >= NUMOFWSCLIENTS {
+		utils.Error.Printf("wsMgr:RemoveRoutingForwardResponse: invalid clientId=%d (response=%q); dropping", clientId, trimmedResponse)
+		return
+	}
+	if isAsyncServerPush(trimmedResponse) {
 		select {
-		case clientBackendChan[clientId] <- trimmedResponse: //subscription notification
-		default: 
+		case clientBackendChan[clientId] <- trimmedResponse: // subscription notification or service monitoring event
+		default:
 			utils.Error.Printf("wsmgr:Event dropped")
 		}
 	} else {
 		wsClientChan[clientId] <- trimmedResponse
 	}
+}
+
+// isAsyncServerPush reports whether a message is an unsolicited server push
+// rather than the response to a client request. Pushes must go to the
+// asynchronous write-pump channel (clientBackendChan), which backendWSAppSession
+// drains continuously. The synchronous wsClientChan is only read by the
+// frontend goroutine in the window between sending a request and receiving its
+// response; once a request handshake completes the frontend is parked on
+// conn.ReadMessage(), so a blocking send of a push to wsClientChan would wedge
+// the hub and back up the transport channel ("server hub: Event dropped").
+//
+// Two kinds of push exist:
+//   - subscribe notifications, carrying a "subscription":"<id>" field, and
+//   - VISSv3.2 service monitoring events, carrying "action":"monitoring".
+func isAsyncServerPush(message string) bool {
+	return strings.Contains(message, "\"subscription\"") ||
+		strings.Contains(message, "\"action\":\"monitoring\"")
 }
 
 func checkCompressionRequest(reqMessage string) {
@@ -424,7 +445,10 @@ func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transport
 	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
 }
 
-func WsMgrInit(mgrId int, transportMgrChan chan string) {
+// WsMgrInit runs the WebSocket transport hub. reqChan carries client requests
+// to the server core; respChan carries responses back from the core. They are
+// separate channels so a response can never be read back here as a request.
+func WsMgrInit(mgrId int, reqChan chan string, respChan chan string) {
 	var reqMessage string
 	var clientId int
 	utils.ReadTransportSecConfig()
@@ -436,8 +460,8 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
-			handleWsTransportResponse(respMessage, transportMgrChan)
+		case respMessage := <-respChan:
+			handleWsTransportResponse(respMessage, respChan)
 			continue
 		case reqMessage = <-wsClientChan[0]: clientId = 0
 		case reqMessage = <-wsClientChan[1]: clientId = 1
@@ -460,6 +484,6 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-wsClientChan[18]: clientId = 18
 		case reqMessage = <-wsClientChan[19]: clientId = 19
 		}
-		handleWsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleWsClientRequest(reqMessage, mgrId, clientId, reqChan)
 	}
 }

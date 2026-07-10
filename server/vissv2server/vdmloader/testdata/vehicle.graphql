@@ -1,0 +1,40 @@
+# Minimal VDM SDL fixture used by vdmloader unit tests.
+# Covers: branch nodes, SENSOR/ACTUATOR/ATTRIBUTE leaves,
+# @range bounds, @unit, @defaultValue, allowed-value enums,
+# nested hierarchy, and the @viss_service extension.
+
+enum VehicleGearPosition {
+  PARK     @vspec(originalName: "Park")
+  REVERSE  @vspec(originalName: "Reverse")
+  NEUTRAL  @vspec(originalName: "Neutral")
+  DRIVE    @vspec(originalName: "Drive")
+}
+
+type Vehicle @vspec(element: BRANCH, fqn: "Vehicle", description: "Top-level vehicle object") {
+  Speed:           Float               @vspec(element: SENSOR,    fqn: "Vehicle.Speed",           description: "Current speed") @range(min: 0, max: 250) @unit(value: "km/h")
+  TripMileage:     Float               @vspec(element: SENSOR,    fqn: "Vehicle.TripMileage",      description: "Trip distance") @unit(value: "km") @defaultValue(value: "0")
+  CurrentGear:     VehicleGearPosition @vspec(element: SENSOR,    fqn: "Vehicle.CurrentGear",      description: "Current gear") @defaultValue(value: "Park")
+  CurrentLocation: VehicleCurrentLocation @vspec(element: BRANCH, fqn: "Vehicle.CurrentLocation")
+  ADAS:            VehicleADAS         @vspec(element: BRANCH,    fqn: "Vehicle.ADAS")
+  Cabin:           VehicleCabin        @vspec(element: BRANCH,    fqn: "Vehicle.Cabin")
+}
+
+type VehicleCurrentLocation @vspec(element: BRANCH, fqn: "Vehicle.CurrentLocation", description: "Current location") {
+  Latitude:  Float @vspec(element: SENSOR, fqn: "Vehicle.CurrentLocation.Latitude",  description: "Latitude")  @range(min: -90,  max: 90)  @unit(value: "degrees")
+  Longitude: Float @vspec(element: SENSOR, fqn: "Vehicle.CurrentLocation.Longitude", description: "Longitude") @range(min: -180, max: 180) @unit(value: "degrees")
+  Altitude:  Float @vspec(element: SENSOR, fqn: "Vehicle.CurrentLocation.Altitude",  description: "Altitude")  @unit(value: "m")
+}
+
+type VehicleADAS @vspec(element: BRANCH, fqn: "Vehicle.ADAS", description: "Advanced driver-assistance systems") {
+  ActiveAutonomyLevel: String @vspec(element: ATTRIBUTE, fqn: "Vehicle.ADAS.ActiveAutonomyLevel", description: "Current autonomy level")
+  ABS: VehicleADASABS @vspec(element: BRANCH, fqn: "Vehicle.ADAS.ABS")
+}
+
+type VehicleADASABS @vspec(element: BRANCH, fqn: "Vehicle.ADAS.ABS", description: "Antilock braking system") {
+  IsEnabled: Boolean @vspec(element: ACTUATOR, fqn: "Vehicle.ADAS.ABS.IsEnabled", description: "Enable or disable ABS") @defaultValue(value: "false")
+  IsActive:  Boolean @vspec(element: SENSOR,   fqn: "Vehicle.ADAS.ABS.IsActive",  description: "ABS is currently active")
+}
+
+type VehicleCabin @vspec(element: BRANCH, fqn: "Vehicle.Cabin", description: "Vehicle cabin") {
+  Temperature: Float @vspec(element: SENSOR, fqn: "Vehicle.Cabin.Temperature", description: "Cabin temperature") @range(min: -40, max: 100) @unit(value: "celsius")
+}

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vissr — VDM Signal Tree</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1a1d23; --surface: #23272e; --border: #363b45;
+  --text: #d4d8e0; --muted: #7c8391; --accent: #4c9be8;
+  --green: #56d364; --orange: #e8963c; --purple: #bc8cff; --red: #f47067; --yellow: #d29922;
+  --sensor: var(--green); --actuator: var(--orange);
+  --attribute: var(--purple); --branch: var(--muted);
+  --procedure: var(--red);
+}
+body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── header ── */
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: .5rem 1rem; display: flex; align-items: center; gap: .75rem; flex-shrink: 0; flex-wrap: wrap; }
+header h1 { font-size: .95rem; font-weight: 600; color: var(--accent); letter-spacing: .04em; white-space: nowrap; }
+header select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .3rem .6rem; border-radius: 4px; font-size: 13px; cursor: pointer; }
+header select:focus { outline: none; border-color: var(--accent); }
+.hdr-btn { background: rgba(255,255,255,.07); border: 1px solid var(--border); color: var(--text); padding: .28rem .7rem; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.hdr-btn:hover { background: rgba(255,255,255,.12); }
+.hdr-btn.active { border-color: var(--accent); color: var(--accent); }
+#health-bar { margin-left: auto; display: flex; align-items: center; gap: .5rem; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.health-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.health-dot.live { background: var(--green); }
+
+/* ── layout ── */
+main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── tree panel ── */
+#tree-panel { width: 42%; min-width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+#search { display: block; width: calc(100% - 1rem); margin: .5rem; padding: .4rem .7rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; flex-shrink: 0; }
+#search:focus { outline: none; border-color: var(--accent); }
+#search::placeholder { color: var(--muted); }
+#tree-root { flex: 1; overflow-y: auto; padding: 0 0 1rem 0; }
+
+/* ── search results pane ── */
+#search-results { display: none; flex: 1; overflow-y: auto; padding: .5rem; }
+#search-results.visible { display: block; }
+.search-hit { padding: .3rem .5rem; border-radius: 3px; cursor: pointer; font-size: 12px; font-family: monospace; color: var(--accent); }
+.search-hit:hover { background: rgba(255,255,255,.05); }
+.search-hit-meta { color: var(--muted); margin-left: .5rem; font-family: sans-serif; }
+
+/* ── tree items ── */
+.tree-item { display: flex; align-items: center; gap: .4rem; padding: .22rem .5rem .22rem 0; cursor: pointer; white-space: nowrap; border-radius: 3px; margin: 0 .25rem; }
+.tree-item:hover { background: rgba(255,255,255,.05); }
+.tree-item.selected { background: rgba(76,155,232,.18); }
+.tree-indent { display: inline-block; width: 16px; flex-shrink: 0; }
+.toggle { width: 16px; text-align: center; flex-shrink: 0; color: var(--muted); font-size: 10px; user-select: none; }
+.node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.node-badge { font-size: 10px; padding: .1em .45em; border-radius: 3px; font-weight: 600; flex-shrink: 0; text-transform: uppercase; letter-spacing: .04em; }
+.badge-branch    { background: rgba(124,131,145,.2); color: var(--muted); }
+.badge-sensor    { background: rgba(86,211,100,.15); color: var(--sensor); }
+.badge-actuator  { background: rgba(232,150,60,.15);  color: var(--actuator); }
+.badge-attribute { background: rgba(188,140,255,.15); color: var(--attribute); }
+.badge-procedure { background: rgba(244,112,103,.15); color: var(--procedure); }
+.tree-children { }
+
+/* ── detail panel ── */
+#detail-panel { flex: 1; overflow-y: auto; padding: 1.5rem; }
+#detail-panel h2 { font-size: 1.05rem; margin-bottom: 1rem; color: var(--text); display: flex; align-items: center; gap: .6rem; }
+#detail-panel .empty { color: var(--muted); font-size: 13px; margin-top: 2rem; text-align: center; }
+.detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: .4rem 1rem; }
+.detail-label { color: var(--muted); font-size: 12px; padding-top: .1rem; }
+.detail-value { color: var(--text); font-size: 13px; word-break: break-all; }
+.detail-value.path { font-family: monospace; font-size: 12px; color: var(--accent); display: flex; align-items: center; gap: .4rem; }
+.copy-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-size: 11px; padding: .1em .4em; border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+.copy-btn:hover { color: var(--text); border-color: var(--text); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+.allowed-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+.allowed-chip { background: rgba(188,140,255,.15); color: var(--attribute); padding: .15em .5em; border-radius: 3px; font-size: 12px; }
+hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+/* ── validate panel ── */
+#validate-panel { display: none; }
+#validate-panel.visible { display: block; }
+.validate-header { font-size: 13px; font-weight: 600; margin-bottom: .6rem; color: var(--text); }
+.issue-item { display: flex; gap: .5rem; align-items: baseline; padding: .3rem 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.issue-item:last-child { border-bottom: none; }
+.issue-sev { font-size: 10px; font-weight: 700; padding: .1em .4em; border-radius: 3px; text-transform: uppercase; flex-shrink: 0; }
+.issue-sev.error   { background: rgba(244,112,103,.2); color: var(--red); }
+.issue-sev.warning { background: rgba(210,153,34,.2);  color: var(--yellow); }
+.issue-path { font-family: monospace; color: var(--accent); }
+.issue-msg  { color: var(--muted); }
+.issue-none { color: var(--green); font-size: 13px; padding: .5rem 0; }
+
+/* ── scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>vissr VDM</h1>
+  <select id="forest-select"><option value="">Loading…</option></select>
+  <button class="hdr-btn" id="validate-btn" title="Validate current tree">Validate</button>
+  <div id="health-bar">
+    <span class="health-dot" id="health-dot"></span>
+    <span id="health-text">—</span>
+  </div>
+</header>
+
+<main>
+  <div id="tree-panel">
+    <input id="search" type="search" placeholder="Filter or search all trees (Enter)…">
+    <div id="tree-root"></div>
+    <div id="search-results"></div>
+  </div>
+  <div id="detail-panel">
+    <p class="empty">Select a signal node to see its properties.</p>
+  </div>
+</main>
+
+<script>
+// ── state ───────────────────────────────────────────────────────────────────
+let treeData = null;
+let selected = null;
+let currentRoot = null;
+
+// ── bootstrap ────────────────────────────────────────────────────────────────
+async function init() {
+  connectSSE();
+  const forestRes = await fetch('/api/forest').catch(() => null);
+  if (!forestRes || !forestRes.ok) {
+    document.getElementById('health-text').textContent = 'Error: /api/forest unreachable';
+    return;
+  }
+  const forest = await forestRes.json();
+  const sel = document.getElementById('forest-select');
+  sel.innerHTML = '';
+  if (!forest || forest.length === 0) {
+    sel.innerHTML = '<option>No trees loaded</option>';
+    return;
+  }
+  forest.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.rootName;
+    opt.textContent = `${f.rootName}  (${f.domain} v${f.version})`;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', () => loadTree(sel.value));
+  loadTree(sel.value);
+}
+
+async function loadTree(rootName) {
+  if (!rootName) return;
+  currentRoot = rootName;
+  document.getElementById('tree-root').innerHTML = '';
+  clearDetail();
+  hideSearchResults();
+  const res = await fetch(`/api/tree/${rootName}`).catch(() => null);
+  if (!res || !res.ok) {
+    document.getElementById('health-text').textContent = `Error loading ${rootName}`;
+    return;
+  }
+  treeData = await res.json();
+  renderTree(treeData, document.getElementById('tree-root'), '');
+}
+
+// ── SSE health ────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.addEventListener('health', e => {
+    try {
+      const h = JSON.parse(e.data);
+      const mb = h.heapMB.toFixed(1);
+      const upMin = Math.floor(h.uptimeS / 60);
+      const upSec = h.uptimeS % 60;
+      const up = upMin > 0 ? `${upMin}m${upSec}s` : `${upSec}s`;
+      document.getElementById('health-text').textContent =
+        `${h.goroutines} goroutines · ${mb} MB heap · up ${up} · ${h.trees} tree${h.trees !== 1 ? 's' : ''}`;
+      document.getElementById('health-dot').className = 'health-dot live';
+    } catch (_) {}
+  });
+  es.onerror = () => {
+    document.getElementById('health-dot').className = 'health-dot';
+  };
+}
+
+// ── tree rendering ───────────────────────────────────────────────────────────
+function renderTree(node, container, parentPath, depth = 0) {
+  const path = parentPath ? `${parentPath}.${node.name}` : node.name;
+  const hasCh = node.children && node.children.length > 0;
+
+  const item = document.createElement('div');
+  item.className = 'tree-item';
+  item.dataset.path = path;
+  item.dataset.node = JSON.stringify(node);
+
+  for (let i = 0; i < depth; i++) {
+    const ind = document.createElement('span');
+    ind.className = 'tree-indent';
+    item.appendChild(ind);
+  }
+
+  const toggle = document.createElement('span');
+  toggle.className = 'toggle';
+  toggle.textContent = hasCh ? '▶' : '';
+  item.appendChild(toggle);
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'node-name';
+  nameEl.textContent = node.name;
+  item.appendChild(nameEl);
+
+  const badge = document.createElement('span');
+  badge.className = `node-badge badge-${node.nodeType || 'branch'}`;
+  badge.textContent = node.nodeType || 'branch';
+  item.appendChild(badge);
+
+  container.appendChild(item);
+
+  let childContainer = null;
+  let expanded = depth < 1;
+
+  if (hasCh) {
+    childContainer = document.createElement('div');
+    childContainer.className = 'tree-children';
+    childContainer.style.display = expanded ? '' : 'none';
+    toggle.textContent = expanded ? '▼' : '▶';
+    node.children.forEach(ch => renderTree(ch, childContainer, path, depth + 1));
+    container.appendChild(childContainer);
+
+    toggle.addEventListener('click', e => {
+      e.stopPropagation();
+      expanded = !expanded;
+      childContainer.style.display = expanded ? '' : 'none';
+      toggle.textContent = expanded ? '▼' : '▶';
+    });
+  }
+
+  item.addEventListener('click', () => {
+    if (selected) selected.classList.remove('selected');
+    item.classList.add('selected');
+    selected = item;
+    hideValidate();
+    showDetail(JSON.parse(item.dataset.node), item.dataset.path);
+  });
+}
+
+// ── detail panel ─────────────────────────────────────────────────────────────
+function clearDetail() {
+  document.getElementById('detail-panel').innerHTML = '<p class="empty">Select a signal node to see its properties.</p>';
+}
+
+function showDetail(node, path) {
+  const panel = document.getElementById('detail-panel');
+  const rows = [];
+
+  const row = (label, value, cls = '') =>
+    `<div class="detail-label">${label}</div><div class="detail-value ${cls}">${value}</div>`;
+
+  const pathHtml = `<span style="font-family:monospace;font-size:12px;color:var(--accent)">${escHtml(path)}</span>
+    <button class="copy-btn" onclick="copyFQN(this,'${escAttr(path)}')" title="Copy FQN">copy</button>`;
+  rows.push(`<div class="detail-label">Path</div><div class="detail-value path">${pathHtml}</div>`);
+  rows.push(row('Node type', badgeHtml(node.nodeType)));
+  if (node.datatype)    rows.push(row('Datatype',    escHtml(node.datatype)));
+  if (node.unit)        rows.push(row('Unit',        escHtml(node.unit)));
+  if (node.min || node.max) rows.push(row('Range', `${node.min || '—'} … ${node.max || '—'}`));
+  if (node.default)     rows.push(row('Default',     escHtml(node.default)));
+  if (node.description) rows.push(row('Description', escHtml(node.description)));
+
+  let allowedHtml = '';
+  if (node.allowed && node.allowed.length > 0) {
+    const chips = node.allowed.map(v => `<span class="allowed-chip">${escHtml(v)}</span>`).join('');
+    allowedHtml = `<hr class="divider"><div class="detail-grid">
+      <div class="detail-label">Allowed values</div>
+      <div class="detail-value"><div class="allowed-chips">${chips}</div></div>
+    </div>`;
+  }
+
+  let childCount = '';
+  if (node.children && node.children.length > 0) {
+    childCount = `<hr class="divider"><div class="detail-grid">${row('Children', node.children.length)}</div>`;
+  }
+
+  panel.innerHTML = `
+    <h2>${escHtml(node.name)} ${badgeHtml(node.nodeType)}</h2>
+    <div class="detail-grid">${rows.join('')}</div>
+    ${allowedHtml}
+    ${childCount}
+    <div id="validate-panel"></div>
+  `;
+}
+
+function copyFQN(btn, path) {
+  navigator.clipboard.writeText(path).then(() => {
+    btn.textContent = 'copied!';
+    btn.className = 'copy-btn copied';
+    setTimeout(() => { btn.textContent = 'copy'; btn.className = 'copy-btn'; }, 1500);
+  }).catch(() => {
+    btn.textContent = 'err';
+    setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+  });
+}
+
+function badgeHtml(type) {
+  return `<span class="node-badge badge-${type || 'branch'}">${type || 'branch'}</span>`;
+}
+
+// ── validate ──────────────────────────────────────────────────────────────────
+document.getElementById('validate-btn').addEventListener('click', async () => {
+  if (!currentRoot) return;
+  const btn = document.getElementById('validate-btn');
+  btn.textContent = 'Validating…';
+  btn.disabled = true;
+
+  const res = await fetch(`/api/validate/${currentRoot}`).catch(() => null);
+  btn.textContent = 'Validate';
+  btn.disabled = false;
+
+  if (!res || !res.ok) {
+    alert('Validate failed — is the tree loaded?');
+    return;
+  }
+  const issues = await res.json();
+
+  // Show validate panel in detail area, replacing whatever was there.
+  const panel = document.getElementById('detail-panel');
+  if (issues.length === 0) {
+    panel.innerHTML = `
+      <h2>Validate: ${escHtml(currentRoot)}</h2>
+      <div id="validate-panel" class="visible">
+        <p class="issue-none">✓ No issues found in ${escHtml(currentRoot)}</p>
+      </div>`;
+    return;
+  }
+
+  const errCount   = issues.filter(i => i.severity === 'error').length;
+  const warnCount  = issues.filter(i => i.severity === 'warning').length;
+  const itemsHtml  = issues.map(i => `
+    <div class="issue-item">
+      <span class="issue-sev ${i.severity}">${i.severity}</span>
+      <span class="issue-path">${escHtml(i.path)}</span>
+      <span class="issue-msg">— ${escHtml(i.message)}</span>
+    </div>`).join('');
+
+  panel.innerHTML = `
+    <h2>Validate: ${escHtml(currentRoot)}</h2>
+    <div id="validate-panel" class="visible">
+      <p class="validate-header">${errCount} error${errCount !== 1 ? 's' : ''}, ${warnCount} warning${warnCount !== 1 ? 's' : ''}</p>
+      ${itemsHtml}
+    </div>`;
+});
+
+function hideValidate() {
+  const vp = document.getElementById('validate-panel');
+  if (vp) vp.classList.remove('visible');
+}
+
+// ── search / filter ───────────────────────────────────────────────────────────
+const searchEl = document.getElementById('search');
+let searchTimer = null;
+
+searchEl.addEventListener('input', function() {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if (!q) {
+    hideSearchResults();
+    filterTree('');
+    return;
+  }
+  filterTree(q.toLowerCase());
+  // Server-side cross-tree search on Enter or after 400 ms pause
+  searchTimer = setTimeout(() => runServerSearch(q), 400);
+});
+
+searchEl.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    clearTimeout(searchTimer);
+    runServerSearch(this.value.trim());
+  }
+});
+
+function filterTree(q) {
+  document.querySelectorAll('.tree-item').forEach(item => {
+    const path = (item.dataset.path || '').toLowerCase();
+    item.style.display = (!q || path.includes(q)) ? '' : 'none';
+  });
+  document.querySelectorAll('.tree-children').forEach(c => {
+    if (q) c.style.display = '';
+  });
+}
+
+async function runServerSearch(q) {
+  if (!q) { hideSearchResults(); return; }
+  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`).catch(() => null);
+  if (!res || !res.ok) return;
+  const results = await res.json();
+  showSearchResults(results, q);
+}
+
+function showSearchResults(results, q) {
+  const container = document.getElementById('search-results');
+  const treeRoot  = document.getElementById('tree-root');
+  if (results.length === 0) {
+    container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:.5rem">No results for "${escHtml(q)}"</p>`;
+  } else {
+    container.innerHTML = results.map(r =>
+      `<div class="search-hit" onclick="jumpToPath('${escAttr(r.path)}')">
+        ${escHtml(r.path)}<span class="search-hit-meta">${escHtml(r.treeName)}</span>
+      </div>`
+    ).join('');
+  }
+  container.classList.add('visible');
+  treeRoot.style.display = 'none';
+}
+
+function hideSearchResults() {
+  document.getElementById('search-results').classList.remove('visible');
+  document.getElementById('tree-root').style.display = '';
+}
+
+function jumpToPath(path) {
+  hideSearchResults();
+  searchEl.value = '';
+  filterTree('');
+  // Expand and highlight the item in the tree.
+  const item = document.querySelector(`.tree-item[data-path="${CSS.escape(path)}"]`);
+  if (!item) return;
+  // Ensure all ancestors are expanded.
+  let el = item.parentElement;
+  while (el && el.id !== 'tree-root') {
+    if (el.classList.contains('tree-children')) el.style.display = '';
+    el = el.parentElement;
+  }
+  if (selected) selected.classList.remove('selected');
+  item.classList.add('selected');
+  selected = item;
+  item.scrollIntoView({ block: 'nearest' });
+  showDetail(JSON.parse(item.dataset.node), item.dataset.path);
+}
+
+// ── utils ─────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+}
+
+// ── start ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

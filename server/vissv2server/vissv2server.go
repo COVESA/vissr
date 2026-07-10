@@ -28,11 +28,15 @@ import (
 	"strconv"
 	"strings"
 
+	dds "github.com/SoundMatt/go-DDS"
 	"github.com/covesa/vissr/server/vissv2server/atServer"
+	"github.com/covesa/vissr/server/vissv2server/ddsMgr"
 	"github.com/covesa/vissr/server/vissv2server/grpcMgr"
 	"github.com/covesa/vissr/server/vissv2server/httpMgr"
 	"github.com/covesa/vissr/server/vissv2server/mqttMgr"
 	"github.com/covesa/vissr/server/vissv2server/serviceMgr"
+	"github.com/covesa/vissr/server/vissv2server/vdmloader"
+	"github.com/covesa/vissr/server/vissv2server/webdash"
 	"github.com/covesa/vissr/server/vissv2server/vissServiceMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgr"
 	"github.com/covesa/vissr/server/vissv2server/wsMgrFT"
@@ -60,6 +64,7 @@ var serverComponents []string = []string{
 	"mqttMgr",
 	"grpcMgr",
 	"udsMgr",
+	"ddsMgr",
 	"atServer",
 }
 
@@ -67,8 +72,9 @@ var serverComponents []string = []string{
  * For communication between transport manager threads and vissv2server thread.
  * If support for new transport protocol is added, add element to channel
  */
- const NUMOFTRANSPORTMGRS = 5  // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS
-var transportMgrChannel []chan string
+const NUMOFTRANSPORTMGRS = 6 // order assigned to channels: HTTP, WS, MQTT, gRPC, UDS, DDS
+var transportMgrChannel []chan string // requests, transport mgr -> core (read by transportDataSession)
+var toTransportChannel []chan string  // responses, core -> transport mgr (written by transportDataSession)
 var transportDataChan []chan map[string]interface{}
 var backendChan []chan map[string]interface{}
 
@@ -83,7 +89,6 @@ var serviceDataChan []chan map[string]interface{}
 
 var ftChannel chan utils.FileTransferCache
 
-var errorResponseMap = map[string]interface{}{}
 
 // extractMgrId parses a RouterId of the form "mgrId?clientId" and returns
 // the mgrId, or -1 if the string is malformed (missing '?' or non-numeric
@@ -123,11 +128,25 @@ func serviceDataSession(serviceMgrChannel chan map[string]interface{}, serviceDa
 	}
 }
 
-func transportDataSession(transportMgrChannel chan string, transportDataChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
+// transportDataSession bridges one transport manager and the server core.
+// reqChan carries inbound client requests (transport mgr -> core) and is read
+// here; respChan carries outbound responses/events (core -> transport mgr) and
+// is written here. The two directions MUST be separate channels.
+//
+// Previously a single channel was shared bidirectionally. Because that channel
+// was buffered, after this goroutine wrote a response it could read it straight
+// back from its own select (an echo/loopback) before the transport manager's
+// goroutine took it. The looped-back message was then treated as a fresh
+// inbound request: high-frequency service "monitoring" events were re-injected
+// into serveRequest, running a binary-tree search on every event and never
+// reaching the client. Two unidirectional channels remove the ambiguity — each
+// has exactly one sender and one receiver, so a message can only ever flow the
+// intended way.
+func transportDataSession(reqChan chan string, respChan chan string, transportDataChannel chan map[string]interface{}, backendChannel chan map[string]interface{}) {
 	for {
 		select {
 
-		case msg := <-transportMgrChannel:
+		case msg := <-reqChan:
 			var msgMap map[string]interface{}
 			utils.MapRequest(msg, &msgMap)
 			// Bug fix: previously unconditional send could wedge the per-transport
@@ -140,7 +159,7 @@ func transportDataSession(transportMgrChannel chan string, transportDataChannel 
 			}
 		case message := <-backendChannel:
 			select {
-			case transportMgrChannel <- utils.FinalizeMessage(message):
+			case respChan <- utils.FinalizeMessage(message):
 			default:
 				utils.Error.Printf("server hub: Event dropped")
 			}
@@ -204,8 +223,8 @@ func getTokenErrorMessage(index int) string {
 	return "Unknown error. "
 }
 
-func setTokenErrorResponse(reqMap map[string]interface{}, errorCode int) {
-	utils.SetErrorResponse(reqMap, errorResponseMap, 3, getTokenErrorMessage(errorCode))
+func setTokenErrorResponse(reqMap map[string]interface{}, errorCode int) map[string]interface{} {
+	return newErrorResponse(reqMap, 3, getTokenErrorMessage(errorCode))
 }
 
 // Sends a message to the Access Token Server to validate the Access Token paths and permissions.
@@ -427,16 +446,26 @@ func isServiceAction(action string) bool {
 	return false
 }
 
-// setErrorAndForward fills errorResponseMap with the given error code
-// and description (using the request fields from requestMap) and pushes
-// it to the backend channel for the transport manager identified by
-// tDChanIndex. Extracted in PR #128 — the SetErrorResponse → backendChan
-// → return pattern was duplicated inline six times inside
-// issueServiceRequest, and the function-level deduplication makes the
-// happy path much easier to read.
+// newErrorResponse builds a fresh error-response map for requestMap.
+//
+// Previously a shared package-global map (errorResponseMap) was reused for
+// every error path. Errors are produced on the main goroutine, but the map is
+// marshaled asynchronously by transportDataSession — which also mutates it via
+// delete(...,"origin") in FinalizeMessage. A second error produced while the
+// first was still queued/being-marshaled therefore caused a fatal "concurrent
+// map iteration and map write". Allocating a fresh map per response removes the
+// sharing entirely.
+func newErrorResponse(requestMap map[string]interface{}, errorIndex int, description string) map[string]interface{} {
+	errResp := map[string]interface{}{}
+	utils.SetErrorResponse(requestMap, errResp, errorIndex, description)
+	return errResp
+}
+
+// setErrorAndForward builds an error response for the given code and
+// description (using the request fields from requestMap) and pushes it to the
+// backend channel for the transport manager identified by tDChanIndex.
 func setErrorAndForward(requestMap map[string]interface{}, tDChanIndex int, errorIndex int, description string) {
-	utils.SetErrorResponse(requestMap, errorResponseMap, errorIndex, description)
-	backendChan[tDChanIndex] <- errorResponseMap
+	backendChan[tDChanIndex] <- newErrorResponse(requestMap, errorIndex, description)
 }
 
 // expandPathFilter takes the Parameter from a "paths" filter and the
@@ -551,15 +580,24 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	}
 	rootPath, ok := requestMap["path"].(string)
 	if !ok {
-		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid path")
-		backendChan[tDChanIndex] <- errorResponseMap
+		backendChan[tDChanIndex] <- newErrorResponse(requestMap, 1, "missing/invalid path")
 		return
 	}
 	var VSSTreeRoot *utils.Node_t
 	if !(rootPath == "HIM" && requestMap["action"] == "get" && requestMap["filter"] != nil) {
 		VSSTreeRoot = utils.SetRootNodePointer(rootPath)
 		if VSSTreeRoot == nil {
-			setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+			// No HIM tree is rooted at the first path segment. This is a
+			// "not found", not a malformed request: returning the generic
+			// bad_request ("The request is malformed.") here previously
+			// masked a forest/path root-name mismatch as a JSON-schema
+			// problem. Report it as unavailable_data with the offending root.
+			rootName := rootPath
+			if dot := strings.Index(rootPath, "."); dot != -1 {
+				rootName = rootPath[:dot]
+			}
+			setErrorAndForward(requestMap, tDChanIndex, 6,
+				"No tree found for path root \""+rootName+"\".") //unavailable_data
 			return
 		}
 		requestMap["infoType"] = utils.GetInfoType(VSSTreeRoot)
@@ -645,14 +683,12 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			if strings.HasPrefix(datatype, "Types") {
 				val, ok := requestMap["value"].(map[string]interface{})
 				if !ok {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "struct value must be an object")
-					backendChan[tDChanIndex] <- errorResponseMap
+					backendChan[tDChanIndex] <- newErrorResponse(requestMap, 1, "struct value must be an object")
 					return
 				}
 				res := verifyStruct(val, datatype, 0)
 				if res != "ok" {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
-					backendChan[tDChanIndex] <- errorResponseMap
+					backendChan[tDChanIndex] <- newErrorResponse(requestMap, 1, res) //invalid_data
 					return
 				}
 			}
@@ -694,8 +730,7 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 		tokenHandle = handle
 		gatingId = gId
 		if errorCode != 0 {
-			setTokenErrorResponse(requestMap, errorCode)
-			backendChan[tDChanIndex] <- errorResponseMap
+			backendChan[tDChanIndex] <- setTokenErrorResponse(requestMap, errorCode)
 			return
 		}
 	default: // should not be possible...
@@ -764,6 +799,14 @@ func verifyStructMember(memberName string, typeSearch []utils.SearchData_t, matc
 func validateData(requestMap map[string]interface{}, searchData []utils.SearchData_t, filterList []utils.FilterObject) (int, string) { // -1, "" means valid data
 	if requestMap["action"] == "set" && utils.VSSgetType(searchData[0].NodeHandle) != utils.ACTUATOR {
 		return 1, "Forbidden to write to read-only resource" //invalid_data
+	}
+	// VDM/VSS type validation: check value against declared datatype, range, allowed.
+	if requestMap["action"] == "set" {
+		if value, ok := requestMap["value"].(string); ok && len(searchData) > 0 {
+			if verr := utils.ValidateSetValue(searchData[0].NodeHandle, value); verr != nil {
+				return 1, verr.Error()
+			}
+		}
 	}
 	if requestMap["filter"] == nil {
 		return -1, ""
@@ -890,21 +933,18 @@ func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, pa
 		// .(map[string]interface{}) panic-walked into a daemon
 		// crash. Type-check up front and reject malformed inputs.
 		if requestMap["value"] == nil {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing value for FileDescriptor set")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 1, "missing value for FileDescriptor set")
 		}
 		var uidString string
 		ftInitData.UploadTransfer = false
 		ftInitData.Name, ftInitData.Hash, uidString = getFileDescriptorData(requestMap["value"])
 		if ftInitData.Name == "" {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "invalid file descriptor")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 1, "invalid file descriptor")
 		}
 		// Bug fix: hex.DecodeString error discarded; conversion to fixed array panicked on length mismatch.
 		uidByte, err := hex.DecodeString(uidString)
 		if err != nil || len(uidByte) != utils.UIDLEN {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "invalid uid")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 1, "invalid uid")
 		}
 		copy(ftInitData.Uid[:], uidByte)
 		ftInitData.Path = "./" //get it from statestorage when vss-tools have updated.
@@ -922,28 +962,24 @@ func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, pa
 			responseMap["ts"] = utils.GetRfcTime()
 			return responseMap
 		}
-		utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
-		return errorResponseMap
+			return newErrorResponse(requestMap, 7, "") //service_unavailable
 
 	} else if requestMap["action"] == "get" && nodeType == utils.SENSOR { //upload
 		reqPath, ok := requestMap["path"].(string)
 		if !ok {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid path")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 1, "missing/invalid path")
 		}
 		ftInitData.UploadTransfer = true
 		ftInitData.Path, ftInitData.Name = getInternalFileName(reqPath)
 		if ftInitData.Name == "" {
 			// Bug fix: previously every unknown path silently mapped to
 			// "upload.txt"; that's a path-injection hazard. Reject unknown paths.
-			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "unknown upload path")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 1, "unknown upload path")
 		}
 		ftInitData.Hash = calculateHash(ftInitData.Path + ftInitData.Name)
 		// Bug fix: previous code used a hardcoded uid ("2d878213"); now generate a random one.
 		if _, err := rand.Read(ftInitData.Uid[:]); err != nil {
-			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "")
-			return errorResponseMap
+			return newErrorResponse(requestMap, 7, "")
 		}
 
 		ftChannelMu.Lock()
@@ -958,8 +994,7 @@ func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, pa
 		responseMap["ts"] = utils.GetRfcTime()
 		return responseMap
 	}
-	utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
-	return errorResponseMap
+			return newErrorResponse(requestMap, 1, "") //invalid_data
 }
 
 func calculateHash(fileName string) string {
@@ -1028,19 +1063,19 @@ func initChannels() {
 	serviceDataChan = make([]chan map[string]interface{}, 1)
 	serviceDataChan[0] = make(chan map[string]interface{}, pipelineBuf)
 	transportMgrChannel = make([]chan string, NUMOFTRANSPORTMGRS)
+	toTransportChannel = make([]chan string, NUMOFTRANSPORTMGRS)
 	transportDataChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
 	backendChan = make([]chan map[string]interface{}, NUMOFTRANSPORTMGRS)
 	for i := 0; i < NUMOFTRANSPORTMGRS; i++ {
-		transportMgrChannel[i] = make(chan string, pipelineBuf)
+		transportMgrChannel[i] = make(chan string, pipelineBuf) // requests: transport mgr -> core
+		toTransportChannel[i] = make(chan string, pipelineBuf)  // responses: core -> transport mgr
 		transportDataChan[i] = make(chan map[string]interface{}, pipelineBuf)
 		backendChan[i] = make(chan map[string]interface{}, pipelineBuf)
 	}
-	// MQTT's channel must stay unbuffered. MqttMgrInit performs a synchronous
-	// VIN-fetch by sending on and receiving from the same channel in one
-	// goroutine. A buffered channel causes an echo: the goroutine reads its own
-	// send before transportDataSession can consume it. Unbuffered forces the
-	// send to block until transportDataSession reads, preserving ordering.
-	transportMgrChannel[2] = make(chan string)
+	// Note: with the request and response directions on separate channels,
+	// buffering is safe for every transport (each channel has a single sender
+	// and a single receiver). The old MQTT "must stay unbuffered to avoid an
+	// echo on the shared channel" special case is no longer needed.
 	atsChannel = make([]chan string, 2)
 	atsChannel[0] = make(chan string) // access token verification (serialized by atsChannelMu)
 	atsChannel[1] = make(chan string) // token cancellation
@@ -1071,6 +1106,10 @@ func main() {
 		Default:  "serviceMgr/statestorage.db"})
 	consentSupport := parser.Flag("c", "consentsupport", &argparse.Options{Required: false, Help: "try to connect to ECF", Default: false})
 	mqttEnable := parser.Flag("m", "mqttenable", &argparse.Options{Required: false, Help: "enable MQTT usage", Default: false})
+	ddsEnable := parser.Flag("", "ddsenable", &argparse.Options{Required: false, Help: "enable DDS usage", Default: false})
+	ddsDomain := parser.Int("", "ddsdomain", &argparse.Options{Required: false, Help: "DDS domain ID (default 0)", Default: 0})
+	vdmDir := parser.String("", "vdm", &argparse.Options{Required: false, Help: "directory of VDM .graphql SDL files to load (mutually exclusive with viss.him)", Default: ""})
+	webAddr := parser.String("", "web-addr", &argparse.Options{Required: false, Help: "address for optional VDM web dashboard (e.g. :8090); disabled when empty", Default: ""})
 
 	// Parse input
 	err := parser.Parse(os.Args)
@@ -1081,9 +1120,24 @@ func main() {
 
 	utils.InitLog("servercore-log.txt", "./logs", *logFile, *logLevel)
 
-	if !utils.InitForest("viss.him") {
-		utils.Error.Printf("Failed to initialize viss.him")
-		return
+	if *vdmDir != "" {
+		n, err := vdmloader.LoadDir(*vdmDir)
+		if err != nil {
+			utils.Error.Printf("Failed to load VDM from %s: %v", *vdmDir, err)
+			return
+		}
+		utils.Info.Printf("VDM loader: registered %d tree(s) from %s", n, *vdmDir)
+	} else {
+		if !utils.InitForest("viss.him") {
+			utils.Error.Printf("Failed to initialize viss.him")
+			return
+		}
+	}
+
+	if *webAddr != "" {
+		if err := webdash.Start(*webAddr); err != nil {
+			utils.Error.Printf("webdash: failed to start on %s: %v", *webAddr, err)
+		}
 	}
 
 	if *dPop {
@@ -1123,24 +1177,37 @@ func main() {
 	for _, serverComponent := range serverComponents {
 		switch serverComponent {
 		case "httpMgr":
-			go httpMgr.HttpMgrInit(0, transportMgrChannel[0])
-			go transportDataSession(transportMgrChannel[0], transportDataChan[0], backendChan[0])
+			go httpMgr.HttpMgrInit(0, transportMgrChannel[0], toTransportChannel[0])
+			go transportDataSession(transportMgrChannel[0], toTransportChannel[0], transportDataChan[0], backendChan[0])
 		case "wsMgr":
-			go wsMgr.WsMgrInit(1, transportMgrChannel[1])
-			go transportDataSession(transportMgrChannel[1], transportDataChan[1], backendChan[1])
+			go wsMgr.WsMgrInit(1, transportMgrChannel[1], toTransportChannel[1])
+			go transportDataSession(transportMgrChannel[1], toTransportChannel[1], transportDataChan[1], backendChan[1])
 		case "wsMgrFT":
 			go wsMgrFT.WsMgrFTInit(ftChannel)
 		case "mqttMgr":
 			if *mqttEnable {
-				go mqttMgr.MqttMgrInit(2, transportMgrChannel[2])
-				go transportDataSession(transportMgrChannel[2], transportDataChan[2], backendChan[2])
+				go mqttMgr.MqttMgrInit(2, transportMgrChannel[2], toTransportChannel[2])
+				go transportDataSession(transportMgrChannel[2], toTransportChannel[2], transportDataChan[2], backendChan[2])
 			}
 		case "grpcMgr":
-			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3])
-			go transportDataSession(transportMgrChannel[3], transportDataChan[3], backendChan[3])
+			go grpcMgr.GrpcMgrInit(3, transportMgrChannel[3], toTransportChannel[3])
+			go transportDataSession(transportMgrChannel[3], toTransportChannel[3], transportDataChan[3], backendChan[3])
 		case "udsMgr":
-			go udsMgr.UdsMgrInit(4, transportMgrChannel[4])
-			go transportDataSession(transportMgrChannel[4], transportDataChan[4], backendChan[4])
+			go udsMgr.UdsMgrInit(4, transportMgrChannel[4], toTransportChannel[4])
+			go transportDataSession(transportMgrChannel[4], toTransportChannel[4], transportDataChan[4], backendChan[4])
+		case "ddsMgr":
+			if *ddsEnable {
+				// DDS channels must be unbuffered: getVehicleTopic performs a
+				// synchronous VIN request/response handshake across the split
+				// request/response channels (PR #187).
+				if *ddsDomain != 0 {
+					ddsMgr.SetDomain(dds.Domain(*ddsDomain))
+				}
+				transportMgrChannel[5] = make(chan string)
+				toTransportChannel[5] = make(chan string)
+				go ddsMgr.DdsMgrInit(5, transportMgrChannel[5], toTransportChannel[5])
+				go transportDataSession(transportMgrChannel[5], toTransportChannel[5], transportDataChan[5], backendChan[5])
+			}
 		case "serviceMgr":
 			go serviceMgr.ServiceMgrInit(0, serviceMgrChannel[0], *stateDB, *historySupport, *dbFile)
 			go serviceDataSession(serviceMgrChannel[0], serviceDataChan[0], backendChan)
@@ -1162,6 +1229,8 @@ func main() {
 			serveRequest(request, 3, 0)
 		case request := <-transportDataChan[4]: // request from UDS mgr
 			serveRequest(request, 4, 0)
+		case request := <-transportDataChan[5]: // request from DDS mgr
+			serveRequest(request, 5, 0)
 		case gatingId := <-atsChannel[1]:
 //			request := `{"action": "internal-cancelsubscription", "gatingId":"` + gatingId + `"}`
 			request := map[string]interface{}{}

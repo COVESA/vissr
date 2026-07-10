@@ -47,6 +47,7 @@ The core server hub, running in the main context, spawns the following Go routin
 - The service manager registration server.<br>
 - Service data channel servers, each having separate frontend and a backend go routines.<br>
 The Go routines communicate in between using Go channels.<br>
+Each transport data channel server uses a **pair of unidirectional channels** with its transport manager: one carries client requests inward (transport manager &rarr; core) and a separate one carries responses and subscription/monitoring events outward (core &rarr; transport manager). The two directions must not share a single channel: with a shared channel a goroutine can read back its own just-written message before the peer goroutine takes it, which re-injects high-frequency monitoring events into the request path. Keeping the directions on separate channels means every channel has exactly one sender and one receiver.<br>
 The communication with the transport protocol and service managers is realized using the Websocket protocol.<br>
 ![Core server design](../pics/Core_server_SwA.jpg)<br>
 * Fig. 1 Core server design<br><br>

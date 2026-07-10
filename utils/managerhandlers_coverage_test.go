@@ -47,6 +47,60 @@ func TestRemoveInternalData_ClientId0(t *testing.T) {
 	}
 }
 
+// A RouterId that is the last field (no trailing comma) is still valid: the
+// clientId must be returned and the property removed.
+func TestRemoveInternalData_RouterIdLastField(t *testing.T) {
+	response := `{"action":"get","path":"Vehicle.Speed","RouterId":"3?7"}`
+	trimmed, clientId := RemoveInternalData(response)
+	if clientId != 7 {
+		t.Errorf("clientId = %d; want 7", clientId)
+	}
+	if strings.Contains(trimmed, "RouterId") {
+		t.Errorf("RouterId not removed: %q", trimmed)
+	}
+}
+
+// Regression: a response that carries no RouterId must not panic. A service
+// "monitoring" event emitted without a RouterId used to make routerIdStart
+// == -2 and response[-2:] crash the whole server (reported against v3.2).
+// RemoveInternalData must now return the response unchanged with clientId -1
+// so the transport managers can drop it.
+func TestRemoveInternalData_NoRouterId_NoPanic(t *testing.T) {
+	// Exact shape from the crash report's server log.
+	response := `{"action":"monitoring","path":"VehicleService.Seating.Row1.DriverSide.MoveSeat","serviceId":"769516","status":"ONGOING","ts":"2026-06-16T11:13:07Z"}`
+	trimmed, clientId := RemoveInternalData(response)
+	if clientId != -1 {
+		t.Errorf("clientId = %d; want -1 for missing RouterId", clientId)
+	}
+	if trimmed != response {
+		t.Errorf("response should be returned unchanged when no RouterId; got %q", trimmed)
+	}
+}
+
+func TestRemoveInternalData_Malformed(t *testing.T) {
+	cases := []struct {
+		name     string
+		response string
+	}{
+		{"empty", ``},
+		{"routerId at index 0 (no opening quote)", `RouterId":"0?1","action":"get"}`},
+		{"no question mark", `{"RouterId":"01", "action":"get"}`},
+		{"no closing quote on clientId", `{"RouterId":"0?1, "action":"get"}`},
+		{"non-numeric clientId", `{"RouterId":"0?abc", "action":"get"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			trimmed, clientId := RemoveInternalData(tc.response)
+			if clientId != -1 {
+				t.Errorf("clientId = %d; want -1 for malformed input", clientId)
+			}
+			if trimmed != tc.response {
+				t.Errorf("malformed input should be returned unchanged; got %q", trimmed)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // createRouterIdProperty — internal helper
 // ---------------------------------------------------------------------------

@@ -36,6 +36,13 @@ description: Vehicle seating service tree.
 The `domain` value **must** end in `.Service`. The server detects this suffix and routes
 `invoke`, `monitor`, `cancel`, and `discover` requests through `vissServiceMgr`.
 
+> **Root name must match the request path.** The HIM key (`HIM.<RootName>`) becomes the
+> addressable root of the tree, so client paths must begin with that exact `<RootName>`.
+> For the bundled example tree the key is `HIM.VehicleService`, so requests address
+> `VehicleService.Seating.Row1.DriverSide.MoveSeat`. A mismatch between the HIM key and
+> the path root makes the request fall through service routing and return
+> `404 unavailable_data` ("No tree found for path root …").
+
 ---
 
 ## Step 2: Add procedure nodes to the binary tree
@@ -47,10 +54,10 @@ A minimal tree looks like:
 SeatingService.Car.Service (branch)
   └─ MoveSeat (procedure)
        ├─ Input (iostruct)
-       │    ├─ SeatId    (property, uint8)
-       │    └─ Position  (property, uint8)
+       │    ├─ MovementType (property, string)
+       │    └─ Position     (property, uint8)
        └─ Output (iostruct)
-            └─ Position  (property, uint8)
+            └─ Position      (property, uint8)
 ```
 
 Node types `procedure`, `iostruct`, `property`, and `symlink` are all valid within a
@@ -67,7 +74,7 @@ Connect to the server's WebSocket interface and send an **invokeRequest**:
   "action": "invoke",
   "path": "SeatingService.Car.Service.MoveSeat",
   "input": {
-    "SeatId": "1",
+    "MovementType": "longitudinal",
     "Position": "40"
   },
   "filter": {"variant": "all"},
@@ -121,6 +128,23 @@ When the invocation finishes:
 }
 ```
 
+### MoveSeat simulation behaviour
+
+The bundled `MoveSeat` service (`vissServiceMgr/example/seatService.go`, and the
+equivalent built-in simulation the server runs when no external service process
+is registered) models a real seat actuator:
+
+- A `Position` (0–100 %) is kept **per `MovementType`**. The supported movement
+  types are `longitudinal`, `vertical` and `recline`, each starting at `0`.
+- If the requested `Position` differs from the saved state, the state is stepped
+  **one percentage point per second** towards the request, emitting one
+  monitoring event per step, until it reaches the target — then `SUCCESSFUL`.
+- If the requested `Position` already equals the saved state, the response is
+  `SUCCESSFUL` and **no** monitoring events are issued.
+- If the requested `Position` is outside `[0,100]` (or non-numeric, or the
+  `MovementType` is unknown) the server returns a `400` error response and no
+  events are issued.
+
 ---
 
 ## Step 5: Monitor an existing invocation
@@ -173,7 +197,7 @@ Response:
   "metadata": {
     "MoveSeat": {
       "type": "procedure",
-      "Input": {"SeatId": {"type": 4, "datatype": "uint8"}, "Position": {"type": 4, "datatype": "uint8"}},
+      "Input": {"MovementType": {"type": 4, "datatype": "string"}, "Position": {"type": 4, "datatype": "uint8"}},
       "Output": {"Position": {"type": 4, "datatype": "uint8"}}
     }
   },
@@ -236,6 +260,19 @@ All four actions return a consistent error object on failure:
 ```
 
 Common error numbers: `400` (bad request), `404` (path not found), `503` (service unavailable).
+
+---
+
+## Request validation
+
+Service requests (`invoke`, `monitor`, `cancel`, `discover`) are validated against
+`server/vissv2server/vissv3.2-service-schema.json` before they reach the service
+manager. Data requests (`get`, `set`, `subscribe`, …) continue to be validated
+against the base `vissv3.0-schema.json`. The server selects the schema from the
+request's `action` field, so a malformed service request — e.g. an `invoke`
+missing the required `path` or `filter` — is rejected with a `400` schema error
+rather than being forwarded. No configuration is needed; both schema files ship
+alongside the server binary.
 
 ---
 
