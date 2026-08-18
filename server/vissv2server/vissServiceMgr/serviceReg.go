@@ -10,12 +10,26 @@
 * Server → Service  ack:        {"registered":true,"path":"Root.Proc"}
 *                   or error:   {"registered":false,"reason":"..."}
 *
-* When a client invokes the procedure:
-* Server → Service  invoke:     {"action":"invoke","sessionId":"xxx","input":{...},"authorization":"<token>"}
-*
-* Service → Server  progress:   {"sessionId":"xxx","status":"ONGOING","output":{...}}
-* Service → Server  terminal:   {"sessionId":"xxx","status":"SUCCESSFUL","output":{...}}
-* Service → Server  failure:    {"sessionId":"xxx","status":"FAILED","error":{"code":"...","message":"..."}}
+ * When a client invokes the procedure:
+ * Server → Service  invoke:     {"action":"invoke","sessionId":"xxx","input":{...},"authorization":"<token>"}
+ *
+ * For a multiplexed procedure (§1, resource multiplexing), "input" carries no
+ * resource addressing of its own — a service registered for a multiplexed
+ * procedure's stable path is expected to already know its full set of
+ * resource instances (the same way it declared the tree shape via
+ * "signature" at register time) and drive/report every one of them
+ * independently, tagging each progress/terminal update with "resourceKey"
+ * (see below). The server does not currently forward the resolved
+ * resourceKeys list on the "invoke" message itself; a service that only
+ * implements a subset can simply ignore unrecognised resource keys — flag
+ * this as a follow-up if a real external multiplexed service is added.
+ *
+ * Service → Server  progress:   {"sessionId":"xxx","status":"ONGOING","output":{...},"resourceKey":"Row1.DriverSide"}
+ * Service → Server  terminal:   {"sessionId":"xxx","status":"SUCCESSFUL","output":{...},"resourceKey":"Row1.DriverSide"}
+ * Service → Server  failure:    {"sessionId":"xxx","status":"FAILED","error":{"code":"...","message":"..."},"resourceKey":"Row1.DriverSide"}
+ *
+ * "resourceKey" is omitted (or "") for a single-resource procedure —
+ * unchanged behaviour.
 *
 * Server → Service  ping:       {"action":"ping"}   (heartbeat, VISSv3.3 §19)
 * Server ← Service  pong:       {"action":"pong"}
@@ -275,7 +289,7 @@ func handleDeregister(sc *serviceConn, backendChans []chan map[string]interface{
 	mu.Unlock()
 
 	for _, id := range failIds {
-		UpdateServiceState(id, StatusFailed, nil, nil, nil, backendChans)
+		UpdateServiceState(id, StatusFailed, "", nil, nil, nil, backendChans)
 	}
 
 	rootName := strings.SplitN(sc.path, ".", 2)[0]
@@ -287,6 +301,12 @@ func handleProgress(msg map[string]interface{}, backendChans []chan map[string]i
 	sessionId, _ := msg["sessionId"].(string)
 	statusStr, _ := msg["status"].(string)
 	output, _ := msg["output"].(map[string]interface{})
+	// An external service process serving a multiplexed procedure (§1) reports
+	// progress per addressed resource instance via an optional "resourceKey"
+	// field (e.g. "Row1.DriverSide"), mirroring the parameter builtinService.go's
+	// moveSeatBuiltin passes to UpdateServiceState directly. Absent/empty means
+	// single-resource, unchanged behaviour.
+	resourceKey, _ := msg["resourceKey"].(string)
 
 	// Extract optional structured error payload (VISSv3.3 §20).
 	var svcErr *ServiceError
@@ -316,7 +336,7 @@ func handleProgress(msg map[string]interface{}, backendChans []chan map[string]i
 		utils.Error.Printf("serviceReg: invalid status %q from service", statusStr)
 		return
 	}
-	UpdateServiceState(sessionId, status, output, svcErr, progress, backendChans)
+	UpdateServiceState(sessionId, status, resourceKey, output, svcErr, progress, backendChans)
 }
 
 // handleHealth processes a health status report from a service process (§30).

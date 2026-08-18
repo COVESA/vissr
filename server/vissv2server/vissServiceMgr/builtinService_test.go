@@ -16,6 +16,11 @@ func resetSeatState() {
 	seatMu.Unlock()
 }
 
+// moveSeatDriverRow1ResourceKey is the resource-instance key (relative to
+// the stable MoveSeat procedure path) used by tests that address a single
+// resource of the now-multiplexed MoveSeat procedure via a "resource" filter.
+const moveSeatDriverRow1ResourceKey = "Row1.DriverSide"
+
 // shrinkStepPeriod speeds up the simulation for tests and restores it after.
 func shrinkStepPeriod(t *testing.T, d time.Duration) {
 	t.Helper()
@@ -62,10 +67,10 @@ func TestIsInstanceGeneralization(t *testing.T) {
 	}{
 		{"A.B.MoveSeat", "A.B.Row1.DriverSide.MoveSeat", true},
 		{"A.MoveSeat", "A.B.Row1.MoveSeat", true},
-		{"A.B.MoveSeat", "A.B.MoveSeat", true},   // equal is trivially a subsequence
+		{"A.B.MoveSeat", "A.B.MoveSeat", true},       // equal is trivially a subsequence
 		{"X.B.MoveSeat", "A.B.Row1.MoveSeat", false}, // different root
 		{"A.B.Other", "A.B.Row1.MoveSeat", false},    // different procedure
-		{"A.C.MoveSeat", "A.B.Row1.MoveSeat", false},  // middle segment not present
+		{"A.C.MoveSeat", "A.B.Row1.MoveSeat", false}, // middle segment not present
 	}
 	for _, c := range cases {
 		if got := isInstanceGeneralization(split(c.tmpl), split(c.inst)); got != c.want {
@@ -116,7 +121,7 @@ func TestMoveSeatBuiltin_ValidationErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", c.input)
+			d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", nil, c.input)
 			if d.errNum != "400" {
 				t.Errorf("want errNum 400, got %q (decision %+v)", d.errNum, d)
 			}
@@ -134,7 +139,7 @@ func TestMoveSeatBuiltin_AlreadyAtTarget(t *testing.T) {
 	seatState[seatKey(path, "longitudinal")] = 40
 	seatMu.Unlock()
 
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "longitudinal", "Position": "40"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "longitudinal", "Position": "40"})
 	if d.immediate != StatusSuccessful {
 		t.Fatalf("want immediate SUCCESSFUL, got %q", d.immediate)
 	}
@@ -149,7 +154,7 @@ func TestMoveSeatBuiltin_AlreadyAtTarget(t *testing.T) {
 func TestMoveSeatBuiltin_MovingReturnsRunner(t *testing.T) {
 	resetSeatState()
 	shrinkStepPeriod(t, time.Second) // keep default for the minDuration assertion
-	d := moveSeatBuiltin("VehicleService.Seating.MoveSeat",
+	d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", nil,
 		map[string]interface{}{"MovementType": "vertical", "Position": "40"})
 	if d.run == nil {
 		t.Fatal("moving request must return a driver")
@@ -183,7 +188,7 @@ func TestMoveSeatBuiltin_DriverStepsToTarget(t *testing.T) {
 	bc := make(chan map[string]interface{}, 64)
 	bcs := []chan map[string]interface{}{bc}
 
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "longitudinal", "Position": "5"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "longitudinal", "Position": "5"})
 	if d.run == nil {
 		t.Fatal("expected a driver")
 	}
@@ -267,7 +272,7 @@ func TestMoveSeatBuiltin_DriverStopsWhenInvocationRemoved(t *testing.T) {
 	mu.Unlock()
 
 	bc := make(chan map[string]interface{}, 64)
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "recline", "Position": "100"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "recline", "Position": "100"})
 	done := make(chan struct{})
 	go func() { d.run(sid, []chan map[string]interface{}{bc}); close(done) }()
 
@@ -293,7 +298,7 @@ func TestMoveSeatBuiltin_PerMovementTypeIndependent(t *testing.T) {
 
 	// vertical is still 0, so a request for vertical=0 is already-at-target,
 	// independent of longitudinal=30.
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "vertical", "Position": "0"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "vertical", "Position": "0"})
 	if d.immediate != StatusSuccessful {
 		t.Errorf("vertical state should be independent (0), got decision %+v", d)
 	}
@@ -339,6 +344,10 @@ func TestHandleInvoke_BuiltinMoveSeatOutOfRange(t *testing.T) {
 	}
 }
 
+// TestHandleInvoke_BuiltinMoveSeatAlreadyThere addresses a single resource
+// instance via a "resource" filter (MoveSeat is now multiplexed — §1 — so an
+// invoke without a resource filter addresses ALL resource instances; this
+// test exercises the single-resource fast path specifically).
 func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	resetState()
 	resetSeatState()
@@ -346,7 +355,7 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	t.Cleanup(stopServiceGoroutines)
 
 	seatMu.Lock()
-	seatState[seatKey(moveSeatPath, "longitudinal")] = 40
+	seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")] = 40
 	seatMu.Unlock()
 
 	bc := make(chan map[string]interface{}, 8)
@@ -358,7 +367,10 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 		"requestId":   "8756",
 		"routerIndex": 0,
 		"RouterId":    "1?0",
-		"filter":      map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "1000"}},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "1000"}},
+		},
 	}
 	HandleInvoke(req, bcs)
 
@@ -381,6 +393,8 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	}
 }
 
+// TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes addresses a single
+// resource instance via a "resource" filter and drives it to completion.
 func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 	resetState()
 	resetSeatState()
@@ -397,7 +411,10 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 		"requestId":   "8756",
 		"routerIndex": 0,
 		"RouterId":    "1?0",
-		"filter":      map[string]interface{}{"variant": "all"},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "all"},
+		},
 	}
 	HandleInvoke(req, bcs)
 
@@ -432,8 +449,8 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 		t.Error("never received the ONGOING invoke response")
 	}
 	seatMu.Lock()
-	if seatState[seatKey(moveSeatPath, "longitudinal")] != 3 {
-		t.Errorf("saved state = %d, want 3", seatState[seatKey(moveSeatPath, "longitudinal")])
+	if seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")] != 3 {
+		t.Errorf("saved state = %d, want 3", seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")])
 	}
 	seatMu.Unlock()
 }

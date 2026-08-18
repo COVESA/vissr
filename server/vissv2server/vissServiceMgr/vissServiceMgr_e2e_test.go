@@ -18,6 +18,15 @@ package vissServiceMgr
 //      address a procedure node".
 //   3. validateIoParams required every Input child, including the optional
 //      MoveSeat.Credentials parameter.
+//
+// The service example tree was subsequently rebuilt to the HIM-canonical
+// "multiplexed microservice tree structure": MoveSeat/ActivateMassage are now
+// single, stable procedure paths (VehicleService.Seating.MoveSeat) with
+// resource-instance branches (Row1.DriverSide, ...) nested *inside* them,
+// addressed via the VISSv3.2 "resource" filter variant, rather than 12
+// duplicated procedure paths. The stale plural "VehicleServices.v1.0.binary"
+// (only ever referenced here) was deleted; these tests now load the
+// canonical ServiceSpecification-example.binary that viss.him registers.
 
 import (
 	"os"
@@ -27,9 +36,14 @@ import (
 	"github.com/covesa/vissr/utils"
 )
 
-const serviceTreeBinary = "../forest/VehicleServices.v1.0.binary"
+const serviceTreeBinary = "../forest/ServiceSpecification-example.binary"
 
-const moveSeatPath = "VehicleService.Seating.Row1.DriverSide.MoveSeat"
+const moveSeatPath = "VehicleService.Seating.MoveSeat"
+
+// moveSeatDriverRow1Path is one concrete resource-instance branch under the
+// stable MoveSeat procedure path, used by tests that need to resolve or
+// validate a specific resource's Input/Output nodes.
+const moveSeatDriverRow1Path = "VehicleService.Seating.MoveSeat.Row1.DriverSide"
 
 // loadVehicleServiceTree loads the bundled HIM service example tree and
 // registers it under the "VehicleService" root, matching the (fixed)
@@ -100,14 +114,39 @@ func TestResolveServiceNode_BadPathsReturnNil(t *testing.T) {
 	loadVehicleServiceTree(t)
 
 	cases := map[string]string{
-		"plural root (the viss.him typo)": "VehicleServices.Seating.Row1.DriverSide.MoveSeat",
+		"plural root (the viss.him typo)": "VehicleServices.Seating.MoveSeat",
 		"unknown mid segment":             "VehicleService.Nope.MoveSeat",
-		"unknown leaf":                    "VehicleService.Seating.Row1.DriverSide.NoSuchProc",
+		"unknown leaf":                    "VehicleService.Seating.NoSuchProc",
+		"stale flattened-tree path":       "VehicleService.Seating.Row1.DriverSide.MoveSeat",
 	}
 	for name, path := range cases {
 		if n := resolveServiceNode(path); n != nil {
 			t.Errorf("%s: resolveServiceNode(%q) = %v, want nil", name, path, utils.VSSgetName(n))
 		}
+	}
+}
+
+// TestResolveServiceNode_ResourceInstanceBranch confirms the tree rebuild:
+// resource-instance nodes nested under a multiplexed procedure (e.g.
+// Row1.DriverSide) are plain BRANCH nodes, addressable by their full path,
+// each carrying their own Input/Output iostructs.
+func TestResolveServiceNode_ResourceInstanceBranch(t *testing.T) {
+	loadVehicleServiceTree(t)
+
+	node := resolveServiceNode(moveSeatDriverRow1Path)
+	if node == nil {
+		t.Fatalf("resolveServiceNode(%q) = nil; want the Row1.DriverSide resource branch", moveSeatDriverRow1Path)
+	}
+	if got := utils.VSSgetType(node); got != utils.BRANCH {
+		t.Errorf("resolved node type = %q, want BRANCH", got)
+	}
+	if got := utils.VSSgetName(node); got != "DriverSide" {
+		t.Errorf("resolved node name = %q, want DriverSide", got)
+	}
+
+	inputNode := resolveServiceNode(moveSeatDriverRow1Path + ".Input")
+	if inputNode == nil || utils.VSSgetType(inputNode) != utils.IOSTRUCT {
+		t.Errorf("resolveServiceNode(%q.Input) = %v, want an IOSTRUCT node", moveSeatDriverRow1Path, inputNode)
 	}
 }
 
@@ -263,9 +302,21 @@ func TestValidateInputSignature_OptionalCredentialsMayBeOmitted(t *testing.T) {
 		t.Fatal("could not resolve MoveSeat procedure")
 	}
 
+	// MoveSeat is now multiplexed: its Input iostruct lives under each
+	// resource-instance branch, not directly under the procedure node, so a
+	// resolved resource key must be supplied (as HandleInvoke does via
+	// resolveResourceInstances).
+	resourceKeys, resErr := resolveResourceInstances(proc, nil)
+	if resErr != "" {
+		t.Fatalf("resolveResourceInstances: %v", resErr)
+	}
+	if len(resourceKeys) == 0 {
+		t.Fatal("expected MoveSeat to have resource-instance branches")
+	}
+
 	// Ulf's input supplies MovementType + Position but omits the optional
 	// Credentials parameter.
-	ok, missing := validateInputSignature(proc, map[string]interface{}{
+	ok, missing := validateInputSignature(proc, resourceKeys, map[string]interface{}{
 		"MovementType": "longitudinal",
 		"Position":     "40",
 	})

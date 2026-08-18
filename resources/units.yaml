@@ -1,0 +1,8 @@
+# Units used by the example HIM Service profile trees
+# (ServiceTypes-example.vspec, ServiceSpecification-example.vspec).
+
+percent:
+  unit: percent
+  definition: Relation measured in percent.
+  quantity: relation
+  allowed-datatypes: ['numeric']

@@ -84,72 +84,181 @@ func TestLatestInvocationForPath_IgnoresTerminal(t *testing.T) {
 	}
 }
 
-// ---- extractFilterVariant --------------------------------------------------
+// ---- parseServiceFilter -----------------------------------------------------
 
-func TestExtractFilterVariant_NilIsAll(t *testing.T) {
-	if v := extractFilterVariant(nil); v != "all" {
-		t.Fatalf("want all, got %q", v)
+func TestParseServiceFilter_NilIsAll(t *testing.T) {
+	pf, errStr := parseServiceFilter(nil)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "all" {
+		t.Fatalf("want all, got %q", pf.variant)
 	}
 }
 
-func TestExtractFilterVariant_MapVariant(t *testing.T) {
+func TestParseServiceFilter_MapVariant(t *testing.T) {
 	f := map[string]interface{}{"variant": "timebased"}
-	if v := extractFilterVariant(f); v != "timebased" {
-		t.Fatalf("want timebased, got %q", v)
+	pf, errStr := parseServiceFilter(f)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "timebased" {
+		t.Fatalf("want timebased, got %q", pf.variant)
 	}
 }
 
-func TestExtractFilterVariant_JSONString(t *testing.T) {
-	if v := extractFilterVariant(`{"variant":"status"}`); v != "status" {
-		t.Fatalf("want status, got %q", v)
+func TestParseServiceFilter_JSONString(t *testing.T) {
+	pf, errStr := parseServiceFilter(`{"variant":"status"}`)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "status" {
+		t.Fatalf("want status, got %q", pf.variant)
 	}
 }
 
-func TestExtractFilterVariant_MissingVariant(t *testing.T) {
-	if v := extractFilterVariant(map[string]interface{}{"parameter": "x"}); v != "all" {
-		t.Fatalf("want all, got %q", v)
+func TestParseServiceFilter_MissingVariant(t *testing.T) {
+	pf, errStr := parseServiceFilter(map[string]interface{}{"parameter": "x"})
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "all" {
+		t.Fatalf("want all, got %q", pf.variant)
 	}
 }
 
-// ---- periodFromFilter ------------------------------------------------------
+func TestParseServiceFilter_UnsupportedVariantErrors(t *testing.T) {
+	_, errStr := parseServiceFilter(map[string]interface{}{"variant": "bogus"})
+	if errStr == "" {
+		t.Fatal("expected an error for an unsupported filter variant")
+	}
+}
 
-func TestPeriodFromFilter_Valid(t *testing.T) {
+// ---- parseServiceFilter — timebased period ---------------------------------
+
+func TestParseServiceFilter_TimebasedPeriodValid(t *testing.T) {
 	f := map[string]interface{}{
 		"variant":   "timebased",
 		"parameter": map[string]interface{}{"period": "250"},
 	}
-	p := periodFromFilter(f)
-	if p != 250*time.Millisecond {
-		t.Fatalf("want 250ms, got %v", p)
+	pf, errStr := parseServiceFilter(f)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.period != 250*time.Millisecond {
+		t.Fatalf("want 250ms, got %v", pf.period)
 	}
 }
 
-func TestPeriodFromFilter_NilDefaultsToSecond(t *testing.T) {
-	if p := periodFromFilter(nil); p != time.Second {
-		t.Fatalf("want 1s, got %v", p)
-	}
-}
-
-func TestPeriodFromFilter_InvalidFallsBack(t *testing.T) {
+func TestParseServiceFilter_TimebasedPeriodInvalidFallsBack(t *testing.T) {
 	f := map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "abc"}}
-	if p := periodFromFilter(f); p != time.Second {
-		t.Fatalf("want 1s default, got %v", p)
+	pf, _ := parseServiceFilter(f)
+	if pf.period != time.Second {
+		t.Fatalf("want 1s default, got %v", pf.period)
 	}
 }
 
-func TestPeriodFromFilter_ZeroPeriodFallsBack(t *testing.T) {
+func TestParseServiceFilter_TimebasedPeriodZeroFallsBack(t *testing.T) {
 	// err==nil but ms<=0 → the second branch of the compound condition
 	f := map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "0"}}
-	if p := periodFromFilter(f); p != time.Second {
-		t.Fatalf("want 1s for zero period, got %v", p)
+	pf, _ := parseServiceFilter(f)
+	if pf.period != time.Second {
+		t.Fatalf("want 1s for zero period, got %v", pf.period)
 	}
 }
 
-func TestPeriodFromFilter_ParamNilFallsBack(t *testing.T) {
+func TestParseServiceFilter_TimebasedPeriodParamNilFallsBack(t *testing.T) {
 	// "parameter" key missing → param==nil → return time.Second
 	f := map[string]interface{}{"variant": "timebased"}
-	if p := periodFromFilter(f); p != time.Second {
-		t.Fatalf("want 1s when no parameter key, got %v", p)
+	pf, _ := parseServiceFilter(f)
+	if pf.period != time.Second {
+		t.Fatalf("want 1s when no parameter key, got %v", pf.period)
+	}
+}
+
+// ---- parseServiceFilter — "resource" variant and array form ----------------
+
+func TestParseServiceFilter_ResourceStandaloneObject(t *testing.T) {
+	f := map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1.DriverSide"}}
+	pf, errStr := parseServiceFilter(f)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "all" {
+		t.Errorf("bare resource filter should default the monitoring variant to all, got %q", pf.variant)
+	}
+	if len(pf.resourceSnips) != 1 || pf.resourceSnips[0] != "Row1.DriverSide" {
+		t.Errorf("resourceSnips = %v, want [Row1.DriverSide]", pf.resourceSnips)
+	}
+}
+
+func TestParseServiceFilter_ResourceMissingParameterErrors(t *testing.T) {
+	_, errStr := parseServiceFilter(map[string]interface{}{"variant": "resource"})
+	if errStr == "" {
+		t.Fatal("expected an error for a resource filter with no parameter array")
+	}
+}
+
+func TestParseServiceFilter_ResourceNonStringEntryErrors(t *testing.T) {
+	f := map[string]interface{}{"variant": "resource", "parameter": []interface{}{42}}
+	_, errStr := parseServiceFilter(f)
+	if errStr == "" {
+		t.Fatal("expected an error for a non-string resource parameter entry")
+	}
+}
+
+func TestParseServiceFilter_ArrayCombinesResourceAndTimebased(t *testing.T) {
+	arr := []interface{}{
+		map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1.DriverSide"}},
+		map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "250"}},
+	}
+	pf, errStr := parseServiceFilter(arr)
+	if errStr != "" {
+		t.Fatalf("unexpected error: %v", errStr)
+	}
+	if pf.variant != "timebased" || pf.period != 250*time.Millisecond {
+		t.Errorf("want timebased/250ms, got variant=%q period=%v", pf.variant, pf.period)
+	}
+	if len(pf.resourceSnips) != 1 || pf.resourceSnips[0] != "Row1.DriverSide" {
+		t.Errorf("resourceSnips = %v, want [Row1.DriverSide]", pf.resourceSnips)
+	}
+}
+
+func TestParseServiceFilter_ArrayWrongLengthErrors(t *testing.T) {
+	arr := []interface{}{map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1"}}}
+	_, errStr := parseServiceFilter(arr)
+	if errStr == "" {
+		t.Fatal("expected an error for a filter array of length != 2")
+	}
+}
+
+func TestParseServiceFilter_ArrayNoResourceVariantErrors(t *testing.T) {
+	arr := []interface{}{
+		map[string]interface{}{"variant": "status"},
+		map[string]interface{}{"variant": "all"},
+	}
+	_, errStr := parseServiceFilter(arr)
+	if errStr == "" {
+		t.Fatal("expected an error for a filter array combining two non-resource variants")
+	}
+}
+
+func TestParseServiceFilter_ArrayTwoResourceVariantsErrors(t *testing.T) {
+	arr := []interface{}{
+		map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1"}},
+		map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row2"}},
+	}
+	_, errStr := parseServiceFilter(arr)
+	if errStr == "" {
+		t.Fatal("expected an error for a filter array combining two 'resource' filters")
+	}
+}
+
+func TestParseServiceFilter_ArrayNonObjectEntryErrors(t *testing.T) {
+	arr := []interface{}{"not an object", map[string]interface{}{"variant": "all"}}
+	_, errStr := parseServiceFilter(arr)
+	if errStr == "" {
+		t.Fatal("expected an error for a non-object filter array entry")
 	}
 }
 
@@ -452,7 +561,7 @@ func TestUpdateServiceState_FanOut(t *testing.T) {
 	sessions["sid-3"] = &monitorSession{sessionId: "sid-3", serviceId: "inv-3",
 		routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("inv-3", StatusSuccessful, map[string]interface{}{"x": "1"}, nil, nil, bcs)
+	UpdateServiceState("inv-3", StatusSuccessful, "", map[string]interface{}{"x": "1"}, nil, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -481,7 +590,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 		routerIndex: 0, filterKind: "status"}
 
 	// Status unchanged → should NOT deliver.
-	UpdateServiceState("inv-4", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("inv-4", StatusOngoing, "", nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("status filter should not deliver when status unchanged")
@@ -489,7 +598,7 @@ func TestUpdateServiceState_StatusFilterOnlyOnChange(t *testing.T) {
 	}
 
 	// Status changed → SHOULD deliver.
-	UpdateServiceState("inv-4", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("inv-4", StatusSuccessful, "", nil, nil, nil, bcs)
 	select {
 	case <-ch:
 	case <-time.After(time.Second):
@@ -506,7 +615,7 @@ func TestUpdateServiceState_NoneFilterNeverDelivers(t *testing.T) {
 	sessions["sid-5"] = &monitorSession{sessionId: "sid-5", serviceId: "inv-5",
 		routerIndex: 0, filterKind: "none"}
 
-	UpdateServiceState("inv-5", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("inv-5", StatusSuccessful, "", nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("'none' filter should never deliver events")
@@ -524,7 +633,7 @@ func TestUpdateServiceState_WithProgress(t *testing.T) {
 		routerIndex: 0, filterKind: "all"}
 
 	pct := 50
-	UpdateServiceState("inv-p", StatusOngoing, nil, nil, &pct, bcs)
+	UpdateServiceState("inv-p", StatusOngoing, "", nil, nil, &pct, bcs)
 
 	select {
 	case event := <-ch:
@@ -541,7 +650,7 @@ func TestUpdateServiceState_UnknownInvocationIsNoop(t *testing.T) {
 	ch := make(chan map[string]interface{}, 4)
 	bcs := []chan map[string]interface{}{ch}
 
-	UpdateServiceState("does-not-exist", StatusFailed, nil, nil, nil, bcs)
+	UpdateServiceState("does-not-exist", StatusFailed, "", nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("unknown invocation should not produce events")
@@ -561,7 +670,7 @@ func TestUpdateServiceState_ServiceErrorIncludedInEvent(t *testing.T) {
 		routerIndex: 0, filterKind: "all"}
 
 	svcErr := &ServiceError{Code: "MOTOR_STALL", Message: "seat motor stalled"}
-	UpdateServiceState("inv-e", StatusFailed, nil, svcErr, nil, bcs)
+	UpdateServiceState("inv-e", StatusFailed, "", nil, svcErr, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -594,7 +703,7 @@ func TestUpdateServiceState_OutOfRangeRouterIndex(t *testing.T) {
 		routerIndex: 99, filterKind: "all"}
 
 	// Must not panic; event goes nowhere because routerIndex 99 >= len(bcs)==1.
-	UpdateServiceState("inv-oor", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("inv-oor", StatusOngoing, "", nil, nil, nil, bcs)
 
 	select {
 	case m := <-ch:
@@ -620,7 +729,7 @@ func TestUpdateServiceState_CancelFnCalledOnTerminal(t *testing.T) {
 		cancelFn:  func() { cancelCalled = true },
 	}
 
-	UpdateServiceState("inv-cfn", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("inv-cfn", StatusSuccessful, "", nil, nil, nil, bcs)
 
 	if !cancelCalled {
 		t.Error("cancelFn was not called on terminal status transition")
@@ -645,7 +754,7 @@ func TestUpdateServiceState_SessionCancelTickerCalledOnTerminal(t *testing.T) {
 		cancelTicker: func() { tickerCancelled = true },
 	}
 
-	UpdateServiceState("inv-sct", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("inv-sct", StatusSuccessful, "", nil, nil, nil, bcs)
 
 	if !tickerCancelled {
 		t.Error("session cancelTicker was not called on terminal status")
@@ -820,7 +929,7 @@ func TestConcurrentInvocations_IndependentState(t *testing.T) {
 	sessions["cs-2"] = &monitorSession{sessionId: "cs-2", serviceId: "ci-2", routerIndex: 0, filterKind: "all"}
 
 	// Only terminate ci-1 successfully.
-	UpdateServiceState("ci-1", StatusSuccessful, map[string]interface{}{"r": "ok"}, nil, nil, bcs)
+	UpdateServiceState("ci-1", StatusSuccessful, "", map[string]interface{}{"r": "ok"}, nil, nil, bcs)
 
 	// ci-2 must still be ONGOING.
 	mu.Lock()
@@ -945,7 +1054,7 @@ func TestUpdateServiceState_ProgressInOngoingEvent(t *testing.T) {
 	sessions["sid-p1"] = &monitorSession{sessionId: "sid-p1", serviceId: "inv-p1", routerIndex: 0, filterKind: "all"}
 
 	pct := 60
-	UpdateServiceState("inv-p1", StatusOngoing, nil, nil, &pct, bcs)
+	UpdateServiceState("inv-p1", StatusOngoing, "", nil, nil, &pct, bcs)
 
 	select {
 	case event := <-ch:
@@ -969,7 +1078,7 @@ func TestUpdateServiceState_NilProgressNotIncluded(t *testing.T) {
 	invocations["inv-p2"] = &invocationState{serviceId: "inv-p2", path: "S.PP2", status: StatusOngoing}
 	sessions["sid-p2"] = &monitorSession{sessionId: "sid-p2", serviceId: "inv-p2", routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("inv-p2", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("inv-p2", StatusOngoing, "", nil, nil, nil, bcs)
 
 	select {
 	case event := <-ch:
@@ -990,7 +1099,7 @@ func TestUpdateServiceState_ProgressAbsentOnTerminal(t *testing.T) {
 	sessions["sid-p3"] = &monitorSession{sessionId: "sid-p3", serviceId: "inv-p3", routerIndex: 0, filterKind: "all"}
 
 	pct := 99
-	UpdateServiceState("inv-p3", StatusSuccessful, nil, nil, &pct, bcs)
+	UpdateServiceState("inv-p3", StatusSuccessful, "", nil, nil, &pct, bcs)
 
 	select {
 	case event := <-ch:
@@ -1012,7 +1121,7 @@ func TestMetrics_IncrementOnSuccessful(t *testing.T) {
 	invocations["met-1"] = &invocationState{serviceId: "met-1", path: "M.Path1", status: StatusOngoing, startedAt: time.Now()}
 	sessions["ms-1"] = &monitorSession{sessionId: "ms-1", serviceId: "met-1", routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("met-1", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("met-1", StatusSuccessful, "", nil, nil, nil, bcs)
 	<-ch
 
 	metricsMu.Lock()
@@ -1040,7 +1149,7 @@ func TestMetrics_IncrementOnFailed(t *testing.T) {
 	invocations["met-2"] = &invocationState{serviceId: "met-2", path: "M.Path2", status: StatusOngoing, startedAt: time.Now()}
 	sessions["ms-2"] = &monitorSession{sessionId: "ms-2", serviceId: "met-2", routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("met-2", StatusFailed, nil, nil, nil, bcs)
+	UpdateServiceState("met-2", StatusFailed, "", nil, nil, nil, bcs)
 	<-ch
 
 	metricsMu.Lock()
@@ -1065,7 +1174,7 @@ func TestMetrics_IncrementOnCanceled(t *testing.T) {
 	invocations["met-3"] = &invocationState{serviceId: "met-3", path: "M.Path3", status: StatusOngoing, startedAt: time.Now()}
 	sessions["ms-3"] = &monitorSession{sessionId: "ms-3", serviceId: "met-3", routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("met-3", StatusCanceled, nil, nil, nil, bcs)
+	UpdateServiceState("met-3", StatusCanceled, "", nil, nil, nil, bcs)
 	<-ch
 
 	metricsMu.Lock()
@@ -1087,7 +1196,7 @@ func TestMetrics_NoEntryForOngoing(t *testing.T) {
 	invocations["met-o"] = &invocationState{serviceId: "met-o", path: "M.PathO", status: StatusOngoing, startedAt: time.Now()}
 	sessions["ms-o"] = &monitorSession{sessionId: "ms-o", serviceId: "met-o", routerIndex: 0, filterKind: "all"}
 
-	UpdateServiceState("met-o", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("met-o", StatusOngoing, "", nil, nil, nil, bcs)
 	<-ch
 
 	metricsMu.Lock()
@@ -1235,7 +1344,7 @@ func TestValidateIoParams_MissingParam(t *testing.T) {
 
 func TestValidateInputSignature_NoInputChild(t *testing.T) {
 	proc := utils.NewProcedureNode("Start", "starts engine")
-	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	ok, missing := validateInputSignature(proc, nil, map[string]interface{}{})
 	if !ok || len(missing) != 0 {
 		t.Errorf("no Input child → should be valid; got ok=%v missing=%v", ok, missing)
 	}
@@ -1246,7 +1355,7 @@ func TestValidateInputSignature_WithInputChild_Valid(t *testing.T) {
 	inputStruct := utils.NewIoStructNode("Input", pos)
 	proc := utils.NewProcedureNode("MoveSeat", "moves seat", inputStruct)
 
-	ok, missing := validateInputSignature(proc, map[string]interface{}{"Position": "50"})
+	ok, missing := validateInputSignature(proc, nil, map[string]interface{}{"Position": "50"})
 	if !ok || len(missing) != 0 {
 		t.Errorf("expected valid, got ok=%v missing=%v", ok, missing)
 	}
@@ -1257,7 +1366,7 @@ func TestValidateInputSignature_WithInputChild_Missing(t *testing.T) {
 	inputStruct := utils.NewIoStructNode("Input", pos)
 	proc := utils.NewProcedureNode("MoveSeat", "moves seat", inputStruct)
 
-	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	ok, missing := validateInputSignature(proc, nil, map[string]interface{}{})
 	if ok {
 		t.Error("expected invalid (Position missing)")
 	}
@@ -1674,7 +1783,7 @@ func TestValidateInputSignature_NonInputChildSkipped(t *testing.T) {
 	outputStruct := utils.NewIoStructNode("Output", outParam)
 	proc := utils.NewProcedureNode("ReadSensor", "reads sensor", outputStruct)
 
-	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	ok, missing := validateInputSignature(proc, nil, map[string]interface{}{})
 	if !ok || len(missing) != 0 {
 		t.Errorf("procedure with only Output child should be valid; got ok=%v missing=%v", ok, missing)
 	}
@@ -2021,7 +2130,7 @@ func TestValidateIoParams_NilChildSkipped(t *testing.T) {
 func TestValidateInputSignature_NilChildSkipped(t *testing.T) {
 	proc := newNodeWithNilChild(utils.PROCEDURE, "NilChildProc")
 	// The nil child is skipped; no Input iostruct found → (true, nil).
-	ok, missing := validateInputSignature(proc, map[string]interface{}{})
+	ok, missing := validateInputSignature(proc, nil, map[string]interface{}{})
 	if !ok || len(missing) != 0 {
 		t.Errorf("nil child should be skipped; got ok=%v missing=%v", ok, missing)
 	}
@@ -2046,7 +2155,7 @@ func TestUpdateServiceState_DefaultFilterKindDelivers(t *testing.T) {
 	}
 
 	// Even with status unchanged the default branch delivers.
-	UpdateServiceState("inv-dflt", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("inv-dflt", StatusOngoing, "", nil, nil, nil, bcs)
 	select {
 	case event := <-ch:
 		if event["status"] != "ONGOING" {
@@ -2236,7 +2345,7 @@ func TestUpdateServiceState_TimebasedFilterDeliveryOnStatusChange(t *testing.T) 
 	}
 
 	// Status changes from ONGOING → SUCCESSFUL: timebased delivers on status change.
-	UpdateServiceState("tb-inv", StatusSuccessful, nil, nil, nil, bcs)
+	UpdateServiceState("tb-inv", StatusSuccessful, "", nil, nil, nil, bcs)
 	select {
 	case event := <-ch:
 		if event["status"] != "SUCCESSFUL" {
@@ -2263,7 +2372,7 @@ func TestUpdateServiceState_TimebasedNoDeliveryWhenStatusUnchanged(t *testing.T)
 	}
 
 	// Status stays ONGOING: timebased should NOT deliver via UpdateServiceState.
-	UpdateServiceState("tb2-inv", StatusOngoing, nil, nil, nil, bcs)
+	UpdateServiceState("tb2-inv", StatusOngoing, "", nil, nil, nil, bcs)
 	select {
 	case <-ch:
 		t.Error("timebased filter should not deliver when status unchanged")

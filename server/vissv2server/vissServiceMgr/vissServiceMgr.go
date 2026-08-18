@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,6 +103,14 @@ type ServiceError struct {
 }
 
 // invocationState tracks one active procedure invocation.
+//
+// resources holds the concrete resource-instance keys addressed by this
+// invocation (e.g. ["Row1.DriverSide", "Row1.PassengerSide"]), resolved once
+// at HandleInvoke time via resolveResourceInstances. It is nil/empty for a
+// single-resource procedure (e.g. GetCapabilities, or a multiplexed procedure
+// invoked with a resource filter matching exactly one instance) — outdata is
+// used as before in that case. When len(resources) > 1, outdataByResource and
+// resourceStatus are used instead (see UpdateServiceState).
 type invocationState struct {
 	serviceId string
 	path      string
@@ -112,6 +121,10 @@ type invocationState struct {
 	deadline  time.Time
 	cancelFn  func() // stops the timeout watchdog
 	progress  *int   // latest progress percentage 0-100 (§28); nil until first report
+
+	resources         []string                          // resource keys addressed by this invocation; nil for single-resource
+	outdataByResource map[string]map[string]interface{} // resource key -> {"output":...,"ts":...}; used when len(resources) > 1
+	resourceStatus    map[string]ServiceStatus          // resource key -> latest reported status; used when len(resources) > 1
 }
 
 // monitorSession represents one client watching an invocation.
@@ -194,7 +207,7 @@ func startTimeoutWatchdog(inv *invocationState, backendChans []chan map[string]i
 				return
 			}
 			mu.Unlock()
-			UpdateServiceState(inv.serviceId, StatusFailed, nil, nil, nil, backendChans)
+			UpdateServiceState(inv.serviceId, StatusFailed, "", nil, nil, nil, backendChans)
 		case <-stopCh:
 		}
 	}()
@@ -265,8 +278,21 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 		return
 	}
 
+	pf, filterErr := parseServiceFilter(requestMap["filter"])
+	if filterErr != "" {
+		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
+			"400", "bad_request", filterErr, requestMap)
+		return
+	}
+	resourceKeys, resErr := resolveResourceInstances(node, pf.resourceSnips)
+	if resErr != "" {
+		sendServiceError(bc, "invoke", requestId, "", StatusFailed,
+			"400", "bad_request", resErr, requestMap)
+		return
+	}
+
 	inputParams, _ := requestMap["input"].(map[string]interface{})
-	if ok, missingFields := validateInputSignature(node, inputParams); !ok {
+	if ok, missingFields := validateInputSignature(node, resourceKeys, inputParams); !ok {
 		sendValidationError(bc, "invoke", requestId, missingFields, requestMap)
 		return
 	}
@@ -282,7 +308,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	var builtinMinDuration time.Duration
 	if resolveRegistration(path) == nil {
 		if bh, ok := builtinServices[procedureName(path)]; ok {
-			decision := bh(path, inputParams)
+			decision := bh(path, resourceKeys, inputParams)
 			switch {
 			case decision.errNum != "":
 				sendServiceError(bc, "invoke", requestId, "", StatusFailed,
@@ -297,7 +323,9 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 					"requestId": requestId,
 					"ts":        ts,
 				}
-				if decision.outdata != nil {
+				if decision.outdataByResource != nil {
+					response["outdata"] = wrapOutdataByResource(decision.outdataByResource, ts)
+				} else if decision.outdata != nil {
 					response["outdata"] = map[string]interface{}{"output": decision.outdata, "ts": ts}
 				}
 				copyRouteFields(requestMap, response)
@@ -328,12 +356,19 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 		indata:    indataWrapped,
 		startedAt: time.Now(),
 		deadline:  deadline,
+		resources: resourceKeys,
+	}
+	if len(resourceKeys) > 1 {
+		inv.outdataByResource = map[string]map[string]interface{}{}
+		inv.resourceStatus = map[string]ServiceStatus{}
+		for _, rk := range resourceKeys {
+			inv.resourceStatus[rk] = StatusOngoing
+		}
 	}
 	invocations[serviceId] = inv
 
-	filterVariant := extractFilterVariant(requestMap["filter"])
 	var sessionId string
-	if filterVariant != "none" {
+	if pf.variant != "none" {
 		sessionId = generateId()
 		sess := &monitorSession{
 			sessionId:   sessionId,
@@ -342,12 +377,11 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 			isInvoke:    true,
 			routerIndex: tDChanIndex,
 			routerId:    extractRouterId(requestMap),
-			filterKind:  filterVariant,
+			filterKind:  pf.variant,
 		}
-		if filterVariant == "timebased" {
-			period := periodFromFilter(requestMap["filter"])
-			sess.filterPeriod = period
-			sess.cancelTicker = startTimebasedTicker(sess, period, backendChans)
+		if pf.variant == "timebased" {
+			sess.filterPeriod = pf.period
+			sess.cancelTicker = startTimebasedTicker(sess, pf.period, backendChans)
 		}
 		sessions[sessionId] = sess
 	}
@@ -374,6 +408,42 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 	bc <- response
 }
 
+// wrapOutdataByResource builds the multi-resource outdata array shape used by
+// the immediate-invoke response: [{"Row1.DriverSide": {"output":...,"ts":...}}, ...],
+// sorted by resource key for deterministic ordering (needed for stable test
+// assertions). byResource holds the *raw* (unwrapped) output map per resource
+// key; ts is applied uniformly to every entry.
+func wrapOutdataByResource(byResource map[string]map[string]interface{}, ts string) []map[string]interface{} {
+	keys := make([]string, 0, len(byResource))
+	for k := range byResource {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]map[string]interface{}, 0, len(keys))
+	for _, k := range keys {
+		wrapped := map[string]interface{}{"output": byResource[k], "ts": ts}
+		out = append(out, map[string]interface{}{k: wrapped})
+	}
+	return out
+}
+
+// buildOutdataArrayFromWrapped builds the multi-resource outdata array shape
+// from a map of *already-wrapped* per-resource outdata (each value already
+// shaped {"output":...,"ts":...}, as stored in invocationState.outdataByResource
+// by UpdateServiceState), sorted by resource key for deterministic ordering.
+func buildOutdataArrayFromWrapped(byResource map[string]map[string]interface{}) []map[string]interface{} {
+	keys := make([]string, 0, len(byResource))
+	for k := range byResource {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]map[string]interface{}, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, map[string]interface{}{k: copyMap(byResource[k])})
+	}
+	return out
+}
+
 // HandleMonitor processes a "monitor" action request per VISSv3.2 §6.2.
 // Attaches to the most recent ONGOING invocation for path; if none, returns
 // the last known state without starting a monitoring session.
@@ -394,25 +464,36 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 		return
 	}
 
+	pf, filterErr := parseServiceFilter(requestMap["filter"])
+	if filterErr != "" {
+		sendServiceError(bc, "monitor", requestId, "", StatusFailed,
+			"400", "bad_request", filterErr, requestMap)
+		return
+	}
+
 	mu.Lock()
 	inv := latestInvocationForPath(path)
 
 	var currentStatus ServiceStatus
 	var indataCopy, outdataCopy map[string]interface{}
+	var outdataArr []map[string]interface{}
 	var watchedServiceId string
 
 	if inv != nil {
 		currentStatus = inv.status
 		indataCopy = copyMap(inv.indata)
-		outdataCopy = copyMap(inv.outdata)
+		if len(inv.resources) > 1 {
+			outdataArr = buildOutdataArrayFromWrapped(inv.outdataByResource)
+		} else {
+			outdataCopy = copyMap(inv.outdata)
+		}
 		watchedServiceId = inv.serviceId
 	} else {
 		currentStatus = StatusUnknown
 	}
 
-	filterVariant := extractFilterVariant(requestMap["filter"])
 	var sessionId string
-	if inv != nil && currentStatus == StatusOngoing && filterVariant != "none" {
+	if inv != nil && currentStatus == StatusOngoing && pf.variant != "none" {
 		sessionId = generateId()
 		sess := &monitorSession{
 			sessionId:   sessionId,
@@ -421,12 +502,11 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 			isInvoke:    false,
 			routerIndex: tDChanIndex,
 			routerId:    extractRouterId(requestMap),
-			filterKind:  filterVariant,
+			filterKind:  pf.variant,
 		}
-		if filterVariant == "timebased" {
-			period := periodFromFilter(requestMap["filter"])
-			sess.filterPeriod = period
-			sess.cancelTicker = startTimebasedTicker(sess, period, backendChans)
+		if pf.variant == "timebased" {
+			sess.filterPeriod = pf.period
+			sess.cancelTicker = startTimebasedTicker(sess, pf.period, backendChans)
 		}
 		sessions[sessionId] = sess
 	}
@@ -443,7 +523,9 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 	if indataCopy != nil {
 		response["indata"] = indataCopy
 	}
-	if outdataCopy != nil {
+	if outdataArr != nil {
+		response["outdata"] = outdataArr
+	} else if outdataCopy != nil {
 		response["outdata"] = outdataCopy
 	}
 	if sessionId != "" {
@@ -526,9 +608,21 @@ func HandleCancel(requestMap map[string]interface{}, backendChan chan map[string
 // HandleDiscover processes a "discover" action per VISSv3.2 §6.4.
 // The response includes live serviceStatus and activeInvocations for each
 // procedure node (VISSv3.3 §25).
+//
+// An optional "resource" filter (§6) narrows the returned metadata to the
+// matching resource-instance subtree(s) of a multiplexed procedure. Per the
+// merged spec text, a resource filter must not be used when path addresses a
+// branch node, and Discover accepts no other filter variant.
 func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[string]interface{}) {
 	path, _ := requestMap["path"].(string)
 	requestId, _ := requestMap["requestId"].(string)
+
+	resourceSnips, filterErr := discoverResourceFilter(requestMap["filter"])
+	if filterErr != "" {
+		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
+			"400", "bad_request", filterErr, requestMap)
+		return
+	}
 
 	node := resolveServiceNode(path)
 	if node == nil {
@@ -543,8 +637,27 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 			"400", "bad_request", "path must address a branch or procedure node", requestMap)
 		return
 	}
+	if len(resourceSnips) > 0 && nodeType != utils.PROCEDURE {
+		sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
+			"400", "bad_request", "a 'resource' filter must not be used if the path addresses a branch node", requestMap)
+		return
+	}
 
-	metadata := buildServiceMetadata(node, path)
+	var metadata map[string]interface{}
+	if nodeType == utils.PROCEDURE && len(resourceSnips) > 0 {
+		resourceKeys, resErr := resolveResourceInstances(node, resourceSnips)
+		if resErr != "" {
+			sendServiceError(backendChan, "discover", requestId, "", StatusUnknown,
+				"400", "bad_request", resErr, requestMap)
+			return
+		}
+		metadata = buildProcedureMetadataFiltered(node, path, resourceKeys)
+	} else if nodeType == utils.PROCEDURE {
+		metadata = buildProcedureMetadata(node, path)
+	} else {
+		metadata = buildServiceMetadata(node, path)
+	}
+
 	ts := getTimestamp()
 	response := map[string]interface{}{
 		"action":    "discover",
@@ -556,17 +669,70 @@ func HandleDiscover(requestMap map[string]interface{}, backendChan chan map[stri
 	backendChan <- response
 }
 
+// discoverResourceFilter parses requestMap["filter"] for HandleDiscover,
+// which only accepts a single {"variant":"resource",...} object (no array
+// combination, no other variant) — Discover has no monitoring semantics to
+// combine a resource filter with. Returns (nil, "") when no filter is given.
+func discoverResourceFilter(filter interface{}) ([]string, string) {
+	if filter == nil {
+		return nil, ""
+	}
+	m, ok := filter.(map[string]interface{})
+	if !ok {
+		return nil, "discover only supports a single 'resource' filter object"
+	}
+	variant, _ := m["variant"].(string)
+	if variant != "resource" {
+		return nil, "discover only supports the 'resource' filter variant"
+	}
+	return resourceSnippetsFromFilter(m)
+}
+
+// aggregateResourceStatus computes a multi-resource invocation's overall
+// status from its per-resource statuses, per the confirmed "wait for all"
+// completion semantics: the overall status stays ONGOING until every
+// addressed resource has reported a terminal status; once all have, it is
+// SUCCESSFUL only if every resource succeeded (any FAILED resource fails the
+// whole invocation; CANCELED is treated the same as FAILED here since
+// resources do not receive individual cancel signals — only the whole
+// invocation can be cancelled, via HandleCancel).
+func aggregateResourceStatus(inv *invocationState) ServiceStatus {
+	anyFailed := false
+	for _, rk := range inv.resources {
+		st, ok := inv.resourceStatus[rk]
+		if !ok || st == StatusOngoing {
+			return StatusOngoing // not every resource has reported terminal yet
+		}
+		if st != StatusSuccessful {
+			anyFailed = true
+		}
+	}
+	if anyFailed {
+		return StatusFailed
+	}
+	return StatusSuccessful
+}
+
 // UpdateServiceState is called by a registered service process (via
 // serviceReg.go) to report execution progress. It updates the invocation
 // state and fans out monitoring events to all watching sessions, respecting
 // each session's filter settings.
+//
+// resourceKey identifies which resource instance this update is for, and
+// must be "" for a single-resource invocation (unchanged behaviour: outdata
+// is stored directly on the invocation and reported as-is). For a
+// multi-resource invocation (len(inv.resources) > 1), resourceKey must name
+// one of inv.resources; outdata is stored under
+// inv.outdataByResource[resourceKey] instead, the invocation's per-resource
+// status is updated, and the invocation's overall status is (re)computed via
+// aggregateResourceStatus — see its doc comment for the completion semantics.
 //
 // svcErr, when non-nil, is included in monitoring events as
 // {"error":{"code":"...","message":"..."}} (VISSv3.3 §20).
 //
 // progress, when non-nil, stores the completion percentage (0-100) and is
 // included in ONGOING monitoring events (VISSv3.3 §28).
-func UpdateServiceState(serviceId string, status ServiceStatus,
+func UpdateServiceState(serviceId string, status ServiceStatus, resourceKey string,
 	outdata map[string]interface{}, svcErr *ServiceError, progress *int,
 	backendChans []chan map[string]interface{}) {
 
@@ -583,10 +749,30 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 		return
 	}
 	prevStatus := inv.status
-	inv.status = status
-	if outdataWrapped != nil {
-		inv.outdata = outdataWrapped
+	multiResource := len(inv.resources) > 1
+
+	var effectiveStatus ServiceStatus
+	var outdataArr []map[string]interface{}
+	if multiResource && resourceKey != "" {
+		if inv.resourceStatus == nil {
+			inv.resourceStatus = map[string]ServiceStatus{}
+		}
+		inv.resourceStatus[resourceKey] = status
+		if outdataWrapped != nil {
+			if inv.outdataByResource == nil {
+				inv.outdataByResource = map[string]map[string]interface{}{}
+			}
+			inv.outdataByResource[resourceKey] = outdataWrapped
+		}
+		effectiveStatus = aggregateResourceStatus(inv)
+		outdataArr = buildOutdataArrayFromWrapped(inv.outdataByResource)
+	} else {
+		effectiveStatus = status
+		if outdataWrapped != nil {
+			inv.outdata = outdataWrapped
+		}
 	}
+	inv.status = effectiveStatus
 	if progress != nil {
 		inv.progress = progress
 	}
@@ -599,12 +785,12 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 	}
 	var termPath string
 	var termDur time.Duration
-	if status != StatusOngoing {
+	if effectiveStatus != StatusOngoing {
 		termPath = inv.path
 		termDur = time.Since(inv.startedAt)
 	}
 
-	statusChanged := prevStatus != status
+	statusChanged := prevStatus != effectiveStatus
 
 	type eventTarget struct {
 		sess          *monitorSession
@@ -631,7 +817,7 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 			deliver = true
 		}
 		targets = append(targets, eventTarget{sess: sess, shouldDeliver: deliver})
-		if status != StatusOngoing {
+		if effectiveStatus != StatusOngoing {
 			if sess.cancelTicker != nil {
 				sess.cancelTicker()
 			}
@@ -641,7 +827,7 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 	for _, id := range toRemove {
 		delete(sessions, id)
 	}
-	if status != StatusOngoing {
+	if effectiveStatus != StatusOngoing {
 		if inv.cancelFn != nil {
 			inv.cancelFn()
 		}
@@ -659,7 +845,7 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 		}
 		pm.total++
 		pm.totalDurMs += termDur.Milliseconds()
-		switch status {
+		switch effectiveStatus {
 		case StatusSuccessful:
 			pm.successes++
 		case StatusCanceled:
@@ -678,13 +864,15 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 			"action":    "monitoring",
 			"path":      t.sess.path,
 			"serviceId": t.sess.sessionId,
-			"status":    string(status),
+			"status":    string(effectiveStatus),
 			"ts":        ts,
 		}
 		if t.sess.routerId != "" {
 			event["RouterId"] = t.sess.routerId // address the event back to the requesting client
 		}
-		if outdataWrapped != nil {
+		if outdataArr != nil {
+			event["outdata"] = outdataArr
+		} else if outdataWrapped != nil {
 			event["outdata"] = outdataWrapped
 		}
 		if svcErr != nil {
@@ -694,7 +882,7 @@ func UpdateServiceState(serviceId string, status ServiceStatus,
 			}
 		}
 		// Include progress percentage in ONGOING events only (§28).
-		if status == StatusOngoing && progressVal != nil {
+		if effectiveStatus == StatusOngoing && progressVal != nil {
 			event["progress"] = *progressVal
 		}
 		if t.sess.routerIndex < len(backendChans) {
@@ -743,15 +931,34 @@ func buildServiceMetadata(node *utils.Node_t, basePath string) map[string]interf
 // with live serviceStatus ("registered" | "disconnected") and activeInvocations
 // count (VISSv3.3 §24).
 func buildProcedureMetadata(node *utils.Node_t, path string) map[string]interface{} {
+	return buildProcedureMetadataFiltered(node, path, nil)
+}
+
+// buildProcedureMetadataFiltered is buildProcedureMetadata's implementation,
+// additionally narrowing the returned tree metadata to the given
+// resource-instance keys (e.g. ["Row1.DriverSide"]) when resourceKeys is
+// non-empty (§6: HandleDiscover's "resource" filter support). When
+// resourceKeys is nil/empty, every child of node is walked unchanged
+// (single-resource procedure, or "all resources" — buildProcedureMetadata's
+// existing unfiltered behaviour).
+func buildProcedureMetadataFiltered(node *utils.Node_t, path string, resourceKeys []string) map[string]interface{} {
 	meta := map[string]interface{}{"type": "procedure"}
-	numChildren := utils.VSSgetNumOfChildren(node)
-	for i := 0; i < numChildren; i++ {
-		child := utils.VSSgetChild(node, i)
-		if child == nil {
-			continue
+	if len(resourceKeys) > 0 {
+		for _, rk := range resourceKeys {
+			if resourceNode := resolveRelativeNode(node, rk); resourceNode != nil {
+				meta[rk] = buildResourceInstanceMetadata(resourceNode)
+			}
 		}
-		if utils.VSSgetType(child) == utils.IOSTRUCT {
-			meta[utils.VSSgetName(child)] = buildIoStructMetadata(child)
+	} else {
+		numChildren := utils.VSSgetNumOfChildren(node)
+		for i := 0; i < numChildren; i++ {
+			child := utils.VSSgetChild(node, i)
+			if child == nil {
+				continue
+			}
+			if utils.VSSgetType(child) == utils.IOSTRUCT {
+				meta[utils.VSSgetName(child)] = buildIoStructMetadata(child)
+			}
 		}
 	}
 
@@ -821,6 +1028,25 @@ func buildProcedureMetadata(node *utils.Node_t, path string) map[string]interfac
 	return meta
 }
 
+// buildResourceInstanceMetadata returns metadata for one resource-instance
+// branch (e.g. Row1.DriverSide) under a multiplexed procedure: its nested
+// Input/Output iostructs, keyed the same way buildProcedureMetadata keys a
+// non-multiplexed procedure's direct iostruct children.
+func buildResourceInstanceMetadata(node *utils.Node_t) map[string]interface{} {
+	meta := map[string]interface{}{"type": "branch"}
+	numChildren := utils.VSSgetNumOfChildren(node)
+	for i := 0; i < numChildren; i++ {
+		child := utils.VSSgetChild(node, i)
+		if child == nil {
+			continue
+		}
+		if utils.VSSgetType(child) == utils.IOSTRUCT {
+			meta[utils.VSSgetName(child)] = buildIoStructMetadata(child)
+		}
+	}
+	return meta
+}
+
 func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 	params := map[string]interface{}{}
 	numChildren := utils.VSSgetNumOfChildren(node)
@@ -839,18 +1065,64 @@ func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 
 // validateInputSignature checks that all required Input fields are present.
 // Returns (true, nil) when valid; (false, missingFields) when fields are absent.
-func validateInputSignature(procedureNode *utils.Node_t, inputParams map[string]interface{}) (bool, []string) {
-	numChildren := utils.VSSgetNumOfChildren(procedureNode)
+//
+// For a single-resource procedure, the Input iostruct is a direct child of
+// procedureNode (unchanged behaviour). For a multiplexed procedure (§1), the
+// Input iostruct instead lives under each resource-instance branch
+// (e.g. Row1.DriverSide.Input); since the signature is guaranteed identical
+// across every resource instance (they all come from the same 'instances:'
+// expansion), it is sufficient to validate against any one resolved resource
+// — the first entry of resourceKeys is used when no direct Input child exists.
+func validateInputSignature(procedureNode *utils.Node_t, resourceKeys []string, inputParams map[string]interface{}) (bool, []string) {
+	if inputNode := findDirectInputChild(procedureNode); inputNode != nil {
+		return validateIoParams(inputNode, inputParams)
+	}
+	if len(resourceKeys) > 0 {
+		if resourceNode := resolveRelativeNode(procedureNode, resourceKeys[0]); resourceNode != nil {
+			if inputNode := findDirectInputChild(resourceNode); inputNode != nil {
+				return validateIoParams(inputNode, inputParams)
+			}
+		}
+	}
+	return true, nil // no Input iostruct means no input required
+}
+
+// findDirectInputChild returns node's direct "Input" IOSTRUCT child, or nil.
+func findDirectInputChild(node *utils.Node_t) *utils.Node_t {
+	numChildren := utils.VSSgetNumOfChildren(node)
 	for i := 0; i < numChildren; i++ {
-		child := utils.VSSgetChild(procedureNode, i)
+		child := utils.VSSgetChild(node, i)
 		if child == nil {
 			continue
 		}
 		if utils.VSSgetName(child) == "Input" && utils.VSSgetType(child) == utils.IOSTRUCT {
-			return validateIoParams(child, inputParams)
+			return child
 		}
 	}
-	return true, nil // no Input iostruct means no input required
+	return nil
+}
+
+// resolveRelativeNode walks the "."-separated relative path (e.g.
+// "Row1.DriverSide") down from node, matching child names exactly, and
+// returns the addressed descendant or nil if any segment is not found.
+func resolveRelativeNode(node *utils.Node_t, relPath string) *utils.Node_t {
+	current := node
+	for _, seg := range strings.Split(relPath, ".") {
+		found := (*utils.Node_t)(nil)
+		numChildren := utils.VSSgetNumOfChildren(current)
+		for i := 0; i < numChildren; i++ {
+			child := utils.VSSgetChild(current, i)
+			if child != nil && utils.VSSgetName(child) == seg {
+				found = child
+				break
+			}
+		}
+		if found == nil {
+			return nil
+		}
+		current = found
+	}
+	return current
 }
 
 func validateIoParams(iostructNode *utils.Node_t, params map[string]interface{}) (bool, []string) {
@@ -887,22 +1159,120 @@ func isOptionalParam(node *utils.Node_t) bool {
 
 // ---- filter helpers --------------------------------------------------------
 
-func extractFilterVariant(filter interface{}) string {
-	m := filterToMap(filter)
-	if m == nil {
-		return "all"
-	}
-	if v, ok := m["variant"].(string); ok {
-		return v
-	}
-	return "all"
+// parsedFilter is the decomposed form of a service request's "filter" field,
+// which may be a single filter object or an array containing exactly one
+// "resource" filter plus exactly one other variant (VISSv3.2 "Multiple
+// Filters").
+type parsedFilter struct {
+	variant       string        // "timebased" | "status" | "all" | "none" (defaults to "all" if absent)
+	period        time.Duration // only meaningful when variant == "timebased"
+	resourceSnips []string      // path snippets from a "resource" variant filter, e.g. ["Row1.DriverSide"]; nil if none
 }
 
-func periodFromFilter(filter interface{}) time.Duration {
-	m := filterToMap(filter)
-	if m == nil {
-		return time.Second
+// parseServiceFilter accepts requestMap["filter"] in any of the shapes
+// allowed by the VISSv3.2 Services filter (including the "resource" variant
+// and the "Multiple Filters" array-of-two-objects combination). Returns an
+// error string (non-empty) for any other shape, e.g. two non-resource
+// variants combined, or an array not containing a "resource" filter.
+func parseServiceFilter(filter interface{}) (parsedFilter, string) {
+	switch f := filter.(type) {
+	case nil:
+		return parsedFilter{variant: "all"}, ""
+	case []interface{}:
+		return parseFilterArray(f)
+	default:
+		m := filterToMap(filter)
+		if m == nil {
+			return parsedFilter{variant: "all"}, ""
+		}
+		return parseFilterObject(m)
 	}
+}
+
+// parseFilterObject decomposes a single filter object (map form). A bare
+// {"variant":"resource",...} is a valid standalone filter (e.g. for Discover,
+// or an Invoke/Monitor that does not also need event-rate/status control).
+func parseFilterObject(m map[string]interface{}) (parsedFilter, string) {
+	variant, _ := m["variant"].(string)
+	if variant == "" {
+		variant = "all"
+	}
+	switch variant {
+	case "resource":
+		snips, err := resourceSnippetsFromFilter(m)
+		if err != "" {
+			return parsedFilter{}, err
+		}
+		return parsedFilter{variant: "all", resourceSnips: snips}, ""
+	case "timebased":
+		return parsedFilter{variant: variant, period: periodFromFilterMap(m)}, ""
+	case "status", "all", "none":
+		return parsedFilter{variant: variant}, ""
+	default:
+		return parsedFilter{}, fmt.Sprintf("unsupported filter variant %q", variant)
+	}
+}
+
+// parseFilterArray decomposes the VISSv3.2 "Multiple Filters" array form: an
+// array of exactly two filter objects, one of which must have variant
+// "resource" and the other one of the standard monitoring variants.
+func parseFilterArray(arr []interface{}) (parsedFilter, string) {
+	if len(arr) != 2 {
+		return parsedFilter{}, "filter array must contain exactly two filter objects"
+	}
+	var resourceObj, otherObj map[string]interface{}
+	for _, raw := range arr {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			return parsedFilter{}, "filter array entries must be filter objects"
+		}
+		variant, _ := m["variant"].(string)
+		if variant == "resource" {
+			if resourceObj != nil {
+				return parsedFilter{}, "filter array must contain exactly one 'resource' filter"
+			}
+			resourceObj = m
+		} else {
+			if otherObj != nil {
+				return parsedFilter{}, "filter array must combine 'resource' with exactly one other variant"
+			}
+			otherObj = m
+		}
+	}
+	if resourceObj == nil || otherObj == nil {
+		return parsedFilter{}, "filter array must contain a 'resource' filter and one other variant"
+	}
+	snips, err := resourceSnippetsFromFilter(resourceObj)
+	if err != "" {
+		return parsedFilter{}, err
+	}
+	pf, err := parseFilterObject(otherObj)
+	if err != "" {
+		return parsedFilter{}, err
+	}
+	pf.resourceSnips = snips
+	return pf, ""
+}
+
+// resourceSnippetsFromFilter extracts and validates the "parameter" array of
+// path snippet strings from a {"variant":"resource",...} filter object.
+func resourceSnippetsFromFilter(m map[string]interface{}) ([]string, string) {
+	paramRaw, ok := m["parameter"].([]interface{})
+	if !ok || len(paramRaw) == 0 {
+		return nil, "'resource' filter requires a non-empty 'parameter' array"
+	}
+	snips := make([]string, 0, len(paramRaw))
+	for _, p := range paramRaw {
+		s, ok := p.(string)
+		if !ok || s == "" {
+			return nil, "'resource' filter 'parameter' entries must be non-empty strings"
+		}
+		snips = append(snips, s)
+	}
+	return snips, ""
+}
+
+func periodFromFilterMap(m map[string]interface{}) time.Duration {
 	param, _ := m["parameter"].(map[string]interface{})
 	if param == nil {
 		return time.Second
@@ -926,6 +1296,130 @@ func filterToMap(filter interface{}) map[string]interface{} {
 		}
 	}
 	return nil
+}
+
+// ---- resource resolution ----------------------------------------------------
+
+// maxResourceDepth bounds how many path segments resolveResourceInstances
+// walks below a procedure node when collecting resource-instance branches
+// (e.g. Row1.DriverSide is depth 2). Generous enough for any realistic HIM
+// service tree while preventing runaway recursion on malformed trees.
+const maxResourceDepth = 8
+
+// resolveResourceInstances returns the concrete resource-instance branch
+// paths (relative to procedureNode, e.g. "Row1.DriverSide") that exist under
+// procedureNode and match the given filter snippets. Snippets may contain "*"
+// wildcards on individual path segments (matching the wildcard semantics used
+// elsewhere in the tree-search code, utils.VSSsearchNodes's "*" handling).
+//
+// If snips is empty (no resource filter given), ALL resource-instance leaf
+// branches are returned (VISSv3.2: "If a resource variant filter is not
+// included... the response... will contain output data from all the
+// resources").
+//
+// A procedure with no resource-instance branches (single-resource, e.g.
+// GetCapabilities) returns (nil, "") — callers treat a nil/empty result as
+// "not multiplexed" and skip resource-keyed handling entirely.
+func resolveResourceInstances(procedureNode *utils.Node_t, snips []string) ([]string, string) {
+	all := collectResourceInstanceBranches(procedureNode, "")
+	if len(all) == 0 {
+		return nil, "" // not a multiplexed procedure
+	}
+	if len(snips) == 0 {
+		sort.Strings(all)
+		return all, ""
+	}
+	seen := map[string]bool{}
+	var matched []string
+	for _, snip := range snips {
+		found := false
+		for _, key := range all {
+			if resourcePathMatches(snip, key) {
+				found = true
+				if !seen[key] {
+					seen[key] = true
+					matched = append(matched, key)
+				}
+			}
+		}
+		if !found {
+			return nil, fmt.Sprintf("resource filter snippet %q does not match any resource of this procedure", snip)
+		}
+	}
+	sort.Strings(matched)
+	return matched, ""
+}
+
+// collectResourceInstanceBranches walks the plain BRANCH nodes nested
+// directly under a multiplexed procedure node and returns the dot-joined
+// relative path of every LEAF branch (a branch with no further BRANCH
+// children, e.g. "Row1.DriverSide") — the level at which Input/Output
+// iostructs are attached. Non-BRANCH children (Input/Output/Version) are not
+// resource instances and are ignored.
+func collectResourceInstanceBranches(node *utils.Node_t, prefix string) []string {
+	return collectResourceInstanceBranchesDepth(node, prefix, 0)
+}
+
+func collectResourceInstanceBranchesDepth(node *utils.Node_t, prefix string, depth int) []string {
+	if depth > maxResourceDepth {
+		return nil
+	}
+	var result []string
+	numChildren := utils.VSSgetNumOfChildren(node)
+	for i := 0; i < numChildren; i++ {
+		child := utils.VSSgetChild(node, i)
+		if child == nil || utils.VSSgetType(child) != utils.BRANCH {
+			continue
+		}
+		name := utils.VSSgetName(child)
+		childPath := name
+		if prefix != "" {
+			childPath = prefix + "." + name
+		}
+		grandChildBranches := hasChildBranch(child)
+		if grandChildBranches {
+			result = append(result, collectResourceInstanceBranchesDepth(child, childPath, depth+1)...)
+		} else {
+			result = append(result, childPath)
+		}
+	}
+	return result
+}
+
+// hasChildBranch reports whether node has at least one direct BRANCH child.
+func hasChildBranch(node *utils.Node_t) bool {
+	numChildren := utils.VSSgetNumOfChildren(node)
+	for i := 0; i < numChildren; i++ {
+		child := utils.VSSgetChild(node, i)
+		if child != nil && utils.VSSgetType(child) == utils.BRANCH {
+			return true
+		}
+	}
+	return false
+}
+
+// resourcePathMatches reports whether the resource-instance path key (e.g.
+// "Row1.DriverSide") matches filter snippet snip, which may contain "*"
+// wildcards on individual "."-separated segments (matching every remaining
+// segment of key at that position, same convention as the rest of the
+// tree-search code).
+func resourcePathMatches(snip, key string) bool {
+	snipSegs := strings.Split(snip, ".")
+	keySegs := strings.Split(key, ".")
+	if len(snipSegs) > len(keySegs) {
+		return false
+	}
+	for i, s := range snipSegs {
+		if s == "*" {
+			continue
+		}
+		if s != keySegs[i] {
+			return false
+		}
+	}
+	// A snippet may address a partial prefix (e.g. "Row1" matching both
+	// Row1.DriverSide and Row1.PassengerSide) as well as a full leaf path.
+	return true
 }
 
 // timeoutFromRequest reads the optional "timeout" key (milliseconds) from
