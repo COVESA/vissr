@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,9 +76,26 @@ func procedureName(path string) string {
 
 // ── MoveSeat ────────────────────────────────────────────────────────────────
 
-// moveSeatStepPeriod is the wall-clock interval between one-percentage-point
-// position changes (VISSv3.3 service example). A var so tests can shrink it.
-var moveSeatStepPeriod = time.Second
+// moveSeatStepPeriodNs is the wall-clock interval (nanoseconds) between
+// one-percentage-point position changes (VISSv3.3 service example), stored
+// atomically since it is read concurrently by every per-resource driver
+// goroutine spawned by moveSeatBuiltin (one per addressed resource — §4) and
+// written by tests via setMoveSeatStepPeriod/shrinkStepPeriod. A plain
+// package-level var here previously raced under `go test -race`: a test's
+// t.Cleanup restoring the value could run concurrently with a driver
+// goroutine from an earlier invocation still reading it.
+var moveSeatStepPeriodNs = int64(time.Second)
+
+// moveSeatStepPeriod returns the current step period.
+func moveSeatStepPeriod() time.Duration {
+	return time.Duration(atomic.LoadInt64(&moveSeatStepPeriodNs))
+}
+
+// setMoveSeatStepPeriod sets the step period. Exposed for tests
+// (shrinkStepPeriod); not used by production code otherwise.
+func setMoveSeatStepPeriod(d time.Duration) {
+	atomic.StoreInt64(&moveSeatStepPeriodNs, int64(d))
+}
 
 var moveSeatMovementTypes = map[string]bool{
 	"longitudinal": true,
@@ -235,7 +253,7 @@ func moveSeatBuiltin(path string, resourceKeys []string, input map[string]interf
 
 	// Allow one step per second plus a small buffer so the timeout watchdog
 	// does not kill the longest move (0->100 takes 100 s, well past DefaultTimeout).
-	minDuration := time.Duration(maxSteps+2) * moveSeatStepPeriod
+	minDuration := time.Duration(maxSteps+2) * moveSeatStepPeriod()
 
 	return builtinDecision{
 		minDuration: minDuration,
@@ -251,7 +269,7 @@ func moveSeatBuiltin(path string, resourceKeys []string, input map[string]interf
 				wg.Add(1)
 				go func(s resourceState) {
 					defer wg.Done()
-					ticker := time.NewTicker(moveSeatStepPeriod)
+					ticker := time.NewTicker(moveSeatStepPeriod())
 					defer ticker.Stop()
 					for range ticker.C {
 						// Stop promptly if the invocation was cancelled or removed.

@@ -22,11 +22,18 @@ func resetSeatState() {
 const moveSeatDriverRow1ResourceKey = "Row1.DriverSide"
 
 // shrinkStepPeriod speeds up the simulation for tests and restores it after.
+//
+// Uses the atomic moveSeatStepPeriod/setMoveSeatStepPeriod accessors (not a
+// plain package var) because moveSeatBuiltin's per-resource driver
+// goroutines (one per addressed resource, §4) can legitimately still be
+// running — and reading the step period — after the test function that
+// started them has returned; a bare var write in t.Cleanup racing with that
+// read is exactly the `go test -race` failure this was fixed for.
 func shrinkStepPeriod(t *testing.T, d time.Duration) {
 	t.Helper()
-	old := moveSeatStepPeriod
-	moveSeatStepPeriod = d
-	t.Cleanup(func() { moveSeatStepPeriod = old })
+	old := moveSeatStepPeriod()
+	setMoveSeatStepPeriod(d)
+	t.Cleanup(func() { setMoveSeatStepPeriod(old) })
 }
 
 // ---- procedureName ---------------------------------------------------------
