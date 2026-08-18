@@ -16,9 +16,21 @@ import (
 // validateInputSignature) are integration-only and are documented as such
 // rather than unit-tested here.
 
+// resetState reinitialises the package-level invocations/sessions/metrics
+// maps between tests. Must hold mu while reassigning invocations/sessions:
+// moveSeatBuiltin's per-resource driver goroutines (§4, one per addressed
+// resource) read/write those variables under mu from a previous test's
+// still-running invocation, and a previous test's t.Cleanup(stopServiceGoroutines)
+// only cancels goroutines it knows about — a goroutine that raced past its
+// "alive" check just before cancellation can still be mid-flight when the
+// next test's resetState() runs. Reassigning the map variable itself without
+// holding mu raced under `go test -race` even though every access to the
+// map's *contents* elsewhere already took mu.
 func resetState() {
+	mu.Lock()
 	invocations = map[string]*invocationState{}
 	sessions = map[string]*monitorSession{}
+	mu.Unlock()
 	metricsMu.Lock()
 	metrics = map[string]*pathMetrics{}
 	metricsMu.Unlock()
