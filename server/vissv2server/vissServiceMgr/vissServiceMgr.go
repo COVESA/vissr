@@ -139,6 +139,7 @@ type monitorSession struct {
 	filterPeriod time.Duration // >0 for timebased
 	lastEventAt  time.Time
 	cancelTicker func() // stops the ticker goroutine, nil for non-timebased
+	hasOutput    bool   // true if the addressed procedure declares an Output iostruct (outdata is then mandatory on every event, per VISSv3.2 §monitorEvent)
 }
 
 var (
@@ -216,6 +217,20 @@ func startTimeoutWatchdog(inv *invocationState, backendChans []chan map[string]i
 
 // startTimebasedTicker launches a goroutine that periodically pushes the
 // current invocation state to the session's backend channel.
+//
+// If sess.hasOutput is true (the addressed procedure declares an Output
+// iostruct, e.g. MoveSeat), a tick is skipped — no event sent — while the
+// invocation has not yet reported any output. Per VISSv3.2 §monitorEvent,
+// "outdata ... Yes (*) - If it is not specified in the service signature then
+// the parameter shall be omitted": outdata is therefore mandatory on every
+// emitted event for such a procedure, but previously the ticker would emit
+// an outdata-less event anyway whenever its period was shorter than the
+// driver's own update rate, so the first tick(s) fired before any
+// UpdateServiceState call had landed. Skipping keeps every emitted event
+// spec-compliant; the session still gets prompt notice of status changes via
+// the status-changed delivery path in UpdateServiceState, and later ticks
+// resume once output becomes available. Procedures with no Output at all
+// (sess.hasOutput false) are unaffected and keep emitting on every tick.
 func startTimebasedTicker(sess *monitorSession, period time.Duration,
 	backendChans []chan map[string]interface{}) func() {
 	stopCh := make(chan struct{})
@@ -231,6 +246,21 @@ func startTimebasedTicker(sess *monitorSession, period time.Duration,
 					mu.Unlock()
 					return
 				}
+				var outdataField interface{}
+				if len(inv.resources) > 1 {
+					if arr := buildOutdataArrayFromWrapped(inv.outdataByResource); len(arr) > 0 {
+						outdataField = arr
+					}
+				} else if inv.outdata != nil {
+					outdataField = copyMap(inv.outdata)
+				}
+				if outdataField == nil && sess.hasOutput {
+					// The procedure's signature requires outdata but none has
+					// been reported yet: sending now would omit the mandatory
+					// field, so wait for the next tick.
+					mu.Unlock()
+					continue
+				}
 				event := map[string]interface{}{
 					"action":    "monitoring",
 					"path":      sess.path,
@@ -238,17 +268,18 @@ func startTimebasedTicker(sess *monitorSession, period time.Duration,
 					"status":    string(inv.status),
 					"ts":        getTimestamp(),
 				}
+				if outdataField != nil {
+					event["outdata"] = outdataField
+				}
 				if sess.routerId != "" {
 					event["RouterId"] = sess.routerId // address the event back to the requesting client
 				}
-				if inv.outdata != nil {
-					event["outdata"] = copyMap(inv.outdata)
-				}
+				status := inv.status
 				mu.Unlock()
 				if sess.routerIndex < len(backendChans) {
 					backendChans[sess.routerIndex] <- event
 				}
-				if inv.status != StatusOngoing {
+				if status != StatusOngoing {
 					return
 				}
 			case <-stopCh:
@@ -378,6 +409,7 @@ func HandleInvoke(requestMap map[string]interface{}, backendChans []chan map[str
 			routerIndex: tDChanIndex,
 			routerId:    extractRouterId(requestMap),
 			filterKind:  pf.variant,
+			hasOutput:   procedureHasOutput(node, resourceKeys),
 		}
 		if pf.variant == "timebased" {
 			sess.filterPeriod = pf.period
@@ -503,6 +535,7 @@ func HandleMonitor(requestMap map[string]interface{}, backendChans []chan map[st
 			routerIndex: tDChanIndex,
 			routerId:    extractRouterId(requestMap),
 			filterKind:  pf.variant,
+			hasOutput:   procedureHasOutput(node, inv.resources),
 		}
 		if pf.variant == "timebased" {
 			sess.filterPeriod = pf.period
@@ -1100,6 +1133,43 @@ func findDirectInputChild(node *utils.Node_t) *utils.Node_t {
 		}
 	}
 	return nil
+}
+
+// findDirectOutputChild returns node's direct "Output" IOSTRUCT child, or nil.
+func findDirectOutputChild(node *utils.Node_t) *utils.Node_t {
+	numChildren := utils.VSSgetNumOfChildren(node)
+	for i := 0; i < numChildren; i++ {
+		child := utils.VSSgetChild(node, i)
+		if child == nil {
+			continue
+		}
+		if utils.VSSgetName(child) == "Output" && utils.VSSgetType(child) == utils.IOSTRUCT {
+			return child
+		}
+	}
+	return nil
+}
+
+// procedureHasOutput reports whether the addressed procedure's signature
+// declares an Output iostruct — i.e. whether outdata is mandatory on every
+// monitoring event for it (VISSv3.2 §monitorEvent's "Yes (*)" outdata rule).
+// Mirrors validateInputSignature's node resolution: for a multiplexed
+// procedure (§1) the Output iostruct lives under each resource-instance
+// branch instead of directly on procedureNode, so the first resolved
+// resource key is checked when no direct Output child exists (the signature
+// is identical across every resource instance).
+func procedureHasOutput(procedureNode *utils.Node_t, resourceKeys []string) bool {
+	if findDirectOutputChild(procedureNode) != nil {
+		return true
+	}
+	if len(resourceKeys) > 0 {
+		if resourceNode := resolveRelativeNode(procedureNode, resourceKeys[0]); resourceNode != nil {
+			if findDirectOutputChild(resourceNode) != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // resolveRelativeNode walks the "."-separated relative path (e.g.

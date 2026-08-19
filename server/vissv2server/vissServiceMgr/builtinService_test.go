@@ -461,3 +461,57 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 	}
 	seatMu.Unlock()
 }
+
+// TestHandleInvoke_TimebasedFilterFasterThanDriver_NeverOmitsOutdata is a
+// regression test for a client-reported bug: when the requested "timebased"
+// filter period is shorter than moveSeatBuiltin's own per-resource step
+// period, startTimebasedTicker's first tick(s) fire before the driver
+// goroutine has made its first UpdateServiceState call, so inv.outdata was
+// still nil. The ticker used to send the monitoring event anyway, omitting
+// "outdata" entirely — but MoveSeat declares an Output iostruct (Position),
+// so per VISSv3.2 §monitorEvent outdata is mandatory on every event for it.
+// This asserts no ONGOING monitoring event is ever missing "outdata".
+func TestHandleInvoke_TimebasedFilterFasterThanDriver_NeverOmitsOutdata(t *testing.T) {
+	resetState()
+	resetSeatState()
+	// Driver step period much slower than the requested timebased period, so
+	// several ticks are guaranteed to fire before the first UpdateServiceState.
+	shrinkStepPeriod(t, 100*time.Millisecond)
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 64)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action":      "invoke",
+		"path":        moveSeatPath,
+		"input":       map[string]interface{}{"MovementType": "longitudinal", "Position": "2"},
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    "1?0",
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "10"}},
+		},
+	}
+	HandleInvoke(req, bcs)
+
+	gotSuccess := false
+	timeout := time.After(2 * time.Second)
+	for !gotSuccess {
+		select {
+		case msg := <-bc:
+			if msg["action"] != "monitoring" {
+				continue
+			}
+			if _, hasOutdata := msg["outdata"]; !hasOutdata {
+				t.Errorf("monitoring event missing mandatory outdata: %#v", msg)
+			}
+			if msg["status"] == string(StatusSuccessful) {
+				gotSuccess = true
+			}
+		case <-timeout:
+			t.Fatal("did not reach SUCCESSFUL")
+		}
+	}
+}
