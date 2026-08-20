@@ -462,6 +462,112 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 	seatMu.Unlock()
 }
 
+// ---- activateMassageBuiltin decision logic ---------------------------------
+
+// TestActivateMassageBuiltin_ValidationErrors covers the two 400 cases: an
+// unsupported MassageType and a malformed/negative Duration.
+func TestActivateMassageBuiltin_ValidationErrors(t *testing.T) {
+	cases := []struct {
+		name  string
+		input map[string]interface{}
+	}{
+		{"unknown massage type", map[string]interface{}{"MassageType": "diagonal", "Duration": "30"}},
+		{"missing massage type", map[string]interface{}{"Duration": "30"}},
+		{"duration negative", map[string]interface{}{"MassageType": "roll", "Duration": "-5"}},
+		{"duration non-numeric", map[string]interface{}{"MassageType": "roll", "Duration": "x"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil, c.input)
+			if d.errNum != "400" {
+				t.Errorf("want errNum 400, got %q (decision %+v)", d.errNum, d)
+			}
+			if d.run != nil || d.immediate != "" {
+				t.Errorf("error decision must not run or complete: %+v", d)
+			}
+		})
+	}
+}
+
+// TestActivateMassageBuiltin_ZeroDurationIsImmediate covers the fast path:
+// a Duration of 0 has nothing to simulate, so it completes synchronously.
+func TestActivateMassageBuiltin_ZeroDurationIsImmediate(t *testing.T) {
+	d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil,
+		map[string]interface{}{"MassageType": "lumbar", "Duration": "0"})
+	if d.immediate != StatusSuccessful {
+		t.Fatalf("want immediate SUCCESSFUL, got %q", d.immediate)
+	}
+	if d.run != nil {
+		t.Error("zero-duration massage must not start a driver (no events)")
+	}
+}
+
+// TestActivateMassageBuiltin_PositiveDurationReturnsRunner covers the normal
+// case: a positive Duration returns an async driver, not an immediate
+// decision, and its minDuration budget must exceed DefaultTimeout for a long
+// session (this is the exact bug reported against PR #201: ActivateMassage
+// had no builtin handler at all, so every invoke fell through to the
+// timeout watchdog and finished FAILED after 30s regardless of Duration).
+func TestActivateMassageBuiltin_PositiveDurationReturnsRunner(t *testing.T) {
+	shrinkStepPeriod(t, time.Second) // keep default for the minDuration assertion
+	d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil,
+		map[string]interface{}{"MassageType": "roll", "Duration": "30"})
+	if d.run == nil {
+		t.Fatal("a positive Duration must return a driver")
+	}
+	if d.immediate != "" || d.errNum != "" {
+		t.Errorf("positive-duration request must not be immediate/error: %+v", d)
+	}
+	if d.minDuration <= DefaultTimeout {
+		t.Errorf("minDuration %v should exceed DefaultTimeout %v for a 30s massage", d.minDuration, DefaultTimeout)
+	}
+}
+
+// TestHandleInvoke_BuiltinActivateMassageCompletes reproduces the client's
+// exact reported request shape (issue seen against PR #201: the final event
+// had status FAILED instead of SUCCESSFUL) end-to-end through HandleInvoke,
+// confirming the invocation now reaches SUCCESSFUL well before the 30s
+// timeout watchdog would fire.
+func TestHandleInvoke_BuiltinActivateMassageCompletes(t *testing.T) {
+	resetState()
+	shrinkStepPeriod(t, 3*time.Millisecond)
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 64)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action": "invoke",
+		"path":   activateMassagePath,
+		"input":  map[string]interface{}{"MassageType": "roll", "Duration": "30"},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1.DriverSide"}},
+			map[string]interface{}{"variant": "status"},
+		},
+		"requestId":   "8759",
+		"routerIndex": 0,
+	}
+	HandleInvoke(req, bcs)
+
+	gotSuccess := false
+	timeout := time.After(2 * time.Second)
+	for !gotSuccess {
+		select {
+		case msg := <-bc:
+			if msg["action"] == "monitoring" {
+				if msg["status"] == string(StatusFailed) {
+					t.Fatalf("ActivateMassage invocation must not FAIL: %v", msg)
+				}
+				if msg["status"] == string(StatusSuccessful) {
+					gotSuccess = true
+				}
+			}
+		case <-timeout:
+			t.Fatal("did not reach SUCCESSFUL")
+		}
+	}
+}
+
 // TestHandleInvoke_TimebasedFilterFasterThanDriver_NeverOmitsOutdata is a
 // regression test for a client-reported bug: when the requested "timebased"
 // filter period is shorter than moveSeatBuiltin's own per-resource step

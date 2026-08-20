@@ -63,6 +63,7 @@ type builtinHandler func(path string, resourceKeys []string, input map[string]in
 // instance path that ends in that procedure.
 var builtinServices = map[string]builtinHandler{
 	"MoveSeat":        moveSeatBuiltin,
+	"ActivateMassage": activateMassageBuiltin,
 	"GetCapabilities": getCapabilitiesBuiltin,
 }
 
@@ -297,6 +298,111 @@ func moveSeatBuiltin(path string, resourceKeys []string, input map[string]interf
 						UpdateServiceState(serviceId, StatusOngoing, s.key, seatOutput(cur), nil, nil, backendChans)
 					}
 				}(s)
+			}
+			wg.Wait()
+		},
+	}
+}
+
+// ── ActivateMassage ──────────────────────────────────────────────────────────
+
+// massageTypes are the supported MassageType values, matching the
+// "ActivateMassage" capability tokens returned by getCapabilitiesBuiltin
+// (roll, lumbar).
+var massageTypes = map[string]bool{
+	"roll":   true,
+	"lumbar": true,
+}
+
+// activateMassageBuiltin simulates VehicleService.Seating.ActivateMassage.
+// Without this builtin (the bug reported against PR #201), an invoke to
+// ActivateMassage created an invocation that nothing ever drove via
+// UpdateServiceState — like the general MoveSeat problem described at the top
+// of this file — so it always ran into the timeout watchdog and finished
+// FAILED after DefaultTimeout, even though nothing about the request was
+// actually wrong.
+//
+//   - MassageType must be one of roll, lumbar (the two tokens GetCapabilities
+//     advertises for ActivateMassage).
+//   - Duration is a non-negative integer number of seconds. Duration == 0
+//     completes immediately (SUCCESSFUL) — there is nothing to simulate.
+//   - Otherwise the session runs for `Duration` simulated seconds — one tick
+//     per moveSeatStepPeriod() interval, reusing MoveSeat's test-shrinkable
+//     clock so tests stay fast — reporting completion percentage via the
+//     "progress" field (VISSv3.3 §28) on each ONGOING tick, then SUCCESSFUL.
+//
+// ActivateMassage's Output iostruct only declares Status/ServiceId (both
+// already conveyed by the envelope's top-level "status"/"serviceId" fields,
+// per resources/ServiceSpecification-example.vspec), so unlike MoveSeat's
+// Position there is no extra per-tick data to report as outdata.
+//
+// resourceKeys is handled exactly like moveSeatBuiltin: nil/empty for a
+// single-resource invocation, or every addressed resource instance for a
+// multiplexed one (ActivateMassage is multiplexed the same way MoveSeat is —
+// §1), each driven independently via one goroutine per resource.
+func activateMassageBuiltin(path string, resourceKeys []string, input map[string]interface{}) builtinDecision {
+	massageType, _ := input["MassageType"].(string)
+	if !massageTypes[massageType] {
+		return builtinDecision{
+			errNum: "400", errReason: "bad_request",
+			errDesc: "MassageType must be one of: roll, lumbar",
+		}
+	}
+
+	durStr, _ := input["Duration"].(string)
+	duration, err := strconv.Atoi(strings.TrimSpace(durStr))
+	if err != nil || duration < 0 {
+		return builtinDecision{
+			errNum: "400", errReason: "bad_request",
+			errDesc: "Duration must be a non-negative integer number of seconds",
+		}
+	}
+
+	if duration == 0 {
+		// Nothing to simulate: succeed immediately, no invocation/session
+		// created — matches moveSeatBuiltin's already-at-target fast path.
+		return builtinDecision{immediate: StatusSuccessful}
+	}
+
+	keys := resourceKeys
+	if len(keys) == 0 {
+		keys = []string{""}
+	}
+
+	// Allow one tick per second plus a small buffer so the timeout watchdog
+	// does not kill a massage session whose Duration exceeds DefaultTimeout
+	// (e.g. the 300 s session in appclient_service_commands.txt).
+	minDuration := time.Duration(duration+2) * moveSeatStepPeriod()
+
+	return builtinDecision{
+		minDuration: minDuration,
+		run: func(serviceId string, backendChans []chan map[string]interface{}) {
+			var wg sync.WaitGroup
+			for _, key := range keys {
+				wg.Add(1)
+				go func(resourceKey string) {
+					defer wg.Done()
+					ticker := time.NewTicker(moveSeatStepPeriod())
+					defer ticker.Stop()
+					elapsed := 0
+					for range ticker.C {
+						// Stop promptly if the invocation was cancelled or removed.
+						mu.Lock()
+						_, alive := invocations[serviceId]
+						mu.Unlock()
+						if !alive {
+							return
+						}
+
+						elapsed++
+						if elapsed >= duration {
+							UpdateServiceState(serviceId, StatusSuccessful, resourceKey, nil, nil, nil, backendChans)
+							return
+						}
+						progress := elapsed * 100 / duration
+						UpdateServiceState(serviceId, StatusOngoing, resourceKey, nil, nil, &progress, backendChans)
+					}
+				}(key)
 			}
 			wg.Wait()
 		},
