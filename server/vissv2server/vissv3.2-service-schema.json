@@ -51,9 +51,9 @@
             "type": "string",
             "enum": ["UNKNOWN", "ONGOING", "SUCCESSFUL", "CANCELED", "FAILED"]
         },
-        "filter": {
-            "$id": "#/$defs/filter",
-            "description": "Service monitoring filter",
+        "filter-variant-monitoring": {
+            "$id": "#/$defs/filter-variant-monitoring",
+            "description": "A monitoring/event-rate filter (VISSv3.2 Services)",
             "type": "object",
             "properties": {
                 "variant": {
@@ -68,6 +68,46 @@
                 }
             },
             "required": ["variant"]
+        },
+        "filter-variant-resource": {
+            "$id": "#/$defs/filter-variant-resource",
+            "description": "A resource filter selecting which resource instance(s) of a multiplexed procedure a request addresses. The 'parameter' value is an array containing one or more path snippet(s) inserted into the full path pointing to the respective service Input/Output nodes; snippets may contain '*' wildcards on individual path segments.",
+            "type": "object",
+            "properties": {
+                "variant": { "const": "resource" },
+                "parameter": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1
+                }
+            },
+            "required": ["variant", "parameter"]
+        },
+        "filter": {
+            "$id": "#/$defs/filter",
+            "description": "Service filter: a single monitoring filter, a standalone resource filter, or (VISSv3.2 'Multiple Filters') an array combining exactly one resource filter with exactly one monitoring filter, in either order. Uses draft-07/2019-09 tuple 'items' (an array of schemas), not 2020-12 'prefixItems', since the Go-side qri-io/jsonschema validator used by this server does not implement 'prefixItems'.",
+            "oneOf": [
+                { "$ref": "#/$defs/filter-variant-monitoring" },
+                { "$ref": "#/$defs/filter-variant-resource" },
+                {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": [
+                        { "$ref": "#/$defs/filter-variant-resource" },
+                        { "$ref": "#/$defs/filter-variant-monitoring" }
+                    ]
+                },
+                {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": [
+                        { "$ref": "#/$defs/filter-variant-monitoring" },
+                        { "$ref": "#/$defs/filter-variant-resource" }
+                    ]
+                }
+            ]
         },
         "indata": {
             "$id": "#/$defs/indata",

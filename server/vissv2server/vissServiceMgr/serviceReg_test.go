@@ -129,6 +129,49 @@ func TestHandleProgress_OngoingUpdate(t *testing.T) {
 	}
 }
 
+// TestHandleProgress_ResourceKeyForwarded verifies that an external service's
+// "resourceKey" field (§1 resource multiplexing) reaches UpdateServiceState,
+// updating the correct resource's status/outdata in a multi-resource
+// invocation rather than the invocation's single-resource fields.
+func TestHandleProgress_ResourceKeyForwarded(t *testing.T) {
+	resetState()
+	ch := make(chan map[string]interface{}, 4)
+	bcs := []chan map[string]interface{}{ch}
+
+	invocations["prog-rk"] = &invocationState{
+		serviceId: "prog-rk",
+		path:      "S.PRK",
+		status:    StatusOngoing,
+		resources: []string{"Row1.DriverSide", "Row1.PassengerSide"},
+	}
+	sessions["ps-rk"] = &monitorSession{sessionId: "ps-rk", serviceId: "prog-rk", routerIndex: 0, filterKind: "all"}
+
+	handleProgress(map[string]interface{}{
+		"sessionId":   "prog-rk",
+		"status":      "SUCCESSFUL",
+		"output":      map[string]interface{}{"Position": "40"},
+		"resourceKey": "Row1.DriverSide",
+	}, bcs)
+
+	<-ch // drain the resulting (still-ONGOING overall) event
+
+	mu.Lock()
+	inv, ok := invocations["prog-rk"]
+	mu.Unlock()
+	if !ok {
+		t.Fatal("invocation should still exist: only one of two resources has reported terminal")
+	}
+	if inv.status != StatusOngoing {
+		t.Errorf("overall status = %v, want ONGOING (wait for all resources)", inv.status)
+	}
+	if inv.resourceStatus["Row1.DriverSide"] != StatusSuccessful {
+		t.Errorf("resourceStatus[Row1.DriverSide] = %v, want SUCCESSFUL", inv.resourceStatus["Row1.DriverSide"])
+	}
+	if _, ok := inv.outdataByResource["Row1.DriverSide"]; !ok {
+		t.Error("outdataByResource[Row1.DriverSide] not populated")
+	}
+}
+
 func TestHandleProgress_StructuredErrorExtracted(t *testing.T) {
 	resetState()
 	ch := make(chan map[string]interface{}, 4)
@@ -623,9 +666,9 @@ func TestStartHeartbeat_PongRenewsConnection(t *testing.T) {
 				sc.lastPong = time.Now()
 				sc.mu.Unlock()
 				b, _ := json.Marshal(map[string]interface{}{"action": "pong"})
-				cliWriter.Write(b)   //nolint:errcheck
+				cliWriter.Write(b)        //nolint:errcheck
 				cliWriter.WriteByte('\n') //nolint:errcheck
-				cliWriter.Flush()    //nolint:errcheck
+				cliWriter.Flush()         //nolint:errcheck
 			}
 		}
 	}()

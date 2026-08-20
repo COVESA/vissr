@@ -16,12 +16,24 @@ func resetSeatState() {
 	seatMu.Unlock()
 }
 
+// moveSeatDriverRow1ResourceKey is the resource-instance key (relative to
+// the stable MoveSeat procedure path) used by tests that address a single
+// resource of the now-multiplexed MoveSeat procedure via a "resource" filter.
+const moveSeatDriverRow1ResourceKey = "Row1.DriverSide"
+
 // shrinkStepPeriod speeds up the simulation for tests and restores it after.
+//
+// Uses the atomic moveSeatStepPeriod/setMoveSeatStepPeriod accessors (not a
+// plain package var) because moveSeatBuiltin's per-resource driver
+// goroutines (one per addressed resource, §4) can legitimately still be
+// running — and reading the step period — after the test function that
+// started them has returned; a bare var write in t.Cleanup racing with that
+// read is exactly the `go test -race` failure this was fixed for.
 func shrinkStepPeriod(t *testing.T, d time.Duration) {
 	t.Helper()
-	old := moveSeatStepPeriod
-	moveSeatStepPeriod = d
-	t.Cleanup(func() { moveSeatStepPeriod = old })
+	old := moveSeatStepPeriod()
+	setMoveSeatStepPeriod(d)
+	t.Cleanup(func() { setMoveSeatStepPeriod(old) })
 }
 
 // ---- procedureName ---------------------------------------------------------
@@ -62,10 +74,10 @@ func TestIsInstanceGeneralization(t *testing.T) {
 	}{
 		{"A.B.MoveSeat", "A.B.Row1.DriverSide.MoveSeat", true},
 		{"A.MoveSeat", "A.B.Row1.MoveSeat", true},
-		{"A.B.MoveSeat", "A.B.MoveSeat", true},   // equal is trivially a subsequence
+		{"A.B.MoveSeat", "A.B.MoveSeat", true},       // equal is trivially a subsequence
 		{"X.B.MoveSeat", "A.B.Row1.MoveSeat", false}, // different root
 		{"A.B.Other", "A.B.Row1.MoveSeat", false},    // different procedure
-		{"A.C.MoveSeat", "A.B.Row1.MoveSeat", false},  // middle segment not present
+		{"A.C.MoveSeat", "A.B.Row1.MoveSeat", false}, // middle segment not present
 	}
 	for _, c := range cases {
 		if got := isInstanceGeneralization(split(c.tmpl), split(c.inst)); got != c.want {
@@ -116,7 +128,7 @@ func TestMoveSeatBuiltin_ValidationErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", c.input)
+			d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", nil, c.input)
 			if d.errNum != "400" {
 				t.Errorf("want errNum 400, got %q (decision %+v)", d.errNum, d)
 			}
@@ -134,7 +146,7 @@ func TestMoveSeatBuiltin_AlreadyAtTarget(t *testing.T) {
 	seatState[seatKey(path, "longitudinal")] = 40
 	seatMu.Unlock()
 
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "longitudinal", "Position": "40"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "longitudinal", "Position": "40"})
 	if d.immediate != StatusSuccessful {
 		t.Fatalf("want immediate SUCCESSFUL, got %q", d.immediate)
 	}
@@ -149,7 +161,7 @@ func TestMoveSeatBuiltin_AlreadyAtTarget(t *testing.T) {
 func TestMoveSeatBuiltin_MovingReturnsRunner(t *testing.T) {
 	resetSeatState()
 	shrinkStepPeriod(t, time.Second) // keep default for the minDuration assertion
-	d := moveSeatBuiltin("VehicleService.Seating.MoveSeat",
+	d := moveSeatBuiltin("VehicleService.Seating.MoveSeat", nil,
 		map[string]interface{}{"MovementType": "vertical", "Position": "40"})
 	if d.run == nil {
 		t.Fatal("moving request must return a driver")
@@ -183,7 +195,7 @@ func TestMoveSeatBuiltin_DriverStepsToTarget(t *testing.T) {
 	bc := make(chan map[string]interface{}, 64)
 	bcs := []chan map[string]interface{}{bc}
 
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "longitudinal", "Position": "5"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "longitudinal", "Position": "5"})
 	if d.run == nil {
 		t.Fatal("expected a driver")
 	}
@@ -267,7 +279,7 @@ func TestMoveSeatBuiltin_DriverStopsWhenInvocationRemoved(t *testing.T) {
 	mu.Unlock()
 
 	bc := make(chan map[string]interface{}, 64)
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "recline", "Position": "100"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "recline", "Position": "100"})
 	done := make(chan struct{})
 	go func() { d.run(sid, []chan map[string]interface{}{bc}); close(done) }()
 
@@ -293,7 +305,7 @@ func TestMoveSeatBuiltin_PerMovementTypeIndependent(t *testing.T) {
 
 	// vertical is still 0, so a request for vertical=0 is already-at-target,
 	// independent of longitudinal=30.
-	d := moveSeatBuiltin(path, map[string]interface{}{"MovementType": "vertical", "Position": "0"})
+	d := moveSeatBuiltin(path, nil, map[string]interface{}{"MovementType": "vertical", "Position": "0"})
 	if d.immediate != StatusSuccessful {
 		t.Errorf("vertical state should be independent (0), got decision %+v", d)
 	}
@@ -339,6 +351,10 @@ func TestHandleInvoke_BuiltinMoveSeatOutOfRange(t *testing.T) {
 	}
 }
 
+// TestHandleInvoke_BuiltinMoveSeatAlreadyThere addresses a single resource
+// instance via a "resource" filter (MoveSeat is now multiplexed — §1 — so an
+// invoke without a resource filter addresses ALL resource instances; this
+// test exercises the single-resource fast path specifically).
 func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	resetState()
 	resetSeatState()
@@ -346,7 +362,7 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	t.Cleanup(stopServiceGoroutines)
 
 	seatMu.Lock()
-	seatState[seatKey(moveSeatPath, "longitudinal")] = 40
+	seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")] = 40
 	seatMu.Unlock()
 
 	bc := make(chan map[string]interface{}, 8)
@@ -358,7 +374,10 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 		"requestId":   "8756",
 		"routerIndex": 0,
 		"RouterId":    "1?0",
-		"filter":      map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "1000"}},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "1000"}},
+		},
 	}
 	HandleInvoke(req, bcs)
 
@@ -381,6 +400,8 @@ func TestHandleInvoke_BuiltinMoveSeatAlreadyThere(t *testing.T) {
 	}
 }
 
+// TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes addresses a single
+// resource instance via a "resource" filter and drives it to completion.
 func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 	resetState()
 	resetSeatState()
@@ -397,7 +418,10 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 		"requestId":   "8756",
 		"routerIndex": 0,
 		"RouterId":    "1?0",
-		"filter":      map[string]interface{}{"variant": "all"},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "all"},
+		},
 	}
 	HandleInvoke(req, bcs)
 
@@ -432,8 +456,168 @@ func TestHandleInvoke_BuiltinMoveSeatMovesAndCompletes(t *testing.T) {
 		t.Error("never received the ONGOING invoke response")
 	}
 	seatMu.Lock()
-	if seatState[seatKey(moveSeatPath, "longitudinal")] != 3 {
-		t.Errorf("saved state = %d, want 3", seatState[seatKey(moveSeatPath, "longitudinal")])
+	if seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")] != 3 {
+		t.Errorf("saved state = %d, want 3", seatState[seatKey(resourceScopedPath(moveSeatPath, moveSeatDriverRow1ResourceKey), "longitudinal")])
 	}
 	seatMu.Unlock()
+}
+
+// ---- activateMassageBuiltin decision logic ---------------------------------
+
+// TestActivateMassageBuiltin_ValidationErrors covers the two 400 cases: an
+// unsupported MassageType and a malformed/negative Duration.
+func TestActivateMassageBuiltin_ValidationErrors(t *testing.T) {
+	cases := []struct {
+		name  string
+		input map[string]interface{}
+	}{
+		{"unknown massage type", map[string]interface{}{"MassageType": "diagonal", "Duration": "30"}},
+		{"missing massage type", map[string]interface{}{"Duration": "30"}},
+		{"duration negative", map[string]interface{}{"MassageType": "roll", "Duration": "-5"}},
+		{"duration non-numeric", map[string]interface{}{"MassageType": "roll", "Duration": "x"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil, c.input)
+			if d.errNum != "400" {
+				t.Errorf("want errNum 400, got %q (decision %+v)", d.errNum, d)
+			}
+			if d.run != nil || d.immediate != "" {
+				t.Errorf("error decision must not run or complete: %+v", d)
+			}
+		})
+	}
+}
+
+// TestActivateMassageBuiltin_ZeroDurationIsImmediate covers the fast path:
+// a Duration of 0 has nothing to simulate, so it completes synchronously.
+func TestActivateMassageBuiltin_ZeroDurationIsImmediate(t *testing.T) {
+	d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil,
+		map[string]interface{}{"MassageType": "lumbar", "Duration": "0"})
+	if d.immediate != StatusSuccessful {
+		t.Fatalf("want immediate SUCCESSFUL, got %q", d.immediate)
+	}
+	if d.run != nil {
+		t.Error("zero-duration massage must not start a driver (no events)")
+	}
+}
+
+// TestActivateMassageBuiltin_PositiveDurationReturnsRunner covers the normal
+// case: a positive Duration returns an async driver, not an immediate
+// decision, and its minDuration budget must exceed DefaultTimeout for a long
+// session (this is the exact bug reported against PR #201: ActivateMassage
+// had no builtin handler at all, so every invoke fell through to the
+// timeout watchdog and finished FAILED after 30s regardless of Duration).
+func TestActivateMassageBuiltin_PositiveDurationReturnsRunner(t *testing.T) {
+	shrinkStepPeriod(t, time.Second) // keep default for the minDuration assertion
+	d := activateMassageBuiltin("VehicleService.Seating.ActivateMassage", nil,
+		map[string]interface{}{"MassageType": "roll", "Duration": "30"})
+	if d.run == nil {
+		t.Fatal("a positive Duration must return a driver")
+	}
+	if d.immediate != "" || d.errNum != "" {
+		t.Errorf("positive-duration request must not be immediate/error: %+v", d)
+	}
+	if d.minDuration <= DefaultTimeout {
+		t.Errorf("minDuration %v should exceed DefaultTimeout %v for a 30s massage", d.minDuration, DefaultTimeout)
+	}
+}
+
+// TestHandleInvoke_BuiltinActivateMassageCompletes reproduces the client's
+// exact reported request shape (issue seen against PR #201: the final event
+// had status FAILED instead of SUCCESSFUL) end-to-end through HandleInvoke,
+// confirming the invocation now reaches SUCCESSFUL well before the 30s
+// timeout watchdog would fire.
+func TestHandleInvoke_BuiltinActivateMassageCompletes(t *testing.T) {
+	resetState()
+	shrinkStepPeriod(t, 3*time.Millisecond)
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 64)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action": "invoke",
+		"path":   activateMassagePath,
+		"input":  map[string]interface{}{"MassageType": "roll", "Duration": "30"},
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{"Row1.DriverSide"}},
+			map[string]interface{}{"variant": "status"},
+		},
+		"requestId":   "8759",
+		"routerIndex": 0,
+	}
+	HandleInvoke(req, bcs)
+
+	gotSuccess := false
+	timeout := time.After(2 * time.Second)
+	for !gotSuccess {
+		select {
+		case msg := <-bc:
+			if msg["action"] == "monitoring" {
+				if msg["status"] == string(StatusFailed) {
+					t.Fatalf("ActivateMassage invocation must not FAIL: %v", msg)
+				}
+				if msg["status"] == string(StatusSuccessful) {
+					gotSuccess = true
+				}
+			}
+		case <-timeout:
+			t.Fatal("did not reach SUCCESSFUL")
+		}
+	}
+}
+
+// TestHandleInvoke_TimebasedFilterFasterThanDriver_NeverOmitsOutdata is a
+// regression test for a client-reported bug: when the requested "timebased"
+// filter period is shorter than moveSeatBuiltin's own per-resource step
+// period, startTimebasedTicker's first tick(s) fire before the driver
+// goroutine has made its first UpdateServiceState call, so inv.outdata was
+// still nil. The ticker used to send the monitoring event anyway, omitting
+// "outdata" entirely — but MoveSeat declares an Output iostruct (Position),
+// so per VISSv3.2 §monitorEvent outdata is mandatory on every event for it.
+// This asserts no ONGOING monitoring event is ever missing "outdata".
+func TestHandleInvoke_TimebasedFilterFasterThanDriver_NeverOmitsOutdata(t *testing.T) {
+	resetState()
+	resetSeatState()
+	// Driver step period much slower than the requested timebased period, so
+	// several ticks are guaranteed to fire before the first UpdateServiceState.
+	shrinkStepPeriod(t, 100*time.Millisecond)
+	loadVehicleServiceTree(t)
+	t.Cleanup(stopServiceGoroutines)
+
+	bc := make(chan map[string]interface{}, 64)
+	bcs := []chan map[string]interface{}{bc}
+	req := map[string]interface{}{
+		"action":      "invoke",
+		"path":        moveSeatPath,
+		"input":       map[string]interface{}{"MovementType": "longitudinal", "Position": "2"},
+		"requestId":   "8756",
+		"routerIndex": 0,
+		"RouterId":    "1?0",
+		"filter": []interface{}{
+			map[string]interface{}{"variant": "resource", "parameter": []interface{}{moveSeatDriverRow1ResourceKey}},
+			map[string]interface{}{"variant": "timebased", "parameter": map[string]interface{}{"period": "10"}},
+		},
+	}
+	HandleInvoke(req, bcs)
+
+	gotSuccess := false
+	timeout := time.After(2 * time.Second)
+	for !gotSuccess {
+		select {
+		case msg := <-bc:
+			if msg["action"] != "monitoring" {
+				continue
+			}
+			if _, hasOutdata := msg["outdata"]; !hasOutdata {
+				t.Errorf("monitoring event missing mandatory outdata: %#v", msg)
+			}
+			if msg["status"] == string(StatusSuccessful) {
+				gotSuccess = true
+			}
+		case <-timeout:
+			t.Fatal("did not reach SUCCESSFUL")
+		}
+	}
 }

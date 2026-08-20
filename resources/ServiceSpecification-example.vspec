@@ -1,5 +1,19 @@
 # The service tree example builds on input from the Capabilities project:
 # https://covesa.atlassian.net/wiki/spaces/WIK4/pages/39059848/Capabilities+Project+-+Seating+Capabilities#CapabilitiesProject-SeatingCapabilities-InformationTypes
+#
+# MoveSeat and ActivateMassage manage multiple resources (one per seat) and
+# are therefore declared with 'instances' directly on the procedure node,
+# per the HIM Service Rule Set's "multiplexed microservice tree structure":
+# https://covesa.github.io/hierarchical_information_model/service_rule_set/basics/#multiplexed-microservice-tree-structure
+# Each resource instance (e.g. Row1.DriverSide) is a plain 'branch' nested
+# under the single, stable procedure path (e.g.
+# VehicleService.Seating.MoveSeat) and carries its own Input/Output
+# iostructs. A client addresses a specific seat (or several, or all) via the
+# VISSv3.2 Services "resource" filter variant on that one stable path,
+# rather than by addressing 12 separately duplicated procedure paths.
+#
+# GetCapabilities is not multiplexed: it returns the capability tokens for
+# the service group as a whole, not per seat, so it has no 'instances'.
 
 VehicleService:
   type: branch
@@ -7,13 +21,13 @@ VehicleService:
 
 VehicleService.Seating:
   type: branch
-  instances:
-    - Row[1,2]
-    - ["DriverSide","PassengerSide"]
   description: The Seating service group.
 
 VehicleService.Seating.MoveSeat:
   type: procedure
+  instances:
+    - Row[1,2]
+    - ["DriverSide","PassengerSide"]
   description: Performs all supported seat movements.
 
 VehicleService.Seating.MoveSeat.Input:
@@ -23,7 +37,7 @@ VehicleService.Seating.MoveSeat.Input:
 VehicleService.Seating.MoveSeat.Input.MovementType:
   type: property
   datatype: string
-  description: Type of movement. Supported types are retrieved via GetPropertiesSeating().
+  description: Type of movement. Supported types are retrieved via GetCapabilities().
 
 VehicleService.Seating.MoveSeat.Input.Position:
   type: property
@@ -58,10 +72,14 @@ VehicleService.Seating.MoveSeat.Version:
   type: attribute
   datatype: string
   default: 1.0.0
-  description: The MoveSeat service version.
+  instantiate: false
+  description: The MoveSeat service version. Not instantiated per resource.
 
 VehicleService.Seating.ActivateMassage:
   type: procedure
+  instances:
+    - Row[1,2]
+    - ["DriverSide","PassengerSide"]
   description: Performs all supported seat massage.
 
 VehicleService.Seating.ActivateMassage.Input:
@@ -71,7 +89,7 @@ VehicleService.Seating.ActivateMassage.Input:
 VehicleService.Seating.ActivateMassage.Input.MassageType:
   type: property
   datatype: string
-  description: Type of massage. Supported types are retrieved via GetPropertiesSeating().
+  description: Type of massage. Supported types are retrieved via GetCapabilities().
 
 VehicleService.Seating.ActivateMassage.Input.Duration:
   type: property
@@ -101,11 +119,12 @@ VehicleService.Seating.ActivateMassage.Version:
   type: attribute
   datatype: string
   default: 1.0.0
-  description: The ActivateMassage service version.
+  instantiate: false
+  description: The ActivateMassage service version. Not instantiated per resource.
 
 VehicleService.Seating.GetCapabilities:
   type: procedure
-  description:  Get the tokens representing supported seat capabilities.
+  description:  Get the tokens representing supported seat capabilities. Not multiplexed - applies to the whole Seating service group.
 
 VehicleService.Seating.GetCapabilities.Output:
   type: iostruct

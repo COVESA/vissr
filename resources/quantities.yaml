@@ -1,0 +1,6 @@
+# Quantities used by resources/units.yaml, needed to compile the example
+# HIM Service profile trees (ServiceTypes-example.vspec,
+# ServiceSpecification-example.vspec) with vss-tools.
+
+relation:
+  definition: A dimensionless ratio between two quantities of the same kind.

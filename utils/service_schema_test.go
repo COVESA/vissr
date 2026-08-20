@@ -179,3 +179,163 @@ func TestJsonSchemaValidate_ServiceSchemaNotLoaded(t *testing.T) {
 		t.Errorf("got %q; want a 'service JSON schema not loaded' message", got)
 	}
 }
+
+// ---- "resource" filter variant (§2/§7 item 4) -------------------------------
+//
+// These validate the updated vissv3.2-service-schema.json's filter $defs
+// against the exact request shapes used by
+// client/client-1.0/Javascript/appclient_service_commands.txt, confirming
+// the schema update (draft-07/2019-09 tuple 'items', not 2020-12
+// 'prefixItems' — qri-io/jsonschema does not implement 'prefixItems') is
+// actually effective against the real Go-side validator, not just
+// well-formed JSON Schema in isolation.
+
+// TestJsonSchemaValidate_ResourceFilterArray_ResourceFirst is the exact
+// MoveSeat invoke request shape from appclient_service_commands.txt
+// (requestId 8756): filter is an array of [resource, timebased].
+func TestJsonSchemaValidate_ResourceFilterArray_ResourceFirst(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "invoke",
+		"path": "VehicleService.Seating.MoveSeat",
+		"input": {"MovementType": "longitudinal", "Position": "40"},
+		"filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "timebased", "parameter": {"period": "250"}}],
+		"requestId": "8756"
+	}`
+	if got := JsonSchemaValidate(req); got != "" {
+		t.Errorf("valid resource+timebased invoke rejected = %q; want \"\"", got)
+	}
+}
+
+// TestJsonSchemaValidate_ResourceFilterArray_MonitorAll is
+// appclient_service_commands.txt's monitor request: filter [resource, all].
+func TestJsonSchemaValidate_ResourceFilterArray_MonitorAll(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "monitor",
+		"path": "VehicleService.Seating.MoveSeat",
+		"filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "all"}],
+		"requestId": "8757"
+	}`
+	if got := JsonSchemaValidate(req); got != "" {
+		t.Errorf("valid resource+all monitor rejected = %q; want \"\"", got)
+	}
+}
+
+// TestJsonSchemaValidate_ResourceFilterArray_MonitorFirst confirms the
+// combination validates with the monitoring variant listed first (order
+// should not matter — the schema's two-branch oneOf covers both orderings).
+func TestJsonSchemaValidate_ResourceFilterArray_MonitorFirst(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "monitor",
+		"path": "VehicleService.Seating.MoveSeat",
+		"filter": [{"variant": "status"}, {"variant": "resource", "parameter": ["Row1.DriverSide"]}],
+		"requestId": "8757b"
+	}`
+	if got := JsonSchemaValidate(req); got != "" {
+		t.Errorf("valid status+resource (reversed order) monitor rejected = %q; want \"\"", got)
+	}
+}
+
+// TestJsonSchemaValidate_ResourceFilterStandalone confirms a bare
+// {"variant":"resource",...} single-object filter (no array) validates, per
+// the merged spec text allowing a resource filter alone.
+func TestJsonSchemaValidate_ResourceFilterStandalone(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "discover",
+		"path": "VehicleService.Seating.MoveSeat",
+		"filter": {"variant": "resource", "parameter": ["Row1.DriverSide"]},
+		"requestId": "d1"
+	}`
+	// discover-message doesn't reference "filter" in its $defs (HandleDiscover
+	// parses it directly from the request map), so this only exercises that
+	// the base object schema doesn't reject the extra "filter" property —
+	// additionalProperties is unset (defaults to allowed) throughout this
+	// schema, so this must still pass.
+	if got := JsonSchemaValidate(req); got != "" {
+		t.Errorf("discover with a standalone resource filter rejected = %q; want \"\"", got)
+	}
+}
+
+// TestJsonSchemaValidate_FilterArrayTwoResourceFiltersRejected confirms an
+// array combining two "resource" filters (invalid — the array form requires
+// exactly one resource filter and one monitoring filter) is rejected.
+func TestJsonSchemaValidate_FilterArrayTwoResourceFiltersRejected(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "invoke",
+		"path": "VehicleService.Seating.MoveSeat",
+		"input": {"MovementType": "longitudinal", "Position": "40"},
+		"filter": [{"variant": "resource", "parameter": ["Row1"]}, {"variant": "resource", "parameter": ["Row2"]}],
+		"requestId": "bad1"
+	}`
+	if got := JsonSchemaValidate(req); got == "" {
+		t.Error("invoke with two 'resource' filters in the array was accepted; schema not enforcing the combination rule")
+	}
+}
+
+// TestJsonSchemaValidate_FilterArrayTwoMonitoringFiltersRejected confirms an
+// array combining two non-resource monitoring filters (invalid) is rejected.
+func TestJsonSchemaValidate_FilterArrayTwoMonitoringFiltersRejected(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "invoke",
+		"path": "VehicleService.Seating.MoveSeat",
+		"input": {"MovementType": "longitudinal", "Position": "40"},
+		"filter": [{"variant": "status"}, {"variant": "all"}],
+		"requestId": "bad2"
+	}`
+	if got := JsonSchemaValidate(req); got == "" {
+		t.Error("invoke with two monitoring filters in the array was accepted; schema not enforcing the combination rule")
+	}
+}
+
+// TestJsonSchemaValidate_ResourceFilterMissingParameterRejected confirms a
+// "resource" filter with no "parameter" array is rejected (required field).
+func TestJsonSchemaValidate_ResourceFilterMissingParameterRejected(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "invoke",
+		"path": "VehicleService.Seating.MoveSeat",
+		"input": {"MovementType": "longitudinal", "Position": "40"},
+		"filter": {"variant": "resource"},
+		"requestId": "bad3"
+	}`
+	if got := JsonSchemaValidate(req); got == "" {
+		t.Error("'resource' filter missing 'parameter' was accepted; schema not enforcing required field")
+	}
+}
+
+// TestJsonSchemaValidate_GetCapabilitiesNoneFilter is
+// appclient_service_commands.txt's GetCapabilities invoke: a plain
+// {"variant":"none"} filter (unaffected by the resource-filter additions).
+func TestJsonSchemaValidate_GetCapabilitiesNoneFilter(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	req := `{
+		"action": "invoke",
+		"path": "VehicleService.Seating.GetCapabilities",
+		"filter": {"variant": "none"},
+		"requestId": "8760"
+	}`
+	if got := JsonSchemaValidate(req); got != "" {
+		t.Errorf("valid GetCapabilities invoke (none filter) rejected = %q; want \"\"", got)
+	}
+}
