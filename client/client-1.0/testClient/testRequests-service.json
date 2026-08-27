@@ -28,15 +28,6 @@
             "requestId": "8760"
         }
     ],
-    "grpc": [
-        {
-            "action": "invoke",
-            "path": "VehicleService.Seating.MoveSeat",
-            "input": {"MovementType": "longitudinal", "Position": "5"},
-            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide", "Row1.PassengerSide"]}, {"variant": "timebased", "parameter": {"period": "950"}}],
-            "requestId": "8761"
-        }
-    ],
     "uds": [
         {
             "action": "invoke",

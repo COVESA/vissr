@@ -238,7 +238,14 @@ func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
 	fmt.Printf("Request: %s\n", command)
 	jsonResponse := getUdsResponse(conn, buf, []byte(command))
 	fmt.Printf("Response: %s\n", jsonResponse)
-	if strings.Contains(command, `"subscribe"`) {
+	if strings.Contains(command, `"subscribe"`) || strings.Contains(command, `"invoke"`) || strings.Contains(command, `"monitor"`) {
+		service := false
+		if strings.Contains(command, `"invoke"`) || strings.Contains(command, `"monitor"`) {
+			service = true
+			if !strings.Contains(jsonResponse, `"ONGOING"`) {
+				return
+			}
+		}
 		events := 0
 		for {
 			n, err := conn.Read(*buf)
@@ -248,13 +255,20 @@ func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
 			}
 			resp := string(*buf)
 			fmt.Printf("Event: %s\n", resp[:n])
-			events++
-			if events == maxEvents {
-				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
-				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
-				performUdsCommand(unsubReq, conn, buf)
-				return
+			if !service {
+				events++
+				if events == maxEvents {
+					subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
+					unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
+					fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
+					performUdsCommand(unsubReq, conn, buf)
+					return
+				}
+			} else {
+				if !strings.Contains(resp[:n], `"ONGOING"`) {
+					fmt.Printf("Terminating service session\n")
+					return
+				}
 			}
 		}
 	}
@@ -399,6 +413,18 @@ var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 				publishVissV2Request(brokerSocket, unsubReq, clientTopic, serverTopic)
 				events = 0
 		}
+	} else
+	if strings.Contains(string(msg.Payload()), `"invoke"`) || strings.Contains(string(msg.Payload()), `"monitor"`) {
+		fmt.Printf("Response=%s\n", string(msg.Payload()))
+		if !strings.Contains(string(msg.Payload()), `"ONGOING"`) {
+			fmt.Printf("\n")
+		}
+	} else
+	if strings.Contains(string(msg.Payload()), `"action":"monitoring"`) {
+		fmt.Printf("Event=%s\n", string(msg.Payload()))
+		if !strings.Contains(string(msg.Payload()), `"ONGOING"`) {
+			fmt.Printf("Terminating service session\n\n")
+		}
 	} else {
 		fmt.Printf("Response=%s\n\n", string(msg.Payload()))
 	}
@@ -470,6 +496,17 @@ func initGrpcSession() *grpc.ClientConn {
 	return conn
 }
 
+// performGrpcCommand does not support the Service profile actions "invoke"
+// and "monitor". Unlike ws/http/uds/mqtt, gRPC is strictly typed on the
+// wire: VISSv3.1.proto only declares GetRequest/SetRequest/SubscribeRequest/
+// UnsubscribeRequest RPCs, and GetRequestMessage/SetRequestMessage have no
+// "input" field and no way to carry action=invoke/monitor - the server's
+// GetRequest/SetRequest handlers (grpcMgr.go) hardcode the resulting JSON's
+// "action" to "get"/"set" regardless of what is sent. Adding gRPC support
+// for the Service profile requires extending the .proto with new message
+// types and RPC methods (e.g. InvokeRequest/MonitorRequest), regenerating
+// the generated pb.go code, and implementing matching handlers in
+// grpcMgr.go - this is out of scope for the test client alone.
 func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 	var reqMap map[string]interface{}
 	utils.MapRequest(vssRequest, &reqMap)
