@@ -1,0 +1,58 @@
+{
+    "http": [
+        {
+            "action": "discover",
+            "path": "VehicleService",
+            "depth": "1",
+            "requestId": "8757"
+        }
+    ],
+    "ws": [
+        {
+            "action": "discover",
+            "depth": "1",
+            "path": "VehicleService.Seating",
+            "requestId": "8758"
+        },
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.GetCapabilities",
+            "filter": {"variant": "none"},
+            "requestId": "8759"
+        },
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.MoveSeat",
+            "input": {"MovementType": "longitudinal", "Position": "10"},
+            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "timebased", "parameter": {"period": "950"}}],
+            "requestId": "8760"
+        }
+    ],
+    "grpc": [
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.MoveSeat",
+            "input": {"MovementType": "longitudinal", "Position": "5"},
+            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide", "Row1.PassengerSide"]}, {"variant": "timebased", "parameter": {"period": "950"}}],
+            "requestId": "8761"
+        }
+    ],
+    "uds": [
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.ActivateMassage",
+            "input": {"MassageType": "roll", "Duration": "10"},
+            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "status"}],
+            "requestId": "8762"
+        }
+    ],
+    "mqtt": [
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.ActivateMassage",
+            "input": {"MassageType": "lumbar", "Duration": "5"},
+            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide", "Row2.DriverSide"]}, {"variant": "status"}],
+            "requestId": "8763"
+        }
+    ]
+}

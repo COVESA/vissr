@@ -29,7 +29,7 @@ startme() {
 	go build
 	cd ../../../
 	echo "Starting testClient"
-	screen -S testClient bash -c "pushd client/client-1.0/testClient && ./testClient -m 4 && popd"
+	screen -S testClient bash -c "pushd client/client-1.0/testClient && ./testClient -i service && popd"
 
 	screen -list
 }

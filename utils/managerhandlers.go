@@ -255,8 +255,7 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		fallthrough // should work for POST also...
 	case "GET":
 		requestMap["action"] = "get"
-	case "POST": // set
-		requestMap["action"] = "set"
+	case "POST": // set or discover
 		// Bound the request body before io.ReadAll. Without this an
 		// anonymous client can send a Content-Length: <huge> or a
 		// never-closing chunked body and ReadAll will allocate until
@@ -271,7 +270,15 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		}
 		var bodyMap map[string]interface{}
 		MapRequest(string(body), &bodyMap)
-		requestMap["value"] = bodyMap["value"]
+		if bodyMap["value"] != nil {
+			requestMap["action"] = "set"
+			requestMap["value"] = bodyMap["value"]
+		} else if bodyMap["depth"] != nil {
+			requestMap["action"] = "discover"
+			requestMap["depth"] = bodyMap["depth"]
+		} else {
+			backendHttpAppSession(`{"error": "400", "reason": "Bad request", "description":"Unsupported action"}`, &w)
+		}
 	default:
 		//		http.Error(w, "400 Unsupported method", http.StatusBadRequest)
 		Warning.Printf("Only GET and POST methods are supported.")

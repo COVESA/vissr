@@ -67,14 +67,20 @@ A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 * Tool for realizing a data mapping between the "VSS domain" and the vehicle "native" domain (e.g. between VSS and CAN data).
 
 ## Quick start
-Two shell scripts are available for a quick start of trying out the VISSR tech stack.
+Three shell scripts are available for a quick start of trying out the VISSR tech stack.
 System dependencies such as having a Go build system installed must first be fulfilled.
-* runtest.sh: This script builds and runs the server and the feederv3 simulating some signals,
-then it runs the testclient and displays its request messages and the associated response messages.
-* runstack.sh: This script builds and runs the server and the feederv3 simulating some signals,
-enabling any client implementation to connect to the server.
+* runtest.sh: This script builds and runs the server and the feederv4 simulating some signals,
+then it runs the testclient which issues the request messages in the file testRequests-vehicleData.json.
+The requests and the associated response messages are displayed in the terminal.
+This is testing the VehicleData profile only, see below for testing of the Service profile.
+* runtest-service.sh: This script builds and runs the server and the feederv4,
+then it builds and runs the testclient which issues the request messages in the file testRequests-service.json.
+The requests and the associated response messages are displayed in the terminal.
+This is testing the Service profile only, see above for testing of the VehicleData profile.
+* runstack.sh: This script builds and runs the server and the feederv4 simulating some signals,
+enabling any client implementation to connect to the server. This can be used for testing both of the profiles.
 
-See the tutorial for more information.
+See the [tutorial](https://covesa.github.io/vissr/build-system/#testing) for more information.
 
 ## Unit  testing
 Described in [TESTING.md](https://github.com/COVESA/vissr/blob/master/TESTING.md).

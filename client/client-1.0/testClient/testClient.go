@@ -184,22 +184,36 @@ func performWsCommand(command string, conn *websocket.Conn) {
 	fmt.Printf("Request: %s\n", command)
 	jsonResponse := getWsResponse(conn, []byte(command))
 	fmt.Printf("Response: %s\n", jsonResponse)
-	if strings.Contains(command, `"subscribe"`) {
+	if strings.Contains(command, `"subscribe"`) || strings.Contains(command, `"invoke"`) || strings.Contains(command, `"monitor"`) {
+		service := false
+		if strings.Contains(command, `"invoke"`) || strings.Contains(command, `"monitor"`) {
+			service = true
+			if !strings.Contains(jsonResponse, `"ONGOING"`) {
+				return
+			}
+		}
 		events := 0
 		for {
 			_, event, err := conn.ReadMessage()
 			if err != nil {
-				fmt.Printf("Notification error: %s\n", err)
+				fmt.Printf("Event error: %s\n", err)
 				return
 			}
-			fmt.Printf("Notification: %s\n", string(event))
-			events++
-			if events == maxEvents {
-				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
-				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
-				fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
-				performWsCommand(unsubReq, conn)
-				return
+			fmt.Printf("Event: %s\n", string(event))
+			if !service {
+				events++
+				if events == maxEvents {
+					subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
+					unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
+					fmt.Printf("%d events received. Terminating subscription session\n", maxEvents)
+					performWsCommand(unsubReq, conn)
+					return
+				}
+			} else {
+				if !strings.Contains(string(event), `"ONGOING"`) {
+					fmt.Printf("Terminating service session\n")
+					return
+				}
 			}
 		}
 	}
@@ -229,11 +243,11 @@ func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
 		for {
 			n, err := conn.Read(*buf)
 			if err != nil {
-				fmt.Printf("Notification error: %s\n", err)
+				fmt.Printf("Event error: %s\n", err)
 				return
 			}
 			resp := string(*buf)
-			fmt.Printf("Notification: %s\n", resp[:n])
+			fmt.Printf("Event: %s\n", resp[:n])
 			events++
 			if events == maxEvents {
 				subscriptionId := utils.ExtractSubscriptionId(jsonResponse)
@@ -254,6 +268,10 @@ func performHttpCommand(command string) {
 	url := http_url + "/" + reqMap["path"].(string)
 	if reqMap["action"] == "set" {
 		body := `{"value":"` + reqMap["value"].(string) + `"}`
+		fmt.Printf("Request: POST: %s %s\n", url, body)
+		req, err = http.NewRequest("POST", url, bytes.NewBuffer([]byte(body)))
+	} else if reqMap["action"] == "discover" {
+		body := `{"depth":"` + reqMap["depth"].(string) + `"}`
 		fmt.Printf("Request: POST: %s %s\n", url, body)
 		req, err = http.NewRequest("POST", url, bytes.NewBuffer([]byte(body)))
 	} else {
@@ -544,8 +562,8 @@ func main() {
 	parser := argparse.NewParser("print", "Test client")
 
 	// Create flags
-//	prot := parser.Selector("p", "protocol", []string{"http", "ws"}, &argparse.Options{Required: false,
-//		Help: "Protocol must be either http or websocket", Default: "ws"})
+	infoType := parser.Selector("i", "infoType", []string{"vehicleData", "service"}, &argparse.Options{Required: false,
+		Help: "Information type must be either vehicleData or service", Default: "vehicleData"})
 	maxEvnts := parser.Int("m", "maxEvents", &argparse.Options{Required: false, Help: "Max subscription events before unsubscribe", Default: 2})
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
@@ -575,8 +593,12 @@ func main() {
 		doneChannel[i] = make(chan bool)
 	}
 
-	if createListFromFile("testRequests.json") == 0 {
-		fmt.Printf("Failed in creating list from testRequests.json")
+	testDataFile := "testRequests-vehicleData.json"
+	if *infoType != "vehicleData" {
+		testDataFile = "testRequests-service.json"
+	}
+	if createListFromFile(testDataFile) == 0 {
+		fmt.Printf("Failed in creating list from %s", testDataFile)
 		os.Exit(1)
 	}
 
@@ -589,27 +611,41 @@ func main() {
 			if len(httpCommandList ) > 0 {
 				protocolId = 0
 				go httpTesterRun(httpCommandList, doneChannel[protocolId])
+			} else {
+				continue
 			}
 		case "ws":
 			if len(wsCommandList ) > 0 {
 				protocolId = 1
 				go wsTesterRun(wsCommandList, doneChannel[protocolId])
+			} else {
+				continue
 			}
+
 		case "mqtt":
 			if len(mqttCommandList ) > 0 {
 				protocolId = 2
 				go mqttTesterRun(mqttCommandList, doneChannel[protocolId])
+			} else {
+				continue
 			}
+
 		case "grpc":
 			if len(grpcCommandList ) > 0 {
 				protocolId = 3
 				go grpcTesterRun(grpcCommandList, doneChannel[protocolId])
+			} else {
+				continue
 			}
+
 		case "uds":
 			if len(udsCommandList ) > 0 {
 				protocolId = 4
 				go udsTesterRun(udsCommandList, doneChannel[protocolId])
+			} else {
+				continue
 			}
+
 		}
 		ok := <- doneChannel[protocolId] // wait until each protocol tester is done
 		waitForKey("Hit return key to continue:") // provide time to look at results before continue
