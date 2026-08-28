@@ -352,7 +352,7 @@ func udsTesterRun(udsCommandList []string, doneChannel chan bool) {
 	conn := initUnixDomainSocket()
 	buf := make([]byte, 8192)
 	fmt.Printf("\n********** Unix domain socket testing **************\n")
-	for i := 0; i < len(wsCommandList); i++ {
+	for i := 0; i < len(udsCommandList); i++ {
 		performUdsCommand(udsCommandList[i], conn, &buf)
 		fmt.Printf("\n\n")
 		time.Sleep(1 * time.Second)
