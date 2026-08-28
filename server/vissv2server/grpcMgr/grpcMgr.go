@@ -46,6 +46,7 @@ type Server struct {
 type GrpcRoutingData struct {
 	ClientId         int
 	SubscriptionId   string
+	ServiceId        string // VISSv3.2 Service profile: invoke/monitor session id, mirrors SubscriptionId's role
 	GrpcRespChannel  chan string
 	IsMultipleEvents bool
 }
@@ -114,6 +115,53 @@ func getSubscribeRoutingData(unsubResp string) (int, chan string) {
 		}
 	}
 	return -1, nil
+}
+
+// getServiceId extracts the "serviceId" field from a Service profile
+// invoke/monitor response or monitoring event JSON payload. Used by the
+// streaming InvokeRequest/MonitorRequest handlers to remember their own
+// session id so it can be cancelled on stream disconnect.
+func getServiceId(resp string) string {
+	var respMap map[string]interface{}
+	if err := json.Unmarshal([]byte(resp), &respMap); err != nil {
+		utils.Error.Printf("getServiceId:Unmarshal error data=%s, err=%s", resp, err)
+		return ""
+	}
+	sid, _ := respMap["serviceId"].(string)
+	return sid
+}
+
+// updateGrpcServiceRoutingData records the VISSv3.2 Service profile session
+// id (returned in the invoke/monitor ACK's "serviceId" field, when a
+// monitoring session was created) against clientId's routing slot,
+// mirroring updateGrpcRoutingData's role for subscribe/subscriptionId.
+// Enables getServiceRoutingData's reverse lookup below.
+func updateGrpcServiceRoutingData(clientId int, serviceId string) {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
+	for i := 0; i < MAXGRPCCLIENTS; i++ {
+		if grpcRoutingDataList[i].ClientId == clientId {
+			grpcRoutingDataList[i].ServiceId = serviceId
+			break
+		}
+	}
+}
+
+// getServiceRoutingData reverse-looks-up the clientId that owns serviceId,
+// mirroring getSubscribeRoutingData's role for subscriptionId. The
+// InvokeRequest/MonitorRequest stream handlers use it to learn their own
+// clientId - assigned asynchronously by the manager hub - from the ACK
+// response they just received, so it can be used later to cancel the
+// session on stream disconnect.
+func getServiceRoutingData(serviceId string) int {
+	grpcStateMu.Lock()
+	defer grpcStateMu.Unlock()
+	for i := 0; i < MAXGRPCCLIENTS; i++ {
+		if grpcRoutingDataList[i].ServiceId == serviceId {
+			return grpcRoutingDataList[i].ClientId
+		}
+	}
+	return -1
 }
 
 // resetClientIdLocked clears a client-id slot. Caller must hold
@@ -191,13 +239,42 @@ func updateRoutingList(resp string, clientId int, isMultipleEvent bool) {
 		subscribeChan <- resp
 		resetGrpcRoutingData(clientId)
 		//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
-	} else if !isMultipleEvent { // get and set
+	} else if strings.Contains(resp, `"action":"monitoring"`) {
+		// VISSv3.2 Service profile monitoring event: keep the routing entry
+		// alive while ONGOING (further events for this invoke/monitor
+		// session may follow); reset it once a terminal status arrives, same
+		// as isMultipleEvent's role for the subscribe/subscription pair.
+		if !strings.Contains(resp, `"ONGOING"`) {
+			resetGrpcRoutingData(clientId)
+		}
+	} else if strings.Contains(resp, `"action":"cancel"`) {
+		// Cancel ACK. Always terminal regardless of isMultipleEvent, since a
+		// cancel forwarded by serveServiceStream's disconnect handler reuses
+		// the invoke/monitor session's own (isMultipleEvent=true) routing
+		// slot - see serveServiceStream. An ordinary client-issued cancel
+		// (its own, isMultipleEvent=false, slot) also lands here.
+		resetGrpcRoutingData(clientId)
+	} else if strings.Contains(resp, `"action":"invoke"`) || strings.Contains(resp, `"action":"monitor"`) {
+		// Synchronous invoke/monitor ACK. If ONGOING, a monitoring session
+		// was created: remember its serviceId against this clientId so the
+		// streaming RPC handler can look up its own clientId later (mirrors
+		// updateGrpcRoutingData/getSubscribeRoutingData for subscribe). If
+		// not ONGOING, this is the final response - reset now, since no
+		// asynchronous "monitoring" events will follow.
+		if strings.Contains(resp, `"ONGOING"`) {
+			if serviceId := getServiceId(resp); serviceId != "" {
+				updateGrpcServiceRoutingData(clientId, serviceId)
+			}
+		} else {
+			resetGrpcRoutingData(clientId)
+		}
+	} else if !isMultipleEvent { // get, set, discover
 		resetGrpcRoutingData(clientId)
 	} else if strings.Contains(resp, "subscribe") { // update routing info with subscriptionId
 		if !strings.Contains(resp, "subscriptionId") { // error
 			resetGrpcRoutingData(clientId)
 			return
-		}
+	}
 		updateGrpcRoutingData(clientId, getSubscriptionId(resp))
 	}
 }
@@ -260,11 +337,11 @@ func initGrpcServer() {
 
 // dispatchGrpcUnaryRequest sends a JSON request payload to the manager
 // hub via grpcClientChan[0], waits for the response on a freshly
-// allocated channel, and returns it. Used by the three unary RPC
-// stubs (GetRequest, SetRequest, UnsubscribeRequest) which all share
-// the same per-message handshake. Extracted in PR #127 so the
-// handshake can be unit-tested without a live gRPC server. See
-// grpcMgr_dispatch_test.go.
+// allocated channel, and returns it. Used by the unary RPC stubs
+// (GetRequest, SetRequest, UnsubscribeRequest, CancelRequest,
+// DiscoverRequest) which all share the same per-message handshake.
+// Extracted in PR #127 so the handshake can be unit-tested without a
+// live gRPC server. See grpcMgr_dispatch_test.go.
 func dispatchGrpcUnaryRequest(vssReq string) string {
 	grpcResponseChan := make(chan string)
 	grpcClientChan[0] <- GrpcRequestMessage{vssReq, grpcResponseChan}
@@ -343,12 +420,110 @@ func extractClientId(killMessage string) int { // mesage contains clientId:xyz
 	return clientId
 }
 
+func (s *Server) CancelRequest(ctx context.Context, in *pb.CancelRequestMessage) (*pb.CancelResponseMessage, error) {
+	vssResp := dispatchGrpcUnaryRequest(utils.CancelRequestPbToJson(in))
+	return utils.CancelResponseJsonToPb(vssResp), nil
+}
+
+func (s *Server) DiscoverRequest(ctx context.Context, in *pb.DiscoverRequestMessage) (*pb.DiscoverResponseMessage, error) {
+	vssResp := dispatchGrpcUnaryRequest(utils.DiscoverRequestPbToJson(in))
+	return utils.DiscoverResponseJsonToPb(vssResp), nil
+}
+
+// serveServiceStream implements the shared control flow for the Invoke and
+// Monitor server-streaming RPCs: forward vssReq to the manager hub and send
+// the first (synchronous ACK/response) message via sendFn. If its status is
+// ONGOING, keep forwarding subsequent "monitoring" events via sendFn until
+// one carries a terminal (non-ONGOING) status, or the client disconnects.
+//
+// On disconnect (ctx.Done()) while a session is still ONGOING, this issues a
+// "cancel" for the session's serviceId so vissServiceMgr tears down the
+// invocation/session promptly, instead of leaving it to run until its
+// timeout watchdog fires (vissServiceMgr.go's DefaultTimeout, up to 30s by
+// default). This mirrors SubscribeRequest's "internal-killsubscriptions" on
+// disconnect, using the ordinary client-facing "cancel" action instead
+// since, unlike subscriptions, invoke/monitor sessions are torn down via
+// their own well-defined action rather than an internal-only one.
+func serveServiceStream(vssReq string, ctx context.Context, sendFn func(vssResp string) error) error {
+	// Buffered so that a late response arriving after this stream has
+	// already returned (e.g. the disconnect/cancel race - see below) does
+	// not block the manager hub's single-threaded response loop forever.
+	grpcResponseChan := make(chan string, 4)
+	grpcClientChan[0] <- GrpcRequestMessage{vssReq, grpcResponseChan}
+	clientId := -1
+	serviceId := ""
+	for {
+		select {
+		case <-ctx.Done():
+			utils.Info.Printf("gRPC invoke/monitor session terminated by client")
+			// clientId is only ever set alongside a non-empty serviceId (see
+			// the ONGOING-ACK branch below), so clientId != -1 implies we
+			// have a session to cancel.
+			if clientId != -1 {
+				// Forward a cancel on this session's own routing slot so the
+				// invocation/session is torn down promptly (vissServiceMgr's
+				// HandleCancel) instead of running until the timeout
+				// watchdog fires. The slot is released once the cancel ACK
+				// comes back (see updateRoutingList's "cancel" branch above)
+				// rather than here, so it cannot be reallocated to a new
+				// client before that ACK is routed.
+				cancelReq := `{"action":"cancel","serviceId":"` + serviceId + `"}`
+				utils.AddRoutingForwardRequest(cancelReq, grpcMgrId, clientId, grpcMgrChan)
+			}
+			return nil
+		case vssResp := <-grpcResponseChan:
+			if err := sendFn(vssResp); err != nil {
+				if clientId != -1 {
+					resetGrpcRoutingData(clientId)
+				}
+				return err
+			}
+			if !strings.Contains(vssResp, `"ONGOING"`) {
+				// Terminal response/event (SUCCESSFUL/CANCELED/FAILED), or a
+				// synchronous-only ACK that never started a session. The
+				// manager hub has already reset the routing entry (see
+				// updateRoutingList).
+				return nil
+			}
+			if strings.Contains(vssResp, `"action":"monitoring"`) {
+				continue // ONGOING event; keep waiting for the next one
+			}
+			// The ONGOING synchronous ACK: remember our own clientId (learned
+			// via the serviceId the hub just recorded against it, mirroring
+			// SubscribeRequest's subscribeClientId/getSubscribeRoutingData)
+			// so a later disconnect can be correlated back to this session.
+			serviceId = getServiceId(vssResp)
+			if serviceId != "" {
+				clientId = getServiceRoutingData(serviceId)
+			}
+		}
+	}
+}
+
+func (s *Server) InvokeRequest(in *pb.InvokeRequestMessage, stream pb.VISS_InvokeRequestServer) error {
+	vssReq := utils.InvokeRequestPbToJson(in)
+	return serveServiceStream(vssReq, stream.Context(), func(vssResp string) error {
+		return stream.Send(utils.InvokeStreamJsonToPb(vssResp))
+	})
+}
+
+func (s *Server) MonitorRequest(in *pb.MonitorRequestMessage, stream pb.VISS_MonitorRequestServer) error {
+	vssReq := utils.MonitorRequestPbToJson(in)
+	return serveServiceStream(vssReq, stream.Context(), func(vssResp string) error {
+		return stream.Send(utils.MonitorStreamJsonToPb(vssResp))
+	})
+}
+
 // isMultipleEventsRequest classifies a VSS request as one that will
-// produce a stream of events (i.e. an active subscribe) rather than a
-// one-shot response. Used by handleGrpcNewClientSession to set up the
-// right routing flag. Extracted in PR #127 so the classification can
-// be table-tested.
+// produce a stream of events (i.e. an active subscribe, or a Service
+// profile invoke/monitor that may report an ONGOING invocation followed by
+// "monitoring" events) rather than a one-shot response. Used by
+// handleGrpcNewClientSession to set up the right routing flag. Extracted in
+// PR #127 so the classification can be table-tested.
 func isMultipleEventsRequest(vssReq string) bool {
+	if strings.Contains(vssReq, `"action":"invoke"`) || strings.Contains(vssReq, `"action":"monitor"`) {
+		return true
+	}
 	return !strings.Contains(vssReq, "unsubscribe") && strings.Contains(vssReq, "subscribe")
 }
 

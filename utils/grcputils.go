@@ -10,9 +10,11 @@ package utils
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	pb "github.com/covesa/vissr/grpc_pb"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // -- Defensive helpers --------------------------------------------------
@@ -229,6 +231,21 @@ func ExtractSubscriptionId(jsonSubResponse string) string {
 		return ""
 	}
 	return mapStringOrEmpty(subResponseMap, "subscriptionId")
+}
+
+// ExtractServiceId returns the "serviceId" field from a VISSv3.2 Service
+// profile invoke/monitor ACK response, or "" if absent/malformed. Mirrors
+// ExtractSubscriptionId's role for the subscribe/unsubscribe pair; used by
+// callers (e.g. the test client) that need to cancel an ONGOING invocation
+// or monitoring session.
+func ExtractServiceId(jsonServiceResponse string) string {
+	var respMap map[string]interface{}
+	err := json.Unmarshal([]byte(jsonServiceResponse), &respMap)
+	if err != nil {
+		Error.Printf("ExtractServiceId:Unmarshal error response=%s, err=%s", jsonServiceResponse, err)
+		return ""
+	}
+	return mapStringOrEmpty(respMap, "serviceId")
 }
 
 // applyFilterFromMessage parses messageMap["filter"] into a *pb.FilterExpressions.
@@ -1085,4 +1102,797 @@ func needsEscape(s string) bool {
 		}
 	}
 	return false
+}
+
+// *****************************************************************
+// VISSv3.2 Service profile (invoke/monitor/cancel/discover) support.
+//
+// Unlike the VSS Data profile messages above, the Service profile's
+// input/output/metadata payloads are arbitrary, per-procedure/per-tree-node
+// JSON objects whose shape isn't known at compile time, so they are carried
+// as google.protobuf.Struct (structpb) rather than a hand-rolled message.
+// *****************************************************************
+
+func serviceStatusFromString(status string) pb.ServiceStatus {
+	if v, ok := pb.ServiceStatus_value[status]; ok {
+		return pb.ServiceStatus(v)
+	}
+	return pb.ServiceStatus_UNKNOWN
+}
+
+// -- ServiceFilter (invoke/monitor "filter": a single monitoring-variant
+// object, a single resource-variant object, or a 2-element array combining
+// one of each) --------------------------------------------------------
+
+func applyServiceFilterFromMessage(messageMap map[string]interface{}) []*pb.ServiceFilter {
+	filter, ok := messageMap["filter"]
+	if !ok || filter == nil {
+		return nil
+	}
+	switch vv := filter.(type) {
+	case []interface{}:
+		out := make([]*pb.ServiceFilter, 0, len(vv))
+		for _, item := range vv {
+			m, ok := asMap(item)
+			if !ok {
+				Error.Printf("applyServiceFilterFromMessage: filter array elements must be objects")
+				continue
+			}
+			out = append(out, createServiceFilterPb(m))
+		}
+		return out
+	case map[string]interface{}:
+		return []*pb.ServiceFilter{createServiceFilterPb(vv)}
+	default:
+		Info.Println(filter, "is of an unknown type")
+		return nil
+	}
+}
+
+func createServiceFilterPb(m map[string]interface{}) *pb.ServiceFilter {
+	sf := &pb.ServiceFilter{}
+	variant, _ := mapString(m, "variant")
+	switch variant {
+	case "all":
+		sf.Variant = pb.ServiceFilterVariant_ALL
+	case "status":
+		sf.Variant = pb.ServiceFilterVariant_STATUS
+	case "none":
+		sf.Variant = pb.ServiceFilterVariant_NONE
+	case "timebased":
+		sf.Variant = pb.ServiceFilterVariant_TIMEBASED_SVC
+		if param, ok := asMap(m["parameter"]); ok {
+			if period, ok := mapString(param, "period"); ok {
+				sf.Period = &period
+			}
+		}
+	case "resource":
+		sf.Variant = pb.ServiceFilterVariant_RESOURCE
+		if arr, ok := m["parameter"].([]interface{}); ok {
+			for _, v := range arr {
+				if s, ok := asString(v); ok {
+					sf.ResourcePath = append(sf.ResourcePath, s)
+				}
+			}
+		}
+	default:
+		Error.Printf("createServiceFilterPb: unknown service filter variant %q", variant)
+	}
+	return sf
+}
+
+// getJsonServiceFilter renders a `,"filter":...` fragment from 0, 1, or 2
+// ServiceFilter entries, matching the shape parseServiceFilter/
+// parseFilterArray on the server accept (single object, or a 2-element
+// array). Returns "" when filters is empty so the "filter" key is omitted
+// entirely (parseServiceFilter(nil) defaults to the "all" variant).
+func getJsonServiceFilter(filters []*pb.ServiceFilter) string {
+	if len(filters) == 0 {
+		return ""
+	}
+	if len(filters) == 1 {
+		return `,"filter":` + synthesizeServiceFilter(filters[0])
+	}
+	parts := make([]string, 0, len(filters))
+	for _, f := range filters {
+		parts = append(parts, synthesizeServiceFilter(f))
+	}
+	return `,"filter":[` + strings.Join(parts, ",") + `]`
+}
+
+func synthesizeServiceFilter(sf *pb.ServiceFilter) string {
+	switch sf.GetVariant() {
+	case pb.ServiceFilterVariant_ALL:
+		return `{"variant":"all"}`
+	case pb.ServiceFilterVariant_STATUS:
+		return `{"variant":"status"}`
+	case pb.ServiceFilterVariant_NONE:
+		return `{"variant":"none"}`
+	case pb.ServiceFilterVariant_TIMEBASED_SVC:
+		return `{"variant":"timebased","parameter":{"period":"` + jsonEscape(sf.GetPeriod()) + `"}}`
+	case pb.ServiceFilterVariant_RESOURCE:
+		paths := sf.GetResourcePath()
+		items := make([]string, 0, len(paths))
+		for _, p := range paths {
+			items = append(items, `"`+jsonEscape(p)+`"`)
+		}
+		return `{"variant":"resource","parameter":[` + strings.Join(items, ",") + `]}`
+	}
+	return `{}`
+}
+
+// -- ServiceError (unifies the invoke/monitor/cancel/discover error shape
+// {number,reason,description,[fields]} and the monitoring-event error shape
+// {code,message}) -------------------------------------------------------
+
+func createServiceErrorPb(errMap map[string]interface{}) *pb.ServiceError {
+	se := &pb.ServiceError{}
+	if v, ok := mapString(errMap, "number"); ok {
+		se.Number = &v
+	}
+	if v, ok := mapString(errMap, "reason"); ok {
+		se.Reason = &v
+	}
+	if v, ok := mapString(errMap, "description"); ok {
+		se.Description = &v
+	}
+	if arr, ok := errMap["fields"].([]interface{}); ok {
+		for _, f := range arr {
+			if s, ok := asString(f); ok {
+				se.Fields = append(se.Fields, s)
+			}
+		}
+	}
+	if v, ok := mapString(errMap, "code"); ok {
+		se.Code = &v
+	}
+	if v, ok := mapString(errMap, "message"); ok {
+		se.Message = &v
+	}
+	return se
+}
+
+func getJsonServiceError(se *pb.ServiceError) string {
+	if se == nil {
+		return ""
+	}
+	var parts []string
+	if se.Number != nil {
+		parts = append(parts, `"number":"`+jsonEscape(se.GetNumber())+`"`)
+	}
+	if se.Reason != nil {
+		parts = append(parts, `"reason":"`+jsonEscape(se.GetReason())+`"`)
+	}
+	if se.Description != nil {
+		parts = append(parts, `"description":"`+jsonEscape(se.GetDescription())+`"`)
+	}
+	if len(se.Fields) > 0 {
+		items := make([]string, 0, len(se.Fields))
+		for _, f := range se.Fields {
+			items = append(items, `"`+jsonEscape(f)+`"`)
+		}
+		parts = append(parts, `"fields":[`+strings.Join(items, ",")+`]`)
+	}
+	if se.Code != nil {
+		parts = append(parts, `"code":"`+jsonEscape(se.GetCode())+`"`)
+	}
+	if se.Message != nil {
+		parts = append(parts, `"message":"`+jsonEscape(se.GetMessage())+`"`)
+	}
+	if len(parts) == 0 {
+		return `,"error":{}`
+	}
+	return `,"error":{` + strings.Join(parts, ",") + `}`
+}
+
+// -- ServiceOutdata / ServiceIndata / ServiceOutdataWrapper (single- vs
+// multi-resource outdata shape - see wrapOutdataByResource/
+// buildOutdataArrayFromWrapped in vissServiceMgr.go) ---------------------
+
+func createServiceOutdataSinglePb(m map[string]interface{}) *pb.ServiceOutdata {
+	so := &pb.ServiceOutdata{}
+	if ts, ok := mapString(m, "ts"); ok {
+		so.Ts = ts
+	}
+	if outMap, ok := asMap(m["output"]); ok {
+		st, err := structpb.NewStruct(outMap)
+		if err != nil {
+			Error.Printf("createServiceOutdataSinglePb: NewStruct error: %s", err)
+		} else {
+			so.Output = st
+		}
+	}
+	return so
+}
+
+// createServiceOutdataWrapperPb builds a ServiceOutdataWrapper from the raw
+// "outdata" field value, which is either a single {"output":...,"ts":...}
+// object or an array of {"<resourceKey>":{"output":...,"ts":...}} objects
+// (multi-resource invocations).
+func createServiceOutdataWrapperPb(outdataField interface{}) *pb.ServiceOutdataWrapper {
+	switch v := outdataField.(type) {
+	case map[string]interface{}:
+		return &pb.ServiceOutdataWrapper{OutdataVariant: &pb.ServiceOutdataWrapper_Single{Single: createServiceOutdataSinglePb(v)}}
+	case []interface{}:
+		arr := &pb.ServiceResourceOutdataArray{}
+		for _, item := range v {
+			m, ok := asMap(item)
+			if !ok {
+				continue
+			}
+			for resKey, wrapped := range m {
+				wm, ok := asMap(wrapped)
+				if !ok {
+					continue
+				}
+				arr.Resource = append(arr.Resource, &pb.ServiceResourceOutdata{
+					ResourceKey: resKey,
+					Outdata:     createServiceOutdataSinglePb(wm),
+				})
+			}
+		}
+		return &pb.ServiceOutdataWrapper{OutdataVariant: &pb.ServiceOutdataWrapper_Multi{Multi: arr}}
+	default:
+		return nil
+	}
+}
+
+func jsonServiceOutdataSingle(so *pb.ServiceOutdata) string {
+	outputJson := "{}"
+	if so.GetOutput() != nil {
+		if b, err := json.Marshal(so.GetOutput().AsMap()); err == nil {
+			outputJson = string(b)
+		}
+	}
+	return `{"output":` + outputJson + `,"ts":"` + jsonEscape(so.GetTs()) + `"}`
+}
+
+func getJsonServiceOutdata(wrapper *pb.ServiceOutdataWrapper) string {
+	if wrapper == nil {
+		return ""
+	}
+	if single := wrapper.GetSingle(); single != nil {
+		return `,"outdata":` + jsonServiceOutdataSingle(single)
+	}
+	if multi := wrapper.GetMulti(); multi != nil {
+		parts := make([]string, 0, len(multi.GetResource()))
+		for _, r := range multi.GetResource() {
+			parts = append(parts, `{"`+jsonEscape(r.GetResourceKey())+`":`+jsonServiceOutdataSingle(r.GetOutdata())+`}`)
+		}
+		return `,"outdata":[` + strings.Join(parts, ",") + `]`
+	}
+	return ""
+}
+
+func createServiceIndataPb(m map[string]interface{}) *pb.ServiceIndata {
+	si := &pb.ServiceIndata{}
+	if ts, ok := mapString(m, "ts"); ok {
+		si.Ts = ts
+	}
+	if inMap, ok := asMap(m["input"]); ok {
+		st, err := structpb.NewStruct(inMap)
+		if err != nil {
+			Error.Printf("createServiceIndataPb: NewStruct error: %s", err)
+		} else {
+			si.Input = st
+		}
+	}
+	return si
+}
+
+func getJsonServiceIndata(si *pb.ServiceIndata) string {
+	if si == nil {
+		return ""
+	}
+	inputJson := "{}"
+	if si.GetInput() != nil {
+		if b, err := json.Marshal(si.GetInput().AsMap()); err == nil {
+			inputJson = string(b)
+		}
+	}
+	return `,"indata":{"input":` + inputJson + `,"ts":"` + jsonEscape(si.GetTs()) + `"}`
+}
+
+// timeoutStringFromMessage normalizes the "timeout" field (accepted by the
+// server as either a JSON number or a numeric string, both milliseconds -
+// see timeoutFromRequest in vissServiceMgr.go) to a string for the proto
+// wire, which carries Timeout as a string.
+func timeoutStringFromMessage(m map[string]interface{}) (string, bool) {
+	switch v := m["timeout"].(type) {
+	case string:
+		return v, v != ""
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+// -- MonitoringEventMessage (the asynchronous "monitoring" event pushed on
+// an Invoke/Monitor stream) ---------------------------------------------
+
+func createMonitoringEventPb(m map[string]interface{}) *pb.MonitoringEventMessage {
+	ev := &pb.MonitoringEventMessage{}
+	if path, ok := mapString(m, "path"); ok {
+		ev.Path = path
+	}
+	if outdataField, present := m["outdata"]; present {
+		ev.Outdata = createServiceOutdataWrapperPb(outdataField)
+	}
+	if sid, ok := mapString(m, "serviceId"); ok {
+		ev.ServiceId = sid
+	}
+	if status, ok := mapString(m, "status"); ok {
+		ev.Status = serviceStatusFromString(status)
+	}
+	if errMap, ok := asMap(m["error"]); ok {
+		ev.Error = createServiceErrorPb(errMap)
+	}
+	if pr, ok := m["progress"].(float64); ok {
+		p := int32(pr)
+		ev.Progress = &p
+	}
+	if ts, ok := mapString(m, "ts"); ok {
+		ev.Ts = ts
+	}
+	return ev
+}
+
+func populateJsonFromProtoMonitoringEvent(ev *pb.MonitoringEventMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"monitoring"`
+	jsonMessage += `,"path":"` + jsonEscape(ev.GetPath()) + `"`
+	jsonMessage += getJsonServiceOutdata(ev.GetOutdata())
+	jsonMessage += `,"serviceId":"` + jsonEscape(ev.GetServiceId()) + `"`
+	jsonMessage += `,"status":"` + ev.GetStatus().String() + `"`
+	jsonMessage += getJsonServiceError(ev.GetError())
+	if ev.Progress != nil {
+		jsonMessage += `,"progress":` + strconv.Itoa(int(ev.GetProgress()))
+	}
+	jsonMessage += `,"ts":"` + jsonEscape(ev.GetTs()) + `"`
+	return jsonMessage + "}"
+}
+
+// -- invoke ---------------------------------------------------------------
+
+func createInvokeRequestPb(protoMessage *pb.InvokeRequestMessage, m map[string]interface{}) {
+	if path, ok := mapString(m, "path"); ok {
+		protoMessage.Path = path
+	}
+	if inMap, ok := asMap(m["input"]); ok {
+		st, err := structpb.NewStruct(inMap)
+		if err != nil {
+			Error.Printf("createInvokeRequestPb: NewStruct error: %s", err)
+		} else {
+			protoMessage.Input = st
+		}
+	}
+	protoMessage.Filter = applyServiceFilterFromMessage(m)
+	if auth, ok := mapString(m, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if to, ok := timeoutStringFromMessage(m); ok {
+		protoMessage.Timeout = &to
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+}
+
+func createInvokeResponsePb(protoMessage *pb.InvokeResponseMessage, m map[string]interface{}) {
+	if status, ok := mapString(m, "status"); ok {
+		protoMessage.Status = serviceStatusFromString(status)
+	}
+	if path, ok := mapString(m, "path"); ok {
+		protoMessage.Path = &path
+	}
+	if outdataField, present := m["outdata"]; present {
+		protoMessage.Outdata = createServiceOutdataWrapperPb(outdataField)
+	}
+	if sid, ok := mapString(m, "serviceId"); ok {
+		protoMessage.ServiceId = &sid
+	}
+	if errMap, ok := asMap(m["error"]); ok {
+		protoMessage.Error = createServiceErrorPb(errMap)
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = &reqId
+	}
+	if ts, ok := mapString(m, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+}
+
+func createInvokeStreamPb(protoMessage *pb.InvokeStreamMessage, m map[string]interface{}) {
+	action, _ := mapString(m, "action")
+	if action == "monitoring" {
+		protoMessage.MType = pb.ServiceStreamType_SERVICE_EVENT
+		protoMessage.Payload = &pb.InvokeStreamMessage_Event{Event: createMonitoringEventPb(m)}
+		return
+	}
+	protoMessage.MType = pb.ServiceStreamType_SERVICE_RESPONSE
+	resp := &pb.InvokeResponseMessage{}
+	createInvokeResponsePb(resp, m)
+	protoMessage.Payload = &pb.InvokeStreamMessage_Response{Response: resp}
+}
+
+func populateJsonFromProtoInvokeReq(protoMessage *pb.InvokeRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"invoke"`
+	jsonMessage += `,"path":"` + jsonEscape(protoMessage.GetPath()) + `"`
+	if protoMessage.GetInput() != nil {
+		if b, err := json.Marshal(protoMessage.GetInput().AsMap()); err == nil {
+			jsonMessage += `,"input":` + string(b)
+		}
+	}
+	jsonMessage += getJsonServiceFilter(protoMessage.GetFilter())
+	jsonMessage += createJSON(protoMessage.GetAuthorization(), "authorization")
+	jsonMessage += createJSON(protoMessage.GetTimeout(), "timeout")
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoInvokeResp(protoMessage *pb.InvokeResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"invoke"`
+	jsonMessage += `,"status":"` + protoMessage.GetStatus().String() + `"`
+	jsonMessage += createJSON(protoMessage.GetPath(), "path")
+	jsonMessage += getJsonServiceOutdata(protoMessage.GetOutdata())
+	jsonMessage += createJSON(protoMessage.GetServiceId(), "serviceId")
+	jsonMessage += getJsonServiceError(protoMessage.GetError())
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	jsonMessage += `,"ts":"` + jsonEscape(protoMessage.GetTs()) + `"`
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoInvokeStream(protoMessage *pb.InvokeStreamMessage) string {
+	if protoMessage.GetMType() == pb.ServiceStreamType_SERVICE_EVENT {
+		return populateJsonFromProtoMonitoringEvent(protoMessage.GetEvent())
+	}
+	return populateJsonFromProtoInvokeResp(protoMessage.GetResponse())
+}
+
+func InvokeRequestPbToJson(pbInvokeReq *pb.InvokeRequestMessage) string {
+	return populateJsonFromProtoInvokeReq(pbInvokeReq)
+}
+
+func InvokeResponsePbToJson(pbInvokeResp *pb.InvokeResponseMessage) string {
+	return populateJsonFromProtoInvokeResp(pbInvokeResp)
+}
+
+func InvokeStreamPbToJson(pbInvokeStream *pb.InvokeStreamMessage) string {
+	return populateJsonFromProtoInvokeStream(pbInvokeStream)
+}
+
+func InvokeRequestJsonToPb(vssInvokeReq string) *pb.InvokeRequestMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssInvokeReq), &m); err != nil {
+		Error.Printf("InvokeRequestJsonToPb:Unmarshal error data=%s, err=%s", vssInvokeReq, err)
+		return nil
+	}
+	pbInvokeRequestMessage := &pb.InvokeRequestMessage{}
+	createInvokeRequestPb(pbInvokeRequestMessage, m)
+	return pbInvokeRequestMessage
+}
+
+func InvokeResponseJsonToPb(vssInvokeResp string) *pb.InvokeResponseMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssInvokeResp), &m); err != nil {
+		Error.Printf("InvokeResponseJsonToPb:Unmarshal error data=%s, err=%s", vssInvokeResp, err)
+		return nil
+	}
+	pbInvokeResponseMessage := &pb.InvokeResponseMessage{}
+	createInvokeResponsePb(pbInvokeResponseMessage, m)
+	return pbInvokeResponseMessage
+}
+
+func InvokeStreamJsonToPb(vssInvokeStream string) *pb.InvokeStreamMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssInvokeStream), &m); err != nil {
+		Error.Printf("InvokeStreamJsonToPb:Unmarshal error data=%s, err=%s", vssInvokeStream, err)
+		return nil
+	}
+	pbInvokeStreamMessage := &pb.InvokeStreamMessage{}
+	createInvokeStreamPb(pbInvokeStreamMessage, m)
+	return pbInvokeStreamMessage
+}
+
+// -- monitor ----------------------------------------------------------------
+
+func createMonitorRequestPb(protoMessage *pb.MonitorRequestMessage, m map[string]interface{}) {
+	if path, ok := mapString(m, "path"); ok {
+		protoMessage.Path = path
+	}
+	protoMessage.Filter = applyServiceFilterFromMessage(m)
+	if auth, ok := mapString(m, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+}
+
+func createMonitorResponsePb(protoMessage *pb.MonitorResponseMessage, m map[string]interface{}) {
+	if status, ok := mapString(m, "status"); ok {
+		protoMessage.Status = serviceStatusFromString(status)
+	}
+	if path, ok := mapString(m, "path"); ok {
+		protoMessage.Path = &path
+	}
+	if indataMap, ok := asMap(m["indata"]); ok {
+		protoMessage.Indata = createServiceIndataPb(indataMap)
+	}
+	if outdataField, present := m["outdata"]; present {
+		protoMessage.Outdata = createServiceOutdataWrapperPb(outdataField)
+	}
+	if sid, ok := mapString(m, "serviceId"); ok {
+		protoMessage.ServiceId = &sid
+	}
+	if errMap, ok := asMap(m["error"]); ok {
+		protoMessage.Error = createServiceErrorPb(errMap)
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = &reqId
+	}
+	if ts, ok := mapString(m, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+}
+
+func createMonitorStreamPb(protoMessage *pb.MonitorStreamMessage, m map[string]interface{}) {
+	action, _ := mapString(m, "action")
+	if action == "monitoring" {
+		protoMessage.MType = pb.ServiceStreamType_SERVICE_EVENT
+		protoMessage.Payload = &pb.MonitorStreamMessage_Event{Event: createMonitoringEventPb(m)}
+		return
+	}
+	protoMessage.MType = pb.ServiceStreamType_SERVICE_RESPONSE
+	resp := &pb.MonitorResponseMessage{}
+	createMonitorResponsePb(resp, m)
+	protoMessage.Payload = &pb.MonitorStreamMessage_Response{Response: resp}
+}
+
+func populateJsonFromProtoMonitorReq(protoMessage *pb.MonitorRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"monitor"`
+	jsonMessage += `,"path":"` + jsonEscape(protoMessage.GetPath()) + `"`
+	jsonMessage += getJsonServiceFilter(protoMessage.GetFilter())
+	jsonMessage += createJSON(protoMessage.GetAuthorization(), "authorization")
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoMonitorResp(protoMessage *pb.MonitorResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"monitor"`
+	jsonMessage += `,"status":"` + protoMessage.GetStatus().String() + `"`
+	jsonMessage += createJSON(protoMessage.GetPath(), "path")
+	jsonMessage += getJsonServiceIndata(protoMessage.GetIndata())
+	jsonMessage += getJsonServiceOutdata(protoMessage.GetOutdata())
+	jsonMessage += createJSON(protoMessage.GetServiceId(), "serviceId")
+	jsonMessage += getJsonServiceError(protoMessage.GetError())
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	jsonMessage += `,"ts":"` + jsonEscape(protoMessage.GetTs()) + `"`
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoMonitorStream(protoMessage *pb.MonitorStreamMessage) string {
+	if protoMessage.GetMType() == pb.ServiceStreamType_SERVICE_EVENT {
+		return populateJsonFromProtoMonitoringEvent(protoMessage.GetEvent())
+	}
+	return populateJsonFromProtoMonitorResp(protoMessage.GetResponse())
+}
+
+func MonitorRequestPbToJson(pbMonitorReq *pb.MonitorRequestMessage) string {
+	return populateJsonFromProtoMonitorReq(pbMonitorReq)
+}
+
+func MonitorResponsePbToJson(pbMonitorResp *pb.MonitorResponseMessage) string {
+	return populateJsonFromProtoMonitorResp(pbMonitorResp)
+}
+
+func MonitorStreamPbToJson(pbMonitorStream *pb.MonitorStreamMessage) string {
+	return populateJsonFromProtoMonitorStream(pbMonitorStream)
+}
+
+func MonitorRequestJsonToPb(vssMonitorReq string) *pb.MonitorRequestMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssMonitorReq), &m); err != nil {
+		Error.Printf("MonitorRequestJsonToPb:Unmarshal error data=%s, err=%s", vssMonitorReq, err)
+		return nil
+	}
+	pbMonitorRequestMessage := &pb.MonitorRequestMessage{}
+	createMonitorRequestPb(pbMonitorRequestMessage, m)
+	return pbMonitorRequestMessage
+}
+
+func MonitorResponseJsonToPb(vssMonitorResp string) *pb.MonitorResponseMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssMonitorResp), &m); err != nil {
+		Error.Printf("MonitorResponseJsonToPb:Unmarshal error data=%s, err=%s", vssMonitorResp, err)
+		return nil
+	}
+	pbMonitorResponseMessage := &pb.MonitorResponseMessage{}
+	createMonitorResponsePb(pbMonitorResponseMessage, m)
+	return pbMonitorResponseMessage
+}
+
+func MonitorStreamJsonToPb(vssMonitorStream string) *pb.MonitorStreamMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssMonitorStream), &m); err != nil {
+		Error.Printf("MonitorStreamJsonToPb:Unmarshal error data=%s, err=%s", vssMonitorStream, err)
+		return nil
+	}
+	pbMonitorStreamMessage := &pb.MonitorStreamMessage{}
+	createMonitorStreamPb(pbMonitorStreamMessage, m)
+	return pbMonitorStreamMessage
+}
+
+// -- cancel -------------------------------------------------------------
+
+func createCancelRequestPb(protoMessage *pb.CancelRequestMessage, m map[string]interface{}) {
+	if sid, ok := mapString(m, "serviceId"); ok {
+		protoMessage.ServiceId = sid
+	}
+}
+
+func createCancelResponsePb(protoMessage *pb.CancelResponseMessage, m map[string]interface{}) {
+	if status, ok := mapString(m, "status"); ok {
+		protoMessage.Status = serviceStatusFromString(status)
+	}
+	if outdataField, present := m["outdata"]; present {
+		protoMessage.Outdata = createServiceOutdataWrapperPb(outdataField)
+	}
+	if errMap, ok := asMap(m["error"]); ok {
+		protoMessage.Error = createServiceErrorPb(errMap)
+	}
+	if sid, ok := mapString(m, "serviceId"); ok {
+		protoMessage.ServiceId = sid
+	}
+	if ts, ok := mapString(m, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+}
+
+func populateJsonFromProtoCancelReq(protoMessage *pb.CancelRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"cancel"`
+	jsonMessage += `,"serviceId":"` + jsonEscape(protoMessage.GetServiceId()) + `"`
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoCancelResp(protoMessage *pb.CancelResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"cancel"`
+	jsonMessage += `,"status":"` + protoMessage.GetStatus().String() + `"`
+	jsonMessage += getJsonServiceOutdata(protoMessage.GetOutdata())
+	jsonMessage += getJsonServiceError(protoMessage.GetError())
+	jsonMessage += `,"serviceId":"` + jsonEscape(protoMessage.GetServiceId()) + `"`
+	jsonMessage += `,"ts":"` + jsonEscape(protoMessage.GetTs()) + `"`
+	return jsonMessage + "}"
+}
+
+func CancelRequestPbToJson(pbCancelReq *pb.CancelRequestMessage) string {
+	return populateJsonFromProtoCancelReq(pbCancelReq)
+}
+
+func CancelResponsePbToJson(pbCancelResp *pb.CancelResponseMessage) string {
+	return populateJsonFromProtoCancelResp(pbCancelResp)
+}
+
+func CancelRequestJsonToPb(vssCancelReq string) *pb.CancelRequestMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssCancelReq), &m); err != nil {
+		Error.Printf("CancelRequestJsonToPb:Unmarshal error data=%s, err=%s", vssCancelReq, err)
+		return nil
+	}
+	pbCancelRequestMessage := &pb.CancelRequestMessage{}
+	createCancelRequestPb(pbCancelRequestMessage, m)
+	return pbCancelRequestMessage
+}
+
+func CancelResponseJsonToPb(vssCancelResp string) *pb.CancelResponseMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssCancelResp), &m); err != nil {
+		Error.Printf("CancelResponseJsonToPb:Unmarshal error data=%s, err=%s", vssCancelResp, err)
+		return nil
+	}
+	pbCancelResponseMessage := &pb.CancelResponseMessage{}
+	createCancelResponsePb(pbCancelResponseMessage, m)
+	return pbCancelResponseMessage
+}
+
+// -- discover -------------------------------------------------------------
+//
+// Per the "Discover" spec revision, discover no longer accepts a "filter" -
+// "depth" (mandatory; "0" = all generations) replaces it, and metadata for
+// all instances of a multiplexed service is always returned.
+
+func createDiscoverRequestPb(protoMessage *pb.DiscoverRequestMessage, m map[string]interface{}) {
+	if path, ok := mapString(m, "path"); ok {
+		protoMessage.Path = path
+	}
+	if depth, ok := mapString(m, "depth"); ok {
+		protoMessage.Depth = depth
+	}
+	if auth, ok := mapString(m, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+}
+
+func createDiscoverResponsePb(protoMessage *pb.DiscoverResponseMessage, m map[string]interface{}) {
+	if metaMap, ok := asMap(m["metadata"]); ok {
+		st, err := structpb.NewStruct(metaMap)
+		if err != nil {
+			Error.Printf("createDiscoverResponsePb: NewStruct error: %s", err)
+		} else {
+			protoMessage.Metadata = st
+		}
+	}
+	if errMap, ok := asMap(m["error"]); ok {
+		protoMessage.Error = createServiceErrorPb(errMap)
+	}
+	if reqId, ok := mapString(m, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(m, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+}
+
+func populateJsonFromProtoDiscoverReq(protoMessage *pb.DiscoverRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"discover"`
+	jsonMessage += `,"path":"` + jsonEscape(protoMessage.GetPath()) + `"`
+	jsonMessage += `,"depth":"` + jsonEscape(protoMessage.GetDepth()) + `"`
+	jsonMessage += createJSON(protoMessage.GetAuthorization(), "authorization")
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	return jsonMessage + "}"
+}
+
+func populateJsonFromProtoDiscoverResp(protoMessage *pb.DiscoverResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"discover"`
+	if protoMessage.GetMetadata() != nil {
+		if b, err := json.Marshal(protoMessage.GetMetadata().AsMap()); err == nil {
+			jsonMessage += `,"metadata":` + string(b)
+		}
+	}
+	jsonMessage += getJsonServiceError(protoMessage.GetError())
+	jsonMessage += createJSON(protoMessage.GetRequestId(), "requestId")
+	jsonMessage += `,"ts":"` + jsonEscape(protoMessage.GetTs()) + `"`
+	return jsonMessage + "}"
+}
+
+func DiscoverRequestPbToJson(pbDiscoverReq *pb.DiscoverRequestMessage) string {
+	return populateJsonFromProtoDiscoverReq(pbDiscoverReq)
+}
+
+func DiscoverResponsePbToJson(pbDiscoverResp *pb.DiscoverResponseMessage) string {
+	return populateJsonFromProtoDiscoverResp(pbDiscoverResp)
+}
+
+func DiscoverRequestJsonToPb(vssDiscoverReq string) *pb.DiscoverRequestMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssDiscoverReq), &m); err != nil {
+		Error.Printf("DiscoverRequestJsonToPb:Unmarshal error data=%s, err=%s", vssDiscoverReq, err)
+		return nil
+	}
+	pbDiscoverRequestMessage := &pb.DiscoverRequestMessage{}
+	createDiscoverRequestPb(pbDiscoverRequestMessage, m)
+	return pbDiscoverRequestMessage
+}
+
+func DiscoverResponseJsonToPb(vssDiscoverResp string) *pb.DiscoverResponseMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(vssDiscoverResp), &m); err != nil {
+		Error.Printf("DiscoverResponseJsonToPb:Unmarshal error data=%s, err=%s", vssDiscoverResp, err)
+		return nil
+	}
+	pbDiscoverResponseMessage := &pb.DiscoverResponseMessage{}
+	createDiscoverResponsePb(pbDiscoverResponseMessage, m)
+	return pbDiscoverResponseMessage
 }
