@@ -309,10 +309,11 @@
                     "properties": {
                         "action": { "const": "discover" },
                         "path": { "description": "The service path (branch or procedure node)", "type": "string" },
+                        "depth": { "description": "The max number of descendant generations to return. \"0\" means all generations.", "type": "string" },
                         "authorization": { "description": "The access token", "type": "string" },
                         "requestId": { "description": "The request id", "type": "string" }
                     },
-                    "required": ["action", "path", "requestId"]
+                    "required": ["action", "path", "depth", "requestId"]
                 },
                 {
                     "description": "discoverySuccessResponse",

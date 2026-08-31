@@ -21,6 +21,7 @@
 {
     "action": "discover",
     "path": "VehicleService.Seating",
+    "depth": "0",
     "requestId": "8758"
 }
 

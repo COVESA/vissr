@@ -777,7 +777,11 @@ func registerServiceDomainTree(t *testing.T, rootName string) func() {
 	return func() { utils.DeregisterServiceTree(rootName) }
 }
 
-func TestDispatchServiceAction_Discover(t *testing.T) {
+// TestDispatchServiceAction_Discover_MissingDepthReturnsError: discover is
+// now handled by handleServiceDiscover (not vissServiceMgr.HandleDiscover),
+// which requires a "depth" field. A request without one gets a synchronous
+// error response, not a block/panic.
+func TestDispatchServiceAction_Discover_MissingDepthReturnsError(t *testing.T) {
 	initChannels()
 	defer registerServiceDomainTree(t, "SvcD")()
 	req := map[string]interface{}{
@@ -785,14 +789,14 @@ func TestDispatchServiceAction_Discover(t *testing.T) {
 		"path":      "SvcD.Invoke",
 		"requestId": "42",
 	}
-	// HandleDiscover writes to backendChan[tDChanIndex] (may return error since
-	// there's no registered procedure, but it must not block).
 	dispatchServiceAction(req, 0)
 	select {
 	case got := <-backendChan[0]:
-		_ = got // error or metadata response — both acceptable
+		if got["error"] == nil {
+			t.Errorf("discover without depth: expected error; got %+v", got)
+		}
 	case <-time.After(500 * time.Millisecond):
-		t.Log("dispatchServiceAction discover: no response to backendChan (acceptable for discover)")
+		t.Fatal("dispatchServiceAction discover: no response to backendChan")
 	}
 }
 
@@ -940,6 +944,290 @@ func TestIssueServiceRequest_HIMMetadataFilter_CallsHimJsonify(t *testing.T) {
 	default:
 		t.Log("no response to backendChan (himJsonify may have returned \"\")")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// handleServiceDiscover — VISSv3.2 "discover" reusing synthesizeJsonTree
+// ---------------------------------------------------------------------------
+
+// registerVehicleServiceTree registers a service-domain tree ("<rootName>.Service")
+// containing a branch with a procedure (with Input/Output iostructs) and a
+// nested sub-branch, mirroring the shape exercised by
+// vissServiceMgr_e2e_test.go's TestHandleDiscover_BranchPath_ReturnsMetadata,
+// so handleServiceDiscover's behaviour can be compared against the same
+// fixture shape.
+func registerVehicleServiceTree(t *testing.T, rootName string) func() {
+	t.Helper()
+	input := utils.NewIoStructNode("Input",
+		utils.NewPropertyNode("MovementType", "string", "Type of movement."),
+		utils.NewPropertyNode("Position", "uint8", "Target position."))
+	output := utils.NewIoStructNode("Output",
+		utils.NewPropertyNode("Position", "uint8", "Current position."))
+	moveSeat := utils.NewProcedureNode("MoveSeat", "Performs seat movements.", input, output)
+	subBranch := utils.NewBranchNode("SubBranch")
+	seating := utils.NewBranchNode("Seating", moveSeat, subBranch)
+	root := utils.NewBranchNode(rootName, seating)
+	utils.RegisterServiceTree(rootName, rootName+".Service", "1.0", root)
+	return func() { utils.DeregisterServiceTree(rootName) }
+}
+
+// stubAtsNoScope replies to exactly one getNoScopeList round-trip on
+// atsChannel[0] with an empty noscope list (nothing pruned).
+func stubAtsNoScope(t *testing.T) {
+	t.Helper()
+	go func() {
+		<-atsChannel[0]
+		atsChannel[0] <- `{"paths":[]}`
+	}()
+}
+
+func TestHandleServiceDiscover_MissingDepth_ReturnsBadRequest(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc1")()
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc1.Seating",
+		"requestId": "1",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	errObj, ok := got["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected an error response; got %+v", got)
+	}
+	if errObj["number"] != "400" {
+		t.Errorf("error.number = %v; want 400", errObj["number"])
+	}
+}
+
+func TestHandleServiceDiscover_InvalidDepth_ReturnsBadRequest(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc2")()
+	cases := []string{"abc", "-1", ""}
+	for _, d := range cases {
+		req := map[string]interface{}{
+			"action":    "discover",
+			"path":      "SvcDisc2.Seating",
+			"depth":     d,
+			"requestId": "1",
+		}
+		handleServiceDiscover(req, 0)
+		got := <-backendChan[0]
+		if got["error"] == nil {
+			t.Errorf("depth=%q: expected error response; got %+v", d, got)
+		}
+	}
+}
+
+func TestHandleServiceDiscover_UnknownPath_ReturnsUnavailableData(t *testing.T) {
+	initChannels()
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "NoSuchServiceRoot.Whatever",
+		"depth":     "0",
+		"requestId": "1",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	errObj, ok := got["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected an error response; got %+v", got)
+	}
+	if errObj["number"] != "404" {
+		t.Errorf("error.number = %v; want 404", errObj["number"])
+	}
+}
+
+// TestHandleServiceDiscover_BranchPath_ReturnsNestedTreeMetadata pins the new
+// shape: metadata is keyed by the addressed node's own name, with
+// descendants nested under a "children" key (jsonifyTreeNode's shape),
+// unlike the old flat vissServiceMgr.HandleDiscover response.
+func TestHandleServiceDiscover_BranchPath_ReturnsNestedTreeMetadata(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc3")()
+	stubAtsNoScope(t)
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc3.Seating",
+		"depth":     "0", // unlimited
+		"requestId": "d1",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	if got["error"] != nil {
+		t.Fatalf("unexpected error: %+v", got["error"])
+	}
+	if got["action"] != "discover" || got["requestId"] != "d1" || got["ts"] == nil {
+		t.Fatalf("response envelope: got %+v", got)
+	}
+	metadata, ok := got["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata missing/!map: %T", got["metadata"])
+	}
+	seating, ok := metadata["Seating"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected top-level \"Seating\" wrapper key; got keys=%v", metaKeysCoverage(metadata))
+	}
+	if seating["type"] != "branch" {
+		t.Errorf("Seating.type = %v; want \"branch\"", seating["type"])
+	}
+	children, ok := seating["children"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Seating.children map; got %T", seating["children"])
+	}
+	moveSeat, ok := children["MoveSeat"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected children.MoveSeat; got keys=%v", metaKeysCoverage(children))
+	}
+	if moveSeat["type"] != "procedure" {
+		t.Errorf("MoveSeat.type = %v; want \"procedure\"", moveSeat["type"])
+	}
+	moveSeatChildren, ok := moveSeat["children"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected MoveSeat.children (Input/Output); got %T", moveSeat["children"])
+	}
+	if _, ok := moveSeatChildren["Input"]; !ok {
+		t.Errorf("expected MoveSeat.children.Input; got keys=%v", metaKeysCoverage(moveSeatChildren))
+	}
+	if _, ok := moveSeatChildren["Output"]; !ok {
+		t.Errorf("expected MoveSeat.children.Output; got keys=%v", metaKeysCoverage(moveSeatChildren))
+	}
+	// The live-status enrichment fields (serviceStatus/activeInvocations/...)
+	// that vissServiceMgr.HandleDiscover used to add are intentionally not
+	// produced by this tree-walk-only implementation.
+	for _, k := range []string{"serviceStatus", "activeInvocations", "version", "serviceHealth", "totalInvocations", "successRate", "avgDurationMs"} {
+		if _, present := moveSeat[k]; present {
+			t.Errorf("unexpected live-enrichment field %q present in tree-walk metadata", k)
+		}
+	}
+}
+
+// TestHandleServiceDiscover_ProcedurePath_ReturnsInputOutput confirms
+// addressing a procedure node directly also works, and that its own
+// Input/Output iostructs are nested one level down (matching depth
+// semantics: depth=0 unlimited).
+func TestHandleServiceDiscover_ProcedurePath_ReturnsInputOutput(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc4")()
+	stubAtsNoScope(t)
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc4.Seating.MoveSeat",
+		"depth":     "0",
+		"requestId": "d2",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	if got["error"] != nil {
+		t.Fatalf("unexpected error: %+v", got["error"])
+	}
+	metadata := got["metadata"].(map[string]interface{})
+	moveSeat, ok := metadata["MoveSeat"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected top-level \"MoveSeat\" wrapper key; got keys=%v", metaKeysCoverage(metadata))
+	}
+	if moveSeat["type"] != "procedure" {
+		t.Errorf("MoveSeat.type = %v; want \"procedure\"", moveSeat["type"])
+	}
+	children, ok := moveSeat["children"].(map[string]interface{})
+	if !ok || children["Input"] == nil || children["Output"] == nil {
+		t.Fatalf("expected children.Input and children.Output; got %+v", moveSeat["children"])
+	}
+}
+
+// TestHandleServiceDiscover_DepthOne_OnlyAddressedNode pins the off-by-one
+// depth semantics inherited from synthesizeJsonTree/jsonifyTreeNode:
+// depth=1 returns only the addressed node's own metadata, with no
+// "children" key at all, even though it has children.
+func TestHandleServiceDiscover_DepthOne_OnlyAddressedNode(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc5")()
+	stubAtsNoScope(t)
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc5.Seating",
+		"depth":     "1",
+		"requestId": "d3",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	if got["error"] != nil {
+		t.Fatalf("unexpected error: %+v", got["error"])
+	}
+	metadata := got["metadata"].(map[string]interface{})
+	seating, ok := metadata["Seating"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected top-level \"Seating\" wrapper key; got keys=%v", metaKeysCoverage(metadata))
+	}
+	if _, present := seating["children"]; present {
+		t.Errorf("depth=1: expected no \"children\" key; got %+v", seating["children"])
+	}
+}
+
+// TestHandleServiceDiscover_DepthTwo_DirectChildrenOnly confirms depth=2
+// includes direct children (MoveSeat, SubBranch) but not MoveSeat's own
+// grandchildren (Input/Output).
+func TestHandleServiceDiscover_DepthTwo_DirectChildrenOnly(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc6")()
+	stubAtsNoScope(t)
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc6.Seating",
+		"depth":     "2",
+		"requestId": "d4",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	if got["error"] != nil {
+		t.Fatalf("unexpected error: %+v", got["error"])
+	}
+	metadata := got["metadata"].(map[string]interface{})
+	seating := metadata["Seating"].(map[string]interface{})
+	children, ok := seating["children"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("depth=2: expected Seating.children; got %+v", seating["children"])
+	}
+	moveSeat, ok := children["MoveSeat"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("depth=2: expected children.MoveSeat; got keys=%v", metaKeysCoverage(children))
+	}
+	if _, present := moveSeat["children"]; present {
+		t.Errorf("depth=2: MoveSeat should have no \"children\" (grandchildren excluded); got %+v", moveSeat["children"])
+	}
+}
+
+// TestHandleServiceDiscover_RouterIdPreserved confirms the client-addressing
+// RouterId is copied onto the response (so the transport manager can route
+// the reply back), mirroring vissServiceMgr.go's copyRouteFields.
+func TestHandleServiceDiscover_RouterIdPreserved(t *testing.T) {
+	initChannels()
+	defer registerVehicleServiceTree(t, "SvcDisc7")()
+	stubAtsNoScope(t)
+	req := map[string]interface{}{
+		"action":    "discover",
+		"path":      "SvcDisc7.Seating",
+		"depth":     "0",
+		"requestId": "d5",
+		"RouterId":  "1?0",
+	}
+	handleServiceDiscover(req, 0)
+	got := <-backendChan[0]
+	if got["RouterId"] != "1?0" {
+		t.Errorf("RouterId = %v; want \"1?0\"", got["RouterId"])
+	}
+	if _, present := got["routerIndex"]; present {
+		t.Errorf("routerIndex must never be copied onto the response; got %v", got["routerIndex"])
+	}
+}
+
+// metaKeysCoverage returns the keys of m for diagnostic test-failure output.
+func metaKeysCoverage(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // ---------------------------------------------------------------------------

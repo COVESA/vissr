@@ -23,13 +23,20 @@ unchanged. This guide focuses on the v3.3 additions.
 | **TLS on port 8300** | Optional mutual TLS for the service registration channel |
 | **SSE helper** | HTTP monitoring can use Server-Sent Events |
 | **Auto-reconnect SDK** | SDK reconnects on connection loss with exponential backoff |
-| **Discover enrichment** | Discover responses include live `serviceStatus` and `activeInvocations` |
+| **Discover enrichment**<sup>†</sup> | Discover responses include live `serviceStatus` and `activeInvocations` |
 | **Cancel propagation** | Server forwards cancel to service process; SDK exposes `ctx.Done()` |
-| **Service versioning** | Services declare a `version` string; appears in discover responses |
+| **Service versioning**<sup>†</sup> | Services declare a `version` string; appears in discover responses |
 | **Progress percentage** | ONGOING updates carry optional `progress` 0-100 field |
 | **Structured validation errors** | Missing Input fields listed by name on invoke failure |
-| **Service health reporting** | Services report health status; shown in discover responses |
-| **Observability metrics** | Per-path counters (`totalInvocations`, `successRate`, `avgDurationMs`) in discover |
+| **Service health reporting**<sup>†</sup> | Services report health status; shown in discover responses |
+| **Observability metrics**<sup>†</sup> | Per-path counters (`totalInvocations`, `successRate`, `avgDurationMs`) in discover |
+
+<sup>†</sup> **Superseded:** discover's `metadata` is now produced by the same generic HIM-tree walk
+used by the Data profile's metadata filter (`action:"get"`, `filter.variant:"metadata"`), which has
+no notion of these live-status fields. The server-side code that computes them is retained,
+unused, for potential future reuse as a post-processing step. `depth` (mandatory) replaces the
+resource filter for narrowing discover's response - see the updated "Discover the service tree"
+section in `VISSv3.2_Service_Quickstart.md`.
 
 ---
 
@@ -158,9 +165,15 @@ and independent state machine. Monitoring sessions attach to a specific invocati
 `timeout` is milliseconds. Omitting it uses the server default (30s). Setting it to `0`
 disables the timeout for this invocation.
 
-### 2.3 Discover enrichment (§25)
+### 2.3 Discover enrichment (§25) — superseded
 
-The `discover` response now includes live fields per procedure:
+> **Superseded:** the fields described in this subsection are no longer present in discover
+> responses; see the note under "What's new in v3.3?" above. `discover` now requires a mandatory
+> `depth` field and returns the addressed subtree in the same nested/`children`-keyed shape as the
+> Data profile's metadata filter - see `VISSv3.2_Service_Quickstart.md`'s "Discover the service
+> tree" section for the current shape.
+
+The `discover` response previously included live fields per procedure:
 
 ```json
 {
@@ -285,18 +298,21 @@ Each SSE frame is `data: <json>\n\n`.
 | Service implementation | In-process | Separate process via TCP |
 | Concurrent invocations | One per path | Unlimited per path |
 | Timeout | None | 30s default, per-request override |
-| Service status in discover | No | Yes (`serviceStatus`, `activeInvocations`) |
+| Service status in discover<sup>†</sup> | No | (was: `serviceStatus`, `activeInvocations`) |
 | Structured errors | No | Yes (`error.code` + `error.message`) |
 | Auth forwarding | Not specified | Client token forwarded to service |
 | TLS on service channel | No | Yes (port 8300 TLS) |
 | Heartbeat | No | Ping every 15s, pong within 5s |
 | Auto-reconnect | No | SDK built-in with backoff |
 | Cancel propagation | No | Server forwards cancel; `ctx.Done()` in SDK |
-| Service versioning | No | `WithVersion()` + shows in discover |
+| Service versioning<sup>†</sup> | No | `WithVersion()` (was: shown in discover) |
 | Progress percentage | No | `ReportProgressPct()` + `progress` 0-100 field |
 | Validation error details | Generic string | `fields` array with missing field names |
-| Health reporting | No | `ReportHealth()` + `serviceHealth` in discover |
-| Observability metrics | No | `totalInvocations`, `successRate`, `avgDurationMs` in discover |
+| Health reporting<sup>†</sup> | No | `ReportHealth()` (was: `serviceHealth` in discover) |
+| Observability metrics<sup>†</sup> | No | (was: `totalInvocations`, `successRate`, `avgDurationMs` in discover) |
+| Discover depth limiting | No | `depth` mandatory; replaces the old resource filter |
+
+<sup>†</sup> Superseded - see the note under "What's new in v3.3?" above.
 
 ---
 
@@ -324,7 +340,7 @@ OnInvoke(func(ctx *vissServiceSDK.InvokeContext) {
 
 ### 6.2 Service versioning (§27)
 
-Declare a version to make upgrades visible in discover responses:
+Declare a version during registration:
 
 ```go
 vissServiceSDK.NewService(serverAddr, "Root.Proc").
@@ -333,8 +349,8 @@ vissServiceSDK.NewService(serverAddr, "Root.Proc").
     Register()
 ```
 
-Clients see `"version":"2.1.0"` in the discover response alongside
-`serviceStatus`, allowing them to validate compatibility before invoking.
+> **Superseded:** the server stores this version but no longer surfaces it in the discover
+> response - see the note under "What's new in v3.3?" above.
 
 ### 6.3 Progress percentage (§28)
 
@@ -376,28 +392,16 @@ status at any time:
 svc.ReportHealth(false, "seat motor overheated — maintenance required")
 ```
 
-Clients see this in discover:
-
-```json
-"serviceHealth": {
-  "healthy": false,
-  "detail": "seat motor overheated — maintenance required",
-  "updatedAt": "2026-01-15T10:03:00Z"
-}
-```
+> **Superseded:** the server stores the latest health report but no longer surfaces it in the
+> discover response as `serviceHealth` - see the note under "What's new in v3.3?" above.
 
 ### 6.6 Observability metrics (§31)
 
-After the service has processed some requests, discover shows cumulative stats:
+The server accumulates per-path stats (`totalInvocations`, `successRate`, `avgDurationMs`) as
+requests are processed; these reset when the server restarts.
 
-```json
-"totalInvocations": 124,
-"successRate": 0.98,
-"avgDurationMs": 1240
-```
-
-These reset when the server restarts. Use them to surface dashboards or
-orchestration health checks without a separate metrics endpoint.
+> **Superseded:** these counters are no longer surfaced in the discover response - see the note
+> under "What's new in v3.3?" above.
 
 ---
 

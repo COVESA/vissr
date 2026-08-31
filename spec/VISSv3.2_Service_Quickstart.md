@@ -181,10 +181,17 @@ execution itself. Cancelling a **monitor session** only stops updates to that cl
 
 ## Step 7: Discover the service tree
 
+`depth` is mandatory. `"0"` returns every generation below the addressed node;
+`"1"` returns only the addressed node's own metadata (no `children` key at
+all); `"2"` additionally includes its direct children, and so on. The
+`metadata` shape mirrors the VSS Data profile's metadata filter: keyed by the
+addressed node's own name, with descendants nested under a `children` key.
+
 ```json
 {
   "action": "discover",
   "path": "SeatingService.Car.Service",
+  "depth": "0",
   "requestId": "disc-1"
 }
 ```
@@ -195,10 +202,28 @@ Response:
 {
   "action": "discover",
   "metadata": {
-    "MoveSeat": {
-      "type": "procedure",
-      "Input": {"MovementType": {"type": 4, "datatype": "string"}, "Position": {"type": 4, "datatype": "uint8"}},
-      "Output": {"Position": {"type": 4, "datatype": "uint8"}}
+    "Service": {
+      "type": "branch",
+      "children": {
+        "MoveSeat": {
+          "type": "procedure",
+          "children": {
+            "Input": {
+              "type": "iostruct",
+              "children": {
+                "MovementType": {"type": "property", "datatype": "string"},
+                "Position": {"type": "property", "datatype": "uint8"}
+              }
+            },
+            "Output": {
+              "type": "iostruct",
+              "children": {
+                "Position": {"type": "property", "datatype": "uint8"}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "requestId": "disc-1",
