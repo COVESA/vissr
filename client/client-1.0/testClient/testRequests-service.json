@@ -3,14 +3,14 @@
         {
             "action": "discover",
             "path": "VehicleService",
-            "depth": "1",
+            "depth": "0",
             "requestId": "8757"
         }
     ],
     "ws": [
         {
             "action": "discover",
-            "depth": "1",
+            "depth": "0",
             "path": "VehicleService.Seating",
             "requestId": "8758"
         },
@@ -32,7 +32,7 @@
         {
             "action": "discover",
             "path": "VehicleService.Seating",
-            "depth": "1",
+            "depth": "0",
             "requestId": "8764"
         },
         {
