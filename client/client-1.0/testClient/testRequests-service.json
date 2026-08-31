@@ -32,7 +32,7 @@
         {
             "action": "discover",
             "path": "VehicleService.Seating",
-            "depth": "0",
+            "depth": "2",
             "requestId": "8764"
         },
         {
