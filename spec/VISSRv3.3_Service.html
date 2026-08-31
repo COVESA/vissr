@@ -120,13 +120,13 @@ normative text remains in force unless explicitly overridden below.</p>
 <tr><td>§22</td><td>TLS on Service Registration Port</td><td>Optional TLS wrapping for the registration protocol.</td></tr>
 <tr><td>§23</td><td>Server-Sent Events Binding</td><td>SSE frame format for HTTP monitoring event streaming.</td></tr>
 <tr><td>§24</td><td>Service SDK: Auto-Reconnect</td><td><code>WithReconnect</code> builder method with exponential backoff.</td></tr>
-<tr><td>§25</td><td>Discover Response Enrichment</td><td>Live <code>serviceStatus</code> and <code>activeInvocations</code> per procedure in discover response.</td></tr>
+<tr><td>§25</td><td>Discover Response Enrichment <em>(superseded, see note in §25)</em></td><td>Live <code>serviceStatus</code> and <code>activeInvocations</code> per procedure; no longer surfaced by discover.</td></tr>
 <tr><td>§26</td><td>Cancel Propagation to Service Process</td><td>Server forwards <code>cancel</code> to service process; SDK exposes <code>ctx.Done()</code> channel.</td></tr>
-<tr><td>§27</td><td>Service Versioning</td><td>Optional <code>version</code> field in registration; surfaced in discover response.</td></tr>
+<tr><td>§27</td><td>Service Versioning <em>(discover surfacing superseded)</em></td><td>Optional <code>version</code> field in registration; no longer surfaced by discover.</td></tr>
 <tr><td>§28</td><td>Progress Percentage Field</td><td>Optional 0-100 <code>progress</code> integer in ONGOING updates; fanned out in monitoring events.</td></tr>
 <tr><td>§29</td><td>Structured Input Validation Errors</td><td>Validation failures include a <code>fields</code> array naming each missing Input parameter.</td></tr>
-<tr><td>§30</td><td>Service Health Reporting</td><td>Service sends health status; server exposes <code>serviceHealth</code> in discover response; SDK auto-sends on register.</td></tr>
-<tr><td>§31</td><td>Observability Metrics in Discover</td><td>Per-path counters: <code>totalInvocations</code>, <code>successRate</code>, <code>avgDurationMs</code> in discover response.</td></tr>
+<tr><td>§30</td><td>Service Health Reporting <em>(discover surfacing superseded)</em></td><td>Service sends health status; no longer surfaced by discover; SDK auto-sends on register.</td></tr>
+<tr><td>§31</td><td>Observability Metrics <em>(discover surfacing superseded)</em></td><td>Per-path counters: <code>totalInvocations</code>, <code>successRate</code>, <code>avgDurationMs</code>; no longer surfaced by discover.</td></tr>
 </tbody>
 </table>
 
@@ -711,9 +711,20 @@ svc.Run() // reconnects automatically on disconnect</pre>
 <p>If <code>WithReconnect</code> is not called (the default), <code>Run()</code> exits
 immediately when the connection closes.</p>
 
-<h2 id="discover-enrichment">§25. Discover Response Enrichment <span class="new">[NEW in 3.3]</span></h2>
+<h2 id="discover-enrichment">§25. Discover Response Enrichment <span class="new">[NEW in 3.3, superseded]</span></h2>
 
-<p>In addition to the HIM tree structure, the discover response in VISSv3.3 includes two
+<p class="note"><strong>Note:</strong> as of the reference implementation's adoption of the Data
+profile's HIM-tree metadata-generation pattern for discover (see §6.4), the discover response's
+<code>metadata</code> is produced by a generic tree walk and no longer includes the live-status
+fields <code>serviceStatus</code>/<code>activeInvocations</code> described in this section, nor
+the <code>version</code>/<code>serviceHealth</code>/<code>totalInvocations</code>/
+<code>successRate</code>/<code>avgDurationMs</code> fields described in §27/§30/§31 below. The
+server-side code that computes these fields (<code>vissServiceMgr.HandleDiscover</code> and its
+helpers) is retained, unused, for potential reuse as a future post-processing step layered on top
+of the tree walk. This section is kept for historical/design-intent reference; the fields it
+describes are not currently present on the wire.</p>
+
+<p>Previously, in addition to the HIM tree structure, the discover response included two
 live-status fields for each procedure node:</p>
 
 <table>
@@ -725,7 +736,7 @@ live-status fields for each procedure node:</p>
 </table>
 
 <p>Example discover response for a procedure with a connected service and two active
-invocations:</p>
+invocations (previous, superseded shape):</p>
 
 <pre>{
   "action": "discover",
@@ -783,24 +794,22 @@ server sends a cancel:</p>
     ctx.ReportProgress("SUCCESSFUL", result)
 })</pre>
 
-<h2 id="service-versioning">§27. Service Versioning <span class="new">[NEW in 3.3]</span></h2>
+<h2 id="service-versioning">§27. Service Versioning <span class="new">[NEW in 3.3, discover surfacing superseded]</span></h2>
 
 <p>A service process MAY declare a version string during registration:</p>
 
 <pre>{"action":"register","path":"Root.Proc","version":"1.2.0","signature":{...}}</pre>
 
-<p>The server stores this version and includes it in the discover response:</p>
+<p>The server stores this version.</p>
 
-<pre>"MoveSeat": {
-  "type": "procedure",
-  "version": "1.2.0",
-  ...
-}</pre>
+<p class="note"><strong>Note:</strong> the server previously included this version in the
+discover response (<code>"MoveSeat":{"type":"procedure","version":"1.2.0",...}</code>). As
+described in §25's note, discover's <code>metadata</code> is now produced by a generic HIM-tree
+walk that does not surface it; the stored version is retained server-side, unused by discover, for
+potential future reuse.</p>
 
-<p>The version string is opaque to the server; it is copied verbatim into discover
-responses. The RECOMMENDED format is <a href="https://semver.org/">Semantic Versioning</a>
-(<em>MAJOR.MINOR.PATCH</em>). If the field is absent the server MUST NOT include
-<code>"version"</code> in the discover response.</p>
+<p>The version string is opaque to the server. The RECOMMENDED format is
+<a href="https://semver.org/">Semantic Versioning</a> (<em>MAJOR.MINOR.PATCH</em>).</p>
 
 <p>SDK usage:</p>
 
@@ -865,7 +874,7 @@ the invoke request. This is a strict superset of the v3.2 error response, which
 carried only the <code>description</code> string. Clients SHOULD inspect <code>fields</code> to provide
 actionable feedback to users or to retry with corrected input.</p>
 
-<h2 id="service-health">§30. Service Health Reporting <span class="new">[NEW in 3.3]</span></h2>
+<h2 id="service-health">§30. Service Health Reporting <span class="new">[NEW in 3.3, discover surfacing superseded]</span></h2>
 
 <p>A service process MAY send a health status message to the server at any time:</p>
 
@@ -874,19 +883,12 @@ actionable feedback to users or to retry with corrected input.</p>
 <p>The <code>healthy</code> field (boolean, required) indicates operational status. The <code>detail</code>
 field (string, optional) provides a human-readable description of the current state.</p>
 
-<p>The server stores the latest health report per connection and includes it in discover
-responses when at least one health report has been received:</p>
+<p>The server stores the latest health report per connection.</p>
 
-<pre>"MoveSeat": {
-  "type": "procedure",
-  "serviceStatus": "registered",
-  "serviceHealth": {
-    "healthy": true,
-    "detail": "running normally",
-    "updatedAt": "2026-01-15T10:00:01Z"
-  },
-  ...
-}</pre>
+<p class="note"><strong>Note:</strong> the server previously included this in discover responses
+as a <code>serviceHealth</code> object. As described in §25's note, discover's
+<code>metadata</code> is now produced by a generic HIM-tree walk that does not surface it; the
+stored health report is retained server-side, unused by discover, for potential future reuse.</p>
 
 <p>The SDK automatically sends <code>{"action":"health","healthy":true,"detail":"running"}</code>
 immediately after successful registration. Services MAY call <code>ReportHealth</code> at any
@@ -894,14 +896,10 @@ time to update the server's view:</p>
 
 <pre>svc.ReportHealth(false, "seat motor overheated")</pre>
 
-<p>If no health report has been received, <code>serviceHealth</code> is absent from the discover
-response (rather than <code>null</code>). Clients SHOULD treat absence as "unknown" rather
-than "unhealthy".</p>
+<h2 id="observability-metrics">§31. Observability Metrics <span class="new">[NEW in 3.3, discover surfacing superseded]</span></h2>
 
-<h2 id="observability-metrics">§31. Observability Metrics in Discover <span class="new">[NEW in 3.3]</span></h2>
-
-<p>The server accumulates per-path invocation counters and exposes them in the discover
-response. Counters are maintained in memory and reset when the server restarts.</p>
+<p>The server accumulates per-path invocation counters. Counters are maintained in memory and
+reset when the server restarts.</p>
 
 <table>
 <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
@@ -912,32 +910,11 @@ response. Counters are maintained in memory and reset when the server restarts.<
 </tbody>
 </table>
 
-<p>Example discover response with observability metrics:</p>
-
-<pre>{
-  "action": "discover",
-  "metadata": {
-    "MoveSeat": {
-      "type": "procedure",
-      "version": "1.2.0",
-      "serviceStatus": "registered",
-      "serviceHealth": {"healthy": true, "detail": "running", "updatedAt": "2026-01-15T10:00:01Z"},
-      "activeInvocations": 1,
-      "totalInvocations": 124,
-      "successRate": 0.98,
-      "avgDurationMs": 1240,
-      "Input": {...},
-      "Output": {...}
-    }
-  },
-  "requestId": "disc-2",
-  "ts": "2026-01-15T10:05:00Z"
-}</pre>
-
-<p>Client-side behaviour: <code>totalInvocations == 0</code> indicates the procedure has never
-been invoked since the server started (or since the path was last registered). In
-this case <code>successRate</code> and <code>avgDurationMs</code> are absent and clients MUST NOT
-interpret their absence as failure.</p>
+<p class="note"><strong>Note:</strong> these counters were previously exposed in the discover
+response alongside <code>serviceStatus</code>/<code>activeInvocations</code>/<code>version</code>/
+<code>serviceHealth</code> (see §25's note). As described there, discover's <code>metadata</code>
+is now produced by a generic HIM-tree walk that does not surface them; the counters are retained
+server-side, unused by discover, for potential future reuse.</p>
 
 <hr>
 <p><em>This document is the VISSv3.3-Services alpha specification.

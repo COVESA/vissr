@@ -551,16 +551,21 @@ mandatory in case the service signature specifies it:</p>
 
 <p class="req-star">(*) : If it is not specified in the service signature then the parameter shall be omitted.</p>
 
-<h3 id="discover">6.4 Service Discovery</h3>
+<h3 id="discover">6.4 Discover</h3>
 
 <p>Purpose: Retrieve metadata describing one or more services.<br>
 The metadata describes a service and declares its signature.<br>
-Request arguments, of which path is mandatory:</p>
+Request arguments, of which path and depth are mandatory:</p>
 
 <ul>
   <li><strong>path</strong>: The path to a node with the node type branch or procedure.</li>
+  <li><strong>depth</strong>: The max number of descendant generations that are returned.</li>
   <li><strong>authorization</strong>: The authorization token.</li>
 </ul>
+
+<p>The path must either address a procedure node or a branch node that is not a descendant node to a procedure node.<br>
+Depth must be an integer greater than or equal to zero. Zero returns all generations.<br>
+Metadata for all instances of a multiplexed service are returned.</p>
 
 <p>Success response arguments of which metadata and timestamp are mandatory:</p>
 
@@ -572,8 +577,9 @@ Request arguments, of which path is mandatory:</p>
 <table>
 <thead><tr><th>Object Name</th><th>Attribute</th><th>Type</th><th>Required</th></tr></thead>
 <tbody>
-<tr><td rowspan="4"><strong>discoveryRequest</strong></td><td>action</td><td>Action</td><td>Yes</td></tr>
+<tr><td rowspan="5"><strong>discoveryRequest</strong></td><td>action</td><td>Action</td><td>Yes</td></tr>
 <tr><td>path</td><td>string</td><td>Yes</td></tr>
+<tr><td>depth</td><td>string</td><td>Yes</td></tr>
 <tr><td>authorization</td><td>string</td><td>Optional</td></tr>
 <tr><td>requestId</td><td>string</td><td>Yes</td></tr>
 </tbody>
@@ -760,14 +766,18 @@ lead to that a monitoring session is started. This session can be canceled by th
     "ts":"2025-04-15T13:37:05Z"
 }</pre>
 
-<h3 id="example-discover">9.4 Service Discovery Example</h3>
+<h3 id="example-discover">9.4 Discover Example</h3>
 
-<p>The service discovery request returns metadata describing one or more services.</p>
+<p>The discover request returns metadata describing one or more services. The metadata is a JSON
+representation of the addressed subtree, using the same node-name-keyed/nested-<code>children</code>
+tree shape as the VSS Data profile's metadata filter (<code>action:"get"</code>,
+<code>filter.variant:"metadata"</code>) - see the VISSv3.2 [[CORE]] specification.</p>
 
 <p><strong>Request:</strong></p>
 <pre>{
     "action": "discover",
     "path": "VehicleService.Seating",
+    "depth": "0",
     "requestId": "5687"
 }</pre>
 
@@ -775,29 +785,53 @@ lead to that a monitoring session is started. This session can be canceled by th
 <pre>{
     "action": "discover",
     "metadata": {
-        "MoveSeat": {
-          "type": "procedure",
-          "description": "Performs all supported seat movements."
-        },
-        "MoveSeat.Input": {
-          "type": "iostruct",
-          "description": "Input parameters= (MovementType, Position, Credentials)."
-        },
-        "MoveSeat.Input.MovementType": {
-          "type": "property",
-          "datatype": "string",
-          "description": "Type of movement. Supported types are retrieved via Seating.GetProperties()."
-        },
-        "MoveSeat.Input.Position": {
-          "type": "property",
-          "datatype": "Types.Common.Percentage",
-          "description": "Final position of the movement, expressed as a percentage."
-        },
-......
+        "Seating": {
+            "type": "branch",
+            "description": "Seating related services.",
+            "children": {
+                "MoveSeat": {
+                    "type": "procedure",
+                    "description": "Performs all supported seat movements.",
+                    "children": {
+                        "Input": {
+                            "type": "iostruct",
+                            "children": {
+                                "MovementType": {
+                                    "type": "property",
+                                    "datatype": "string",
+                                    "description": "Type of movement. Supported types are retrieved via Seating.GetProperties()."
+                                },
+                                "Position": {
+                                    "type": "property",
+                                    "datatype": "Types.Common.Percentage",
+                                    "description": "Final position of the movement, expressed as a percentage."
+                                }
+                            }
+                        },
+                        "Output": {
+                            "type": "iostruct",
+                            "children": {
+                                "Position": {
+                                    "type": "property",
+                                    "datatype": "Types.Common.Percentage",
+                                    "description": "Current position of the seat, expressed as a percentage."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     },
     "requestId": "5687",
     "ts":"2025-04-15T13:37:05Z"
 }</pre>
+
+<p>Depth limits how many generations below the addressed node are included: <code>depth:"1"</code> would
+return only <code>Seating</code>'s own metadata (no <code>children</code> key at all);
+<code>depth:"2"</code> would additionally include <code>MoveSeat</code> but not its own
+<code>Input</code>/<code>Output children</code>; <code>depth:"0"</code> (used above) returns every
+generation.</p>
 
 <h3 id="example-error">9.5 Error Response Example</h3>
 
