@@ -496,24 +496,23 @@ func initGrpcSession() *grpc.ClientConn {
 	return conn
 }
 
-// performGrpcCommand does not support the Service profile actions "invoke"
-// and "monitor". Unlike ws/http/uds/mqtt, gRPC is strictly typed on the
-// wire: VISSv3.1.proto only declares GetRequest/SetRequest/SubscribeRequest/
-// UnsubscribeRequest RPCs, and GetRequestMessage/SetRequestMessage have no
-// "input" field and no way to carry action=invoke/monitor - the server's
-// GetRequest/SetRequest handlers (grpcMgr.go) hardcode the resulting JSON's
-// "action" to "get"/"set" regardless of what is sent. Adding gRPC support
-// for the Service profile requires extending the .proto with new message
-// types and RPC methods (e.g. InvokeRequest/MonitorRequest), regenerating
-// the generated pb.go code, and implementing matching handlers in
-// grpcMgr.go - this is out of scope for the test client alone.
 func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 	var reqMap map[string]interface{}
 	utils.MapRequest(vssRequest, &reqMap)
 	fmt.Printf("Request=:%s\n", vssRequest)
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	action, _ := reqMap["action"].(string)
+	// invoke/monitor streams stay open for as long as the invocation runs
+	// (e.g. an ActivateMassage session lasts Duration+ seconds); give them
+	// more headroom than the plain request/response actions, up to a bit
+	// past the server's own DefaultTimeout (vissServiceMgr.go, 30s) so a
+	// stuck session is still bounded.
+	timeout := 6 * time.Second
+	if action == "invoke" || action == "monitor" {
+		timeout = 40 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	switch reqMap["action"].(string) {
+	switch action {
 	case "get":
 		pbRequest := utils.GetRequestJsonToPb(vssRequest)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
@@ -566,6 +565,83 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 			fmt.Printf("Response:%s\n\n", vssResponse)
 		} else {
 			fmt.Printf("Response error:%s\n", err)
+		}
+	case "invoke":
+		pbRequest := utils.InvokeRequestJsonToPb(vssRequest)
+		stream, err := client.InvokeRequest(ctx, pbRequest)
+		if err == nil {
+			performGrpcServiceStream(vssRequest, func() (string, error) {
+				pbResponse, err := stream.Recv()
+				if err != nil {
+					return "", err
+				}
+				return utils.InvokeStreamPbToJson(pbResponse), nil
+			})
+		} else {
+			fmt.Printf("Response error:%s\n", err)
+		}
+	case "monitor":
+		pbRequest := utils.MonitorRequestJsonToPb(vssRequest)
+		stream, err := client.MonitorRequest(ctx, pbRequest)
+		if err == nil {
+			performGrpcServiceStream(vssRequest, func() (string, error) {
+				pbResponse, err := stream.Recv()
+				if err != nil {
+					return "", err
+				}
+				return utils.MonitorStreamPbToJson(pbResponse), nil
+			})
+		} else {
+			fmt.Printf("Response error:%s\n", err)
+		}
+	case "cancel":
+		pbRequest := utils.CancelRequestJsonToPb(vssRequest)
+		pbResponse, err := client.CancelRequest(ctx, pbRequest)
+		if err == nil {
+			vssResponse := utils.CancelResponsePbToJson(pbResponse)
+			fmt.Printf("Response:%s\n\n", vssResponse)
+		} else {
+			fmt.Printf("Response error:%s\n", err)
+		}
+	case "discover":
+		pbRequest := utils.DiscoverRequestJsonToPb(vssRequest)
+		pbResponse, err := client.DiscoverRequest(ctx, pbRequest)
+		if err == nil {
+			vssResponse := utils.DiscoverResponsePbToJson(pbResponse)
+			fmt.Printf("Response:%s\n\n", vssResponse)
+		} else {
+			fmt.Printf("Response error:%s\n", err)
+		}
+	}
+}
+
+// performGrpcServiceStream drives an Invoke/Monitor server-streaming RPC:
+// print the first (synchronous ACK/response) message, and if its status is
+// ONGOING, keep printing subsequent "monitoring" events (via recv, which
+// wraps stream.Recv()+*StreamPbToJson) until a terminal (non-ONGOING)
+// status is received or the stream ends. Mirrors performWsCommand's
+// invoke/monitor handling (testClient.go) for the ws transport.
+func performGrpcServiceStream(vssRequest string, recv func() (string, error)) {
+	vssResponse, err := recv()
+	if err != nil {
+		fmt.Printf("Response error:%s\n", err)
+		return
+	}
+	fmt.Printf("Response:%s\n", vssResponse)
+	if !strings.Contains(vssResponse, `"ONGOING"`) {
+		fmt.Printf("\n")
+		return
+	}
+	for {
+		event, err := recv()
+		if err != nil {
+			fmt.Printf("Event error: %s\n", err)
+			return
+		}
+		fmt.Printf("Event: %s\n", event)
+		if !strings.Contains(event, `"ONGOING"`) {
+			fmt.Printf("Terminating service session\n\n")
+			return
 		}
 	}
 }

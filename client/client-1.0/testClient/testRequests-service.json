@@ -28,6 +28,27 @@
             "requestId": "8760"
         }
     ],
+    "grpc": [
+        {
+            "action": "discover",
+            "path": "VehicleService.Seating",
+            "depth": "1",
+            "requestId": "8764"
+        },
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.GetCapabilities",
+            "filter": {"variant": "none"},
+            "requestId": "8765"
+        },
+        {
+            "action": "invoke",
+            "path": "VehicleService.Seating.MoveSeat",
+            "input": {"MovementType": "longitudinal", "Position": "5"},
+            "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "timebased", "parameter": {"period": "950"}}],
+            "requestId": "8766"
+        }
+    ],
     "uds": [
         {
             "action": "invoke",
