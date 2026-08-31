@@ -559,6 +559,9 @@ func isServiceTree(requestMap map[string]interface{}) bool {
 // dispatchServiceAction routes VISSv3.2/3.3 service actions to vissServiceMgr.
 // HandleInvoke and HandleMonitor receive the full backendChan slice so they
 // can fan out monitoring events to any transport channel.
+//
+// "discover" is handled locally (handleServiceDiscover) rather than by
+// vissServiceMgr.HandleDiscover - see that function's doc comment for why.
 func dispatchServiceAction(requestMap map[string]interface{}, tDChanIndex int) {
 	action, _ := requestMap["action"].(string)
 	switch action {
@@ -567,10 +570,102 @@ func dispatchServiceAction(requestMap map[string]interface{}, tDChanIndex int) {
 	case "monitor":
 		vissServiceMgr.HandleMonitor(requestMap, backendChan)
 	case "discover":
-		vissServiceMgr.HandleDiscover(requestMap, backendChan[tDChanIndex])
+		handleServiceDiscover(requestMap, tDChanIndex)
 	default:
 		utils.Error.Printf("dispatchServiceAction: unexpected action %q", action)
 	}
+}
+
+// handleServiceDiscover processes a VISSv3.2 "discover" action (§6.4) by
+// reusing the Data profile's HIM-tree metadata-generation machinery
+// (synthesizeJsonTree/jsonifyTreeNode) instead of a bespoke Service-profile
+// tree walk. This keeps "metadata describing the addressed subtree" the
+// same shape/behaviour on both profiles: the response is a JSON object
+// keyed by the addressed node's own name, with descendants nested under a
+// "children" key exactly like the signal-tree metadata filter
+// (action=get, filter.variant=metadata) - jsonifyTreeNode is agnostic to
+// node type, so it walks branch/procedure/iostruct/property nodes
+// generically with no Service-profile-specific logic required.
+//
+// "depth" is mandatory: a non-negative integer string ("0" means
+// unlimited/all generations, matching synthesizeJsonTree's existing
+// convention - see the JSON schema for the exact required shape). Per the
+// current Discover spec revision, no "filter" is accepted any more:
+// resource-instance narrowing was removed, so metadata for every instance
+// of a multiplexed procedure is always included (the generic tree walk has
+// no notion of "resource instance" to narrow by in the first place).
+//
+// Adopting synthesizeJsonTree also gets the ATS-based (access-token)
+// authorization pruning of out-of-scope branches "for free" - the previous
+// vissServiceMgr.HandleDiscover implementation had no such pruning.
+//
+// vissServiceMgr.HandleDiscover and its buildServiceMetadata/
+// buildProcedureMetadata*/buildResourceInstanceMetadata/buildIoStructMetadata
+// helpers are intentionally left in place, unused by this dispatch path, in
+// case the live-status enrichment they compute (serviceStatus,
+// activeInvocations, version, serviceHealth, totalInvocations,
+// successRate, avgDurationMs - VISSv3.3 §24/25/27/30/31) is wanted again,
+// e.g. as a future post-processing step layered on top of this tree walk.
+func handleServiceDiscover(requestMap map[string]interface{}, tDChanIndex int) {
+	path, _ := requestMap["path"].(string)
+	requestId, _ := requestMap["requestId"].(string)
+
+	depthStr, ok := requestMap["depth"].(string)
+	if !ok {
+		setErrorAndForward(requestMap, tDChanIndex, 0, "missing/invalid depth") //bad_request
+		return
+	}
+	depth, err := strconv.Atoi(depthStr)
+	if err != nil || depth < 0 {
+		setErrorAndForward(requestMap, tDChanIndex, 0, "depth must be a non-negative integer") //bad_request
+		return
+	}
+
+	VSSTreeRoot := utils.SetRootNodePointer(path)
+	if VSSTreeRoot == nil {
+		setErrorAndForward(requestMap, tDChanIndex, 6, "path not found in service tree") //unavailable_data
+		return
+	}
+
+	tokenContext := getTokenContext(requestMap)
+	if len(tokenContext) == 0 {
+		tokenContext = "Undefined+Undefined+Undefined"
+	}
+	metadataJson := synthesizeJsonTree(path, depth, tokenContext, VSSTreeRoot)
+	if len(metadataJson) == 0 {
+		setErrorAndForward(requestMap, tDChanIndex, 6, "path not found in service tree") //unavailable_data
+		return
+	}
+	// synthesizeJsonTree returns a hand-built JSON string; parse it back
+	// into a map so "metadata" serializes as a native nested JSON object
+	// (matching the discover-message schema's "metadata":"object") rather
+	// than a JSON string containing escaped JSON text.
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(metadataJson), &metadata); err != nil {
+		utils.Error.Printf("handleServiceDiscover: failed to parse synthesized metadata for path=%q: %s", path, err)
+		setErrorAndForward(requestMap, tDChanIndex, 0, "internal metadata generation error") //bad_request
+		return
+	}
+
+	response := map[string]interface{}{
+		"action":    "discover",
+		"metadata":  metadata,
+		"requestId": requestId,
+		"ts":        utils.GetRfcTime(),
+	}
+	// Copy the client-addressing RouterId so the transport manager can route
+	// the reply back and then strip it (mirrors vissServiceMgr.go's
+	// copyRouteFields). Deliberately not copying "routerIndex" - that is a
+	// server-internal transport-channel index serveRequest injected into
+	// requestMap purely for invoke/monitor's async event fan-out; discover
+	// has no async events, and leaking routerIndex onto the wire would
+	// expose an internal implementation detail to the client.
+	for _, k := range []string{"RouterId", "routerId"} {
+		if v, ok := requestMap[k]; ok {
+			response[k] = v
+		}
+	}
+	backendChan[tDChanIndex] <- response
 }
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {

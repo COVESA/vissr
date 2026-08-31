@@ -147,8 +147,21 @@ func TestJsonSchemaValidate_DiscoverRoutedToServiceSchema(t *testing.T) {
 	loadBaseSchema(t)
 	loadServiceSchema(t)
 
-	if got := JsonSchemaValidate(`{"action":"discover","path":"Vehicle","requestId":"2"}`); got != "" {
+	if got := JsonSchemaValidate(`{"action":"discover","path":"Vehicle","depth":"0","requestId":"2"}`); got != "" {
 		t.Errorf("valid discover rejected = %q; want \"\"", got)
+	}
+}
+
+// TestJsonSchemaValidate_DiscoverMissingDepth_Rejected confirms "depth" is
+// now a required discoveryRequest field (per the Discover spec revision:
+// depth replaces the resource filter, and metadata for all instances of a
+// multiplexed service is always returned).
+func TestJsonSchemaValidate_DiscoverMissingDepth_Rejected(t *testing.T) {
+	loadBaseSchema(t)
+	loadServiceSchema(t)
+
+	if got := JsonSchemaValidate(`{"action":"discover","path":"Vehicle","requestId":"2"}`); got == "" {
+		t.Error("discover without depth was accepted; want rejection")
 	}
 }
 
@@ -244,26 +257,26 @@ func TestJsonSchemaValidate_ResourceFilterArray_MonitorFirst(t *testing.T) {
 	}
 }
 
-// TestJsonSchemaValidate_ResourceFilterStandalone confirms a bare
-// {"variant":"resource",...} single-object filter (no array) validates, per
-// the merged spec text allowing a resource filter alone.
-func TestJsonSchemaValidate_ResourceFilterStandalone(t *testing.T) {
+// TestJsonSchemaValidate_DiscoverIgnoresLeftoverFilterProperty confirms a
+// discover request carrying a leftover "filter" property (from the older,
+// now-removed resource-filter-based narrowing) still validates as long as
+// "depth" is present — discover-message doesn't reference "filter" in its
+// $defs at all any more, and additionalProperties is unset (defaults to
+// allowed) throughout this schema, so an extra unrecognised property is not
+// itself a validation error.
+func TestJsonSchemaValidate_DiscoverIgnoresLeftoverFilterProperty(t *testing.T) {
 	loadBaseSchema(t)
 	loadServiceSchema(t)
 
 	req := `{
 		"action": "discover",
 		"path": "VehicleService.Seating.MoveSeat",
+		"depth": "0",
 		"filter": {"variant": "resource", "parameter": ["Row1.DriverSide"]},
 		"requestId": "d1"
 	}`
-	// discover-message doesn't reference "filter" in its $defs (HandleDiscover
-	// parses it directly from the request map), so this only exercises that
-	// the base object schema doesn't reject the extra "filter" property —
-	// additionalProperties is unset (defaults to allowed) throughout this
-	// schema, so this must still pass.
 	if got := JsonSchemaValidate(req); got != "" {
-		t.Errorf("discover with a standalone resource filter rejected = %q; want \"\"", got)
+		t.Errorf("discover with depth and a leftover filter property rejected = %q; want \"\"", got)
 	}
 }
 
