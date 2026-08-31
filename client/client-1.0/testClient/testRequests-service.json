@@ -44,7 +44,7 @@
         {
             "action": "invoke",
             "path": "VehicleService.Seating.MoveSeat",
-            "input": {"MovementType": "longitudinal", "Position": "10"},
+            "input": {"MovementType": "longitudinal", "Position": "5"},
             "filter": [{"variant": "resource", "parameter": ["Row1.DriverSide"]}, {"variant": "timebased", "parameter": {"period": "950"}}],
             "requestId": "8766"
         }
