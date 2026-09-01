@@ -19,7 +19,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+// grpcChannelSendTimeout caps how long UnsubscribeRequest will wait when
+// forwarding a kill message to the originally-subscribing SubscribeRequest
+// stream's per-call channel. If that stream's goroutine is gone or stuck
+// (e.g. mid stream.Send on a slow connection), this bounds the wait rather
+// than blocking the unsubscribe caller's own RPC indefinitely. Mirrors
+// udsMgr.go's channelSendTimeout convention.
+const grpcChannelSendTimeout = 5 * time.Second
 
 var grpcCompression utils.Encoding
 var grpcMgrId int
@@ -105,8 +114,28 @@ func updateGrpcRoutingData(clientId int, subscriptionId string) {
 	}
 }
 
-func getSubscribeRoutingData(unsubResp string) (int, chan string) {
-	subscriptionId := getSubscriptionId(unsubResp)
+// getSubscribeRoutingData looks up the clientId/response-channel pair for
+// the SubscribeRequest stream that owns subscriptionId. Takes the plain
+// subscriptionId string directly (mirroring getServiceRoutingData's
+// shape) rather than a JSON blob to parse - callers that have a JSON
+// response to extract it from should call getSubscriptionId first.
+//
+// Returns (-1, nil) when subscriptionId is empty. This guard matters:
+// every never-yet-subscribed or freshly-reset grpcRoutingDataList slot has
+// SubscriptionId at its Go zero-value "" (see resetGrpcRoutingData), so an
+// unguarded empty-string lookup would spuriously "find" the first such
+// unrelated slot - either an unallocated one (whose GrpcRespChannel is
+// also nil, so a caller sending into it deadlocks) or a live client that
+// simply hasn't subscribed to anything yet. This was previously reachable
+// via killSubscribeStream's predecessor code path, which looked up the
+// subscribe-side channel using the *response*'s subscriptionId field -
+// but the real unsubscribe ACK never carries one (see killSubscribeStream
+// for the full explanation), making that empty-string lookup a real,
+// reachable, un-guarded bug.
+func getSubscribeRoutingData(subscriptionId string) (int, chan string) {
+	if subscriptionId == "" {
+		return -1, nil
+	}
 	grpcStateMu.Lock()
 	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
@@ -153,7 +182,16 @@ func updateGrpcServiceRoutingData(clientId int, serviceId string) {
 // clientId - assigned asynchronously by the manager hub - from the ACK
 // response they just received, so it can be used later to cancel the
 // session on stream disconnect.
+//
+// Returns -1 when serviceId is empty, for the same reason
+// getSubscribeRoutingData guards against an empty subscriptionId: every
+// never-yet-assigned or freshly-reset slot also has ServiceId=="" (Go zero
+// value), so an unguarded empty lookup would spuriously match an unrelated
+// slot.
 func getServiceRoutingData(serviceId string) int {
+	if serviceId == "" {
+		return -1
+	}
 	grpcStateMu.Lock()
 	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
@@ -200,13 +238,35 @@ func setGrpcRoutingData(clientId int, grpcRespChan chan string, isMultipleEvent 
 	return false
 }
 
+// resetGrpcRoutingData frees clientId's routing slot. clientId == -1 is
+// the "no client assigned yet" sentinel (e.g. SubscribeRequest's
+// subscribeClientId before any response has arrived) and must never be
+// looked up here: since every unallocated slot's own ClientId is also -1
+// (see iniGrpcRoutingDataList), an unguarded call would match the first
+// unallocated slot and then call resetClientIdLocked(-1), which panics on
+// grpcClientIndexList[-1] - an unrecovered panic in this single-threaded
+// hub goroutine crashes the entire gRPC server process. This was
+// previously reachable simply by a client opening a SubscribeRequest
+// stream and disconnecting before the manager hub's first response
+// arrived (stream.Context().Done() fires with subscribeClientId still at
+// its initial -1).
 func resetGrpcRoutingData(clientId int) {
+	if clientId < 0 {
+		return
+	}
 	utils.Info.Printf("resetGrpcRoutingData:clientId=%d", clientId)
 	grpcStateMu.Lock()
 	defer grpcStateMu.Unlock()
 	for i := 0; i < MAXGRPCCLIENTS; i++ {
 		if grpcRoutingDataList[i].ClientId == clientId {
 			grpcRoutingDataList[i].ClientId = -1
+			// Clear stale SubscriptionId/ServiceId too, so a future lookup
+			// with an empty string (guarded against above/in
+			// getSubscribeRoutingData/getServiceRoutingData, but defense in
+			// depth) can never match this now-freed slot by leftover data
+			// from a previous occupant.
+			grpcRoutingDataList[i].SubscriptionId = ""
+			grpcRoutingDataList[i].ServiceId = ""
 			resetClientIdLocked(clientId)
 			break
 		}
@@ -235,10 +295,17 @@ func RemoveRoutingForwardResponse(response string) {
 func updateRoutingList(resp string, clientId int, isMultipleEvent bool) {
 	utils.Info.Printf("updateRoutingList:message=%s", resp)
 	if strings.Contains(resp, "unsubscribe") {
-		_, subscribeChan := getSubscribeRoutingData(resp)
-		subscribeChan <- resp
+		// The unsubscribe ACK is addressed back to whoever sent the
+		// unsubscribe request (clientId here) via the ordinary RouterId
+		// routing RemoveRoutingForwardResponse already performed - there is
+		// nothing left to do beyond freeing this caller's own routing slot.
+		// (Terminating the SIBLING SubscribeRequest stream that owned the
+		// subscription is handled synchronously by the UnsubscribeRequest
+		// RPC handler itself, via killSubscribeStream, using the
+		// subscriptionId from the client's own unsubscribe REQUEST - not
+		// from this response, which never carries one; see
+		// killSubscribeStream's doc comment.)
 		resetGrpcRoutingData(clientId)
-		//utils.Info.Printf("updateRoutingList:unsubscribe clientid=%s, subscription clientid=%s", clientId, subscribeClientId)
 	} else if strings.Contains(resp, `"action":"monitoring"`) {
 		// VISSv3.2 Service profile monitoring event: keep the routing entry
 		// alive while ONGOING (further events for this invoke/monitor
@@ -374,8 +441,62 @@ func (s *Server) SetRequest(ctx context.Context, in *pb.SetRequestMessage) (*pb.
 }
 
 func (s *Server) UnsubscribeRequest(ctx context.Context, in *pb.UnsubscribeRequestMessage) (*pb.UnsubscribeResponseMessage, error) {
+	// Terminate the sibling SubscribeRequest stream that owns this
+	// subscription, using the subscriptionId carried on THIS request - see
+	// killSubscribeStream's doc comment for why the response-based
+	// cross-routing this replaced was broken.
+	killSubscribeStream(in.GetSubscriptionId())
 	vssResp := dispatchGrpcUnaryRequest(utils.UnsubscribeRequestPbToJson(in))
 	return utils.UnsubscribeResponseJsonToPb(vssResp), nil
+}
+
+// killSubscribeStream terminates the SubscribeRequest stream that owns
+// subscriptionId, by sending it the KILL_MESSAGE it already understands
+// (see classifySubscribeResponse/extractClientId in SubscribeRequest's
+// loop below).
+//
+// This replaces a previous mechanism that tried to achieve the same thing
+// by piggy-backing on the unsubscribe-ACK RESPONSE: updateRoutingList's
+// "unsubscribe" branch would extract a "subscriptionId" field from the
+// ACK, look up the subscribing stream by it, and forward the ACK itself
+// as a makeshift kill signal. That never worked, because the real
+// unsubscribe ACK the server core produces (serviceMgr.go's
+// buildServiceResponseMap/handleServiceUnsubscribe) - and the gRPC
+// UnsubscribeResponseMessage proto itself - never carries a
+// "subscriptionId" field at all (only the REQUEST does; a client supplies
+// it to say what to unsubscribe from, but the server has no reason to
+// echo it back). So the old lookup always resolved subscriptionId="",
+// which - since every never-yet-subscribed or freshly-reset
+// grpcRoutingDataList slot also has SubscriptionId at its Go zero-value
+// "" - matched an unrelated slot. If that slot was unallocated
+// (ClientId==-1), its GrpcRespChannel was also nil, and sending into it
+// blocked forever inside GrpcMgrInit's single-threaded hub loop,
+// deadlocking every gRPC client, not just the one unsubscribing. If the
+// matched slot instead belonged to a live but unrelated client, the ACK
+// got misrouted into that client's own response channel.
+//
+// This function sidesteps all of that by using the subscriptionId
+// supplied on the UNSUBSCRIBE REQUEST itself (always present and
+// reliable - the request schema requires it), rather than trying to
+// extract one from a response that structurally never has it, and by
+// signalling the target stream directly rather than routing through the
+// manager hub's single-threaded response path at all.
+func killSubscribeStream(subscriptionId string) {
+	if subscriptionId == "" {
+		return
+	}
+	clientId, ch := getSubscribeRoutingData(subscriptionId)
+	if ch == nil {
+		// No active SubscribeRequest stream owns this id (already
+		// terminated, or the id was never valid) - nothing to kill.
+		return
+	}
+	killMsg := KILL_MESSAGE + " clientId:" + strconv.Itoa(clientId)
+	select {
+	case ch <- killMsg:
+	case <-time.After(grpcChannelSendTimeout):
+		utils.Error.Printf("killSubscribeStream: send timed out for clientId=%d, subscriptionId=%s", clientId, subscriptionId)
+	}
 }
 
 func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS_SubscribeRequestServer) error {
@@ -403,7 +524,7 @@ func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS
 				return nil
 			}
 			if subscribeClientId == -1 {
-				subscribeClientId, _ = getSubscribeRoutingData(vssResp)
+				subscribeClientId, _ = getSubscribeRoutingData(getSubscriptionId(vssResp))
 			}
 			pbResp := utils.SubscribeStreamJsonToPb(vssResp)
 			if err := stream.Send(pbResp); err != nil {
