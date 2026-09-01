@@ -7,6 +7,7 @@ package grpcMgr
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -276,9 +277,7 @@ func TestGetSubscribeRoutingData_FindsBySubscriptionId(t *testing.T) {
 	setGrpcRoutingData(id, ch, true)
 	updateGrpcRoutingData(id, "sub-ABCD")
 
-	// Build a minimal subscribe-response JSON that getSubscriptionId can parse.
-	resp := `{"action":"subscription","subscriptionId":"sub-ABCD"}`
-	gotId, gotCh := getSubscribeRoutingData(resp)
+	gotId, gotCh := getSubscribeRoutingData("sub-ABCD")
 	if gotId != id {
 		t.Fatalf("getSubscribeRoutingData: clientId = %d; want %d", gotId, id)
 	}
@@ -293,8 +292,7 @@ func TestGetSubscribeRoutingData_MissingId(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	resp := `{"action":"subscription","subscriptionId":"sub-NOTFOUND"}`
-	gotId, gotCh := getSubscribeRoutingData(resp)
+	gotId, gotCh := getSubscribeRoutingData("sub-NOTFOUND")
 	if gotId != -1 {
 		t.Fatalf("getSubscribeRoutingData on missing id = %d; want -1", gotId)
 	}
@@ -303,20 +301,25 @@ func TestGetSubscribeRoutingData_MissingId(t *testing.T) {
 	}
 }
 
-// TestGetSubscribeRoutingData_MalformedJSON: a non-JSON response must
-// not panic; it should return -1 and nil.
-func TestGetSubscribeRoutingData_MalformedJSON(t *testing.T) {
+// TestGetSubscribeRoutingData_EmptyId: an empty subscriptionId (e.g. from
+// a response that never carries one, such as the real unsubscribe ACK -
+// see killSubscribeStream's doc comment) must return -1/nil, never match
+// an unrelated never-yet-subscribed slot whose SubscriptionId is also at
+// its Go zero-value "".
+func TestGetSubscribeRoutingData_EmptyId(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("getSubscribeRoutingData panicked on malformed JSON: %v", r)
-		}
-	}()
-	gotId, gotCh := getSubscribeRoutingData(`{not valid json}`)
+	// Occupy a slot that has never had updateGrpcRoutingData called on it,
+	// so its SubscriptionId is "" - the exact condition that used to be
+	// misrouted-to/deadlocked-on.
+	if id := getClientId(); id != -1 {
+		setGrpcRoutingData(id, make(chan string, 1), false)
+	}
+
+	gotId, gotCh := getSubscribeRoutingData("")
 	if gotId != -1 || gotCh != nil {
-		t.Logf("getSubscribeRoutingData on bad JSON: id=%d ch=%v (both -1/nil expected)", gotId, gotCh)
+		t.Fatalf("getSubscribeRoutingData(\"\") = (%d, %v); want (-1, nil)", gotId, gotCh)
 	}
 }
 
@@ -406,25 +409,18 @@ func TestUpdateRoutingList_SubscribeErrorResetsClientId(t *testing.T) {
 	}
 }
 
-// TestUpdateRoutingList_UnsubscribeForwardsAndResets: an "unsubscribe"
-// response must forward to the subscribe channel and reset the client.
-// We simulate both the subscribe-side and unsubscribe-side clientIds.
-func TestUpdateRoutingList_UnsubscribeForwardsAndResets(t *testing.T) {
+// TestUpdateRoutingList_UnsubscribeResetsCaller: an "unsubscribe" ACK
+// response must free the CALLER's own routing slot (the client that sent
+// the unsubscribe request). It must NOT try to forward anything to a
+// "subscribe-side" channel looked up via a "subscriptionId" field on the
+// response - the real ACK never carries one (see killSubscribeStream's
+// doc comment on grpcMgr.go); terminating the sibling SubscribeRequest
+// stream is now killSubscribeStream's job, driven by the unsubscribe
+// REQUEST's own subscriptionId, tested separately below.
+func TestUpdateRoutingList_UnsubscribeResetsCaller(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	// Set up the subscribe-side channel. getSubscribeRoutingData looks
-	// up by subscriptionId, so we need a routing entry with a matching
-	// subscriptionId.
-	subCh := make(chan string, 1)
-	subId := getClientId()
-	if subId == -1 {
-		t.Fatalf("no free slot for subscribe client")
-	}
-	setGrpcRoutingData(subId, subCh, true)
-	updateGrpcRoutingData(subId, "sub-UNSUB")
-
-	// Set up the unsubscribe-side channel.
 	unsubCh := make(chan string, 1)
 	unsubId := getClientId()
 	if unsubId == -1 {
@@ -432,33 +428,67 @@ func TestUpdateRoutingList_UnsubscribeForwardsAndResets(t *testing.T) {
 	}
 	setGrpcRoutingData(unsubId, unsubCh, false)
 
-	// The "unsubscribe" response carries the subscriptionId so
-	// getSubscribeRoutingData can find the subscribe-side channel.
-	resp := `{"action":"unsubscribe","subscriptionId":"sub-UNSUB"}`
+	// The real production ACK shape: no "subscriptionId" field.
+	resp := `{"action":"unsubscribe","requestId":"1","ts":"T"}`
+	updateRoutingList(resp, unsubId, false)
 
-	// updateRoutingList sends on subscribeChan, which blocks unless
-	// consumed. Run it in a goroutine so we can drain subCh.
-	done := make(chan struct{})
-	go func() {
-		updateRoutingList(resp, unsubId, false)
-		close(done)
-	}()
-
-	// Drain the message sent to the subscribe-side channel.
-	select {
-	case got := <-subCh:
-		_ = got
-	case <-done:
-		t.Fatalf("updateRoutingList returned before forwarding to subscribe channel")
-	}
-	<-done
-
-	// The unsubscribe client slot should now be freed.
 	grpcStateMu.Lock()
 	taken := grpcClientIndexList[unsubId]
 	grpcStateMu.Unlock()
 	if taken {
 		t.Fatalf("unsubscribe client slot %d still taken; want freed", unsubId)
+	}
+}
+
+// TestKillSubscribeStream_SendsKillMessageToOwningStream confirms the new
+// mechanism: given the unsubscribe REQUEST's own subscriptionId (always
+// present, unlike the response), killSubscribeStream looks up the
+// SubscribeRequest stream that owns it and sends the KILL_MESSAGE that
+// stream's loop already understands (classifySubscribeResponse/
+// extractClientId).
+func TestKillSubscribeStream_SendsKillMessageToOwningStream(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	subCh := make(chan string, 1)
+	subId := getClientId()
+	if subId == -1 {
+		t.Fatalf("no free slot for subscribe client")
+	}
+	setGrpcRoutingData(subId, subCh, true)
+	updateGrpcRoutingData(subId, "sub-KILL")
+
+	killSubscribeStream("sub-KILL")
+
+	select {
+	case got := <-subCh:
+		if !strings.Contains(got, KILL_MESSAGE) {
+			t.Fatalf("killSubscribeStream sent %q; want it to contain %q", got, KILL_MESSAGE)
+		}
+		if extractClientId(got) != subId {
+			t.Fatalf("killSubscribeStream sent clientId %d (parsed from %q); want %d", extractClientId(got), got, subId)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("killSubscribeStream did not send a kill message within 2s")
+	}
+}
+
+// TestKillSubscribeStream_UnknownSubscriptionId_NoOp: an unknown or empty
+// subscriptionId must be a silent no-op, not a nil-channel send/deadlock.
+func TestKillSubscribeStream_UnknownSubscriptionId_NoOp(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	done := make(chan struct{})
+	go func() {
+		killSubscribeStream("")
+		killSubscribeStream("sub-NEVER-REGISTERED")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("killSubscribeStream blocked on an unknown/empty subscriptionId")
 	}
 }
 
@@ -599,6 +629,82 @@ func (m *mockSubscribeStream) SendHeader(_ metadata.MD) error  { return nil }
 func (m *mockSubscribeStream) SetTrailer(_ metadata.MD)        {}
 func (m *mockSubscribeStream) SendMsg(_ interface{}) error     { return nil }
 func (m *mockSubscribeStream) RecvMsg(_ interface{}) error     { return nil }
+
+// TestSubscribeRequest_DisconnectBeforeAnyResponse_DoesNotPanic
+// reproduces a real crash: a client opens a SubscribeRequest stream and
+// disconnects (context cancelled) before the manager hub has sent back
+// ANY response at all - not even the initial subscribe ack/error. In that
+// case subscribeClientId is still its initial sentinel -1 when
+// ctx.Done() fires, and the Done() branch calls
+// resetGrpcRoutingData(subscribeClientId). Before the fix,
+// resetGrpcRoutingData had no guard against clientId==-1: it matched the
+// first unallocated routing slot (whose ClientId is also -1 by
+// initialisation) and called resetClientIdLocked(-1), which panics on
+// grpcClientIndexList[-1] - an unrecovered panic in this hub goroutine
+// crashes the entire gRPC server process, taking down every other gRPC
+// client too.
+func TestSubscribeRequest_DisconnectBeforeAnyResponse_DoesNotPanic(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	// The Done() branch also calls utils.AddRoutingForwardRequest on
+	// grpcMgrChan; without a receiver that send blocks forever (nil channel
+	// by default in tests). Mirrors
+	// TestSubscribeRequest_NormalEventThenContextCancel's setup.
+	testMgrChan := make(chan string, 4)
+	origMgrChan := grpcMgrChan
+	grpcMgrChan = testMgrChan
+	defer func() { grpcMgrChan = origMgrChan }()
+	go func(ch chan string) {
+		for range ch {
+		}
+	}(testMgrChan)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &mockSubscribeStream{ctx: ctx, cancel: cancel}
+	in := &pb.SubscribeRequestMessage{Path: "Vehicle.Speed", RequestId: "99"}
+
+	srv := &Server{}
+	done := make(chan error, 1)
+	panicked := make(chan interface{}, 1)
+	go func() {
+		// A panic inside SubscribeRequest (running in this goroutine) would
+		// NOT be caught by a defer/recover in the test's own goroutine -
+		// Go panics only propagate within the goroutine they occur in; an
+		// unrecovered panic here would crash the entire test binary. So the
+		// recover must live in THIS goroutine to convert a would-be crash
+		// into a normal test failure.
+		defer func() {
+			if r := recover(); r != nil {
+				panicked <- r
+				return
+			}
+		}()
+		done <- srv.SubscribeRequest(in, stream)
+	}()
+
+	// Consume the initial forwarded request but never reply to it - the
+	// hub simply never gets around to responding before the client hangs
+	// up, which is the scenario under test.
+	select {
+	case <-grpcClientChan[0]:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not forward request to grpcClientChan[0]")
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SubscribeRequest returned error: %v", err)
+		}
+	case r := <-panicked:
+		t.Fatalf("SubscribeRequest panicked on disconnect before any response: %v", r)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SubscribeRequest did not return within 2s")
+	}
+}
 
 // TestSubscribeRequest_ContextCancelledReturnsNil: when the streaming
 // context is cancelled immediately, SubscribeRequest must send the
