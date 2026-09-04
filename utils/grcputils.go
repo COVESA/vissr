@@ -153,6 +153,100 @@ func SetResponseJsonToPb(vssSetResp string) *pb.SetResponseMessage {
 	return pbSetResponseMessage
 }
 
+// MultiGetRequestPbToJson, MultiGetResponseJsonToPb, and their inverse
+// functions bridge the VISSv3.2 Multiple Tree Addressability Read
+// (CORE section 5.1.1.2) MultiGetRequest gRPC RPC to/from the primary
+// JSON payload format, mirroring the Get*PbToJson/Get*JsonToPb
+// functions above.
+func MultiGetRequestPbToJson(pbMultiGetReq *pb.MultiGetRequestMessage) string {
+	return populateJsonFromProtoMultiGetReq(pbMultiGetReq)
+}
+
+func MultiGetResponsePbToJson(pbMultiGetResp *pb.MultiGetResponseMessage) string {
+	return populateJsonFromProtoMultiGetResp(pbMultiGetResp)
+}
+
+func MultiGetRequestJsonToPb(vssMultiGetReq string) *pb.MultiGetRequestMessage {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(vssMultiGetReq), &messageMap)
+	if err != nil {
+		Error.Printf("MultiGetRequestJsonToPb:Unmarshal error data=%s, err=%s", vssMultiGetReq, err)
+		return nil
+	}
+	pbMultiGetRequestMessage := &pb.MultiGetRequestMessage{}
+	createMultiGetRequestPb(pbMultiGetRequestMessage, messageMap)
+	return pbMultiGetRequestMessage
+}
+
+func MultiGetResponseJsonToPb(vssMultiGetResp string) *pb.MultiGetResponseMessage {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(vssMultiGetResp), &messageMap)
+	if err != nil {
+		Error.Printf("MultiGetResponseJsonToPb:Unmarshal error data=%s, err=%s", vssMultiGetResp, err)
+		return nil
+	}
+	pbMultiGetResponseMessage := &pb.MultiGetResponseMessage{}
+	createMultiGetResponsePb(pbMultiGetResponseMessage, messageMap)
+	return pbMultiGetResponseMessage
+}
+
+// MultiSetRequestPbToJson and MultiSetRequestJsonToPb bridge the
+// VISSv3.2 Multiple Data Update (CORE section 5.2.2) MultiSetRequest
+// gRPC RPC to/from the primary JSON payload format. The response uses
+// the existing SetResponseMessage shape (see MultiSetRequest's return
+// type in the .proto), so SetResponsePbToJson/SetResponseJsonToPb
+// above are reused for it.
+func MultiSetRequestPbToJson(pbMultiSetReq *pb.MultiSetRequestMessage) string {
+	return populateJsonFromProtoMultiSetReq(pbMultiSetReq)
+}
+
+func MultiSetRequestJsonToPb(vssMultiSetReq string) *pb.MultiSetRequestMessage {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(vssMultiSetReq), &messageMap)
+	if err != nil {
+		Error.Printf("MultiSetRequestJsonToPb:Unmarshal error data=%s, err=%s", vssMultiSetReq, err)
+		return nil
+	}
+	pbMultiSetRequestMessage := &pb.MultiSetRequestMessage{}
+	createMultiSetRequestPb(pbMultiSetRequestMessage, messageMap)
+	return pbMultiSetRequestMessage
+}
+
+// DiscoverRequestPbToJson, DiscoverResponseJsonToPb, and their inverse
+// functions bridge the CORE section 5.5 Discovery DiscoverRequest gRPC
+// RPC to/from the primary JSON payload format.
+func DiscoverRequestPbToJson(pbDiscoverReq *pb.DiscoverRequestMessage) string {
+	return populateJsonFromProtoDiscoverReq(pbDiscoverReq)
+}
+
+func DiscoverResponsePbToJson(pbDiscoverResp *pb.DiscoverResponseMessage) string {
+	return populateJsonFromProtoDiscoverResp(pbDiscoverResp)
+}
+
+func DiscoverRequestJsonToPb(vssDiscoverReq string) *pb.DiscoverRequestMessage {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(vssDiscoverReq), &messageMap)
+	if err != nil {
+		Error.Printf("DiscoverRequestJsonToPb:Unmarshal error data=%s, err=%s", vssDiscoverReq, err)
+		return nil
+	}
+	pbDiscoverRequestMessage := &pb.DiscoverRequestMessage{}
+	createDiscoverRequestPb(pbDiscoverRequestMessage, messageMap)
+	return pbDiscoverRequestMessage
+}
+
+func DiscoverResponseJsonToPb(vssDiscoverResp string) *pb.DiscoverResponseMessage {
+	var messageMap map[string]interface{}
+	err := json.Unmarshal([]byte(vssDiscoverResp), &messageMap)
+	if err != nil {
+		Error.Printf("DiscoverResponseJsonToPb:Unmarshal error data=%s, err=%s", vssDiscoverResp, err)
+		return nil
+	}
+	pbDiscoverResponseMessage := &pb.DiscoverResponseMessage{}
+	createDiscoverResponsePb(pbDiscoverResponseMessage, messageMap)
+	return pbDiscoverResponseMessage
+}
+
 func SubscribeRequestPbToJson(pbSubscribeReq *pb.SubscribeRequestMessage) string {
 	jsonMessage := populateJsonFromProtoSubscribeReq(pbSubscribeReq)
 	return jsonMessage
@@ -305,7 +399,7 @@ func createGetResponsePb(protoMessage *pb.GetResponseMessage, messageMap map[str
 		return
 	}
 	if _, present := messageMap["error"]; present {
-		// Present but not a map — treat as a generic error to avoid silent success.
+		// Present but not a map - treat as a generic error to avoid silent success.
 		protoMessage.Status = pb.ResponseStatus_ERROR
 		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
 		return
@@ -701,6 +795,138 @@ func createSetResponsePb(protoMessage *pb.SetResponseMessage, messageMap map[str
 	}
 }
 
+// createMultiGetRequestPb populates a MultiGetRequestMessage (VISSv3.2
+// Multiple Tree Addressability Read, CORE section 5.1.1.2) from
+// messageMap["data"], an array of path strings.
+func createMultiGetRequestPb(protoMessage *pb.MultiGetRequestMessage, messageMap map[string]interface{}) {
+	if dataArr, ok := messageMap["data"].([]interface{}); ok {
+		protoMessage.Data = make([]string, 0, len(dataArr))
+		for _, v := range dataArr {
+			if s, ok := asString(v); ok {
+				protoMessage.Data = append(protoMessage.Data, s)
+			}
+		}
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if dc, ok := mapString(messageMap, "dc"); ok {
+		protoMessage.DC = &dc
+	}
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+}
+
+// createMultiGetResponsePb populates a MultiGetResponseMessage. Unlike
+// GetResponseMessage, there is no metadata variant - a multi-get
+// response is always an array-shaped DataPackages, per CORE section
+// 5.1.1.2.
+func createMultiGetResponsePb(protoMessage *pb.MultiGetResponseMessage, messageMap map[string]interface{}) {
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if errMap, isErr := mapAsMap(messageMap, "error"); isErr {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = getProtoErrorMessage(errMap)
+		return
+	}
+	if _, present := messageMap["error"]; present {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
+		return
+	}
+	protoMessage.Status = pb.ResponseStatus_SUCCESS
+	numOfDataElements := getNumOfDataElements(messageMap["data"])
+	dataPack := &pb.DataPackages{Data: make([]*pb.DataPackages_DataPackage, 0, numOfDataElements)}
+	for i := 0; i < numOfDataElements; i++ {
+		if elem := createDataElement(i, messageMap["data"]); elem != nil {
+			dataPack.Data = append(dataPack.Data, elem)
+		}
+	}
+	protoMessage.SuccessResponse = &pb.MultiGetResponseMessage_SuccessResponseMessage{DataPack: dataPack}
+}
+
+// createMultiSetRequestPb populates a MultiSetRequestMessage (VISSv3.2
+// Multiple Data Update, CORE section 5.2.2) from messageMap["data"], an
+// array of {"path","value"} objects. Only string values are supported
+// over gRPC, matching SetRequestMessage.Value's type - struct
+// (object-valued) actuator writes are not representable in this
+// message and are skipped, mirroring how the metadata filter variant
+// is unsupported over protobuf (see createPbFilter's METADATA case).
+func createMultiSetRequestPb(protoMessage *pb.MultiSetRequestMessage, messageMap map[string]interface{}) {
+	if dataArr, ok := messageMap["data"].([]interface{}); ok {
+		protoMessage.Data = make([]*pb.MultiSetRequestMessage_SetData, 0, len(dataArr))
+		for _, v := range dataArr {
+			elem, ok := asMap(v)
+			if !ok {
+				continue
+			}
+			path, pathOk := mapString(elem, "path")
+			value, valueOk := mapString(elem, "value")
+			if !pathOk || !valueOk {
+				continue
+			}
+			protoMessage.Data = append(protoMessage.Data, &pb.MultiSetRequestMessage_SetData{Path: path, Value: value})
+		}
+	}
+	if auth, ok := mapString(messageMap, "authorization"); ok {
+		protoMessage.Authorization = &auth
+	}
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = &ts
+	}
+}
+
+// createDiscoverRequestPb populates a DiscoverRequestMessage (CORE
+// section 5.5) from messageMap["path"]/["depth"].
+func createDiscoverRequestPb(protoMessage *pb.DiscoverRequestMessage, messageMap map[string]interface{}) {
+	if path, ok := mapString(messageMap, "path"); ok {
+		protoMessage.Path = path
+	}
+	if depth, ok := mapString(messageMap, "depth"); ok {
+		protoMessage.Depth = depth
+	}
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+}
+
+// createDiscoverResponsePb populates a DiscoverResponseMessage.
+// DiscoverResponseMessage.Metadata is a plain string field (unlike
+// GetResponseMessage's optional Metadata), so messageMap["metadata"]
+// (a JSON object) is re-marshalled to its JSON string form.
+func createDiscoverResponsePb(protoMessage *pb.DiscoverResponseMessage, messageMap map[string]interface{}) {
+	if reqId, ok := mapString(messageMap, "requestId"); ok {
+		protoMessage.RequestId = reqId
+	}
+	if ts, ok := mapString(messageMap, "ts"); ok {
+		protoMessage.Ts = ts
+	}
+	if errMap, isErr := mapAsMap(messageMap, "error"); isErr {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = getProtoErrorMessage(errMap)
+		return
+	}
+	if _, present := messageMap["error"]; present {
+		protoMessage.Status = pb.ResponseStatus_ERROR
+		protoMessage.ErrorResponse = &pb.ErrorResponseMessage{}
+		return
+	}
+	protoMessage.Status = pb.ResponseStatus_SUCCESS
+	metadata, _ := json.Marshal(messageMap["metadata"])
+	protoMessage.Metadata = string(metadata)
+}
+
 func createUnsubscribeRequestPb(protoMessage *pb.UnsubscribeRequestMessage, messageMap map[string]interface{}) {
 	if subId, ok := mapString(messageMap, "subscriptionId"); ok {
 		protoMessage.SubscriptionId = subId
@@ -754,6 +980,96 @@ func populateJsonFromProtoGetResp(protoMessage *pb.GetResponseMessage) string {
 		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
 	}
 	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId") + createJSON(protoMessage.GetAuthorization(), "authorization")
+	return jsonMessage + "}"
+}
+
+// populateJsonFromProtoMultiGetReq builds the JSON form of a VISSv3.2
+// Multiple Tree Addressability Read request (CORE section 5.1.1.2)
+// from a MultiGetRequestMessage: "data" is a JSON array of quoted
+// path strings.
+func populateJsonFromProtoMultiGetReq(protoMessage *pb.MultiGetRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"get"`
+	data := protoMessage.GetData()
+	dataJson := "["
+	for i := 0; i < len(data); i++ {
+		dataJson += `"` + jsonEscape(data[i]) + `",`
+	}
+	dataJson = trimTrailingComma(dataJson) + "]"
+	jsonMessage += `,"data":` + dataJson +
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetDC(), "dc") +
+		createJSON(protoMessage.GetRequestId(), "requestId")
+	return jsonMessage + "}"
+}
+
+// populateJsonFromProtoMultiGetResp builds the JSON form of a
+// MultiGetResponseMessage. Unlike get, there is no metadata variant.
+func populateJsonFromProtoMultiGetResp(protoMessage *pb.MultiGetResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"get"`
+	if protoMessage.GetStatus() == 0 { //SUCCESSFUL
+		var data []*pb.DataPackages_DataPackage
+		if sr := protoMessage.GetSuccessResponse(); sr != nil {
+			data = sr.GetDataPack().GetData()
+		}
+		jsonMessage += createJsonData(data)
+	} else { // ERROR
+		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
+	}
+	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId") + createJSON(protoMessage.GetAuthorization(), "authorization")
+	return jsonMessage + "}"
+}
+
+// populateJsonFromProtoMultiSetReq builds the JSON form of a VISSv3.2
+// Multiple Data Update request (CORE section 5.2.2) from a
+// MultiSetRequestMessage: "data" is a JSON array of {"path","value"}
+// objects.
+func populateJsonFromProtoMultiSetReq(protoMessage *pb.MultiSetRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"set"`
+	setData := protoMessage.GetData()
+	dataJson := "["
+	for i := 0; i < len(setData); i++ {
+		if setData[i] == nil {
+			continue
+		}
+		dataJson += `{"path":"` + jsonEscape(setData[i].GetPath()) + `","value":"` + jsonEscape(setData[i].GetValue()) + `"},`
+	}
+	dataJson = trimTrailingComma(dataJson) + "]"
+	jsonMessage += `,"data":` + dataJson +
+		createJSON(protoMessage.GetAuthorization(), "authorization") + createJSON(protoMessage.GetRequestId(), "requestId") +
+		createJSON(protoMessage.GetTs(), "ts")
+	return jsonMessage + "}"
+}
+
+// populateJsonFromProtoDiscoverReq builds the JSON form of a CORE
+// section 5.5 discover request from a DiscoverRequestMessage.
+func populateJsonFromProtoDiscoverReq(protoMessage *pb.DiscoverRequestMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"discover"`
+	jsonMessage += `,"path":"` + jsonEscape(protoMessage.GetPath()) + `","depth":"` + jsonEscape(protoMessage.GetDepth()) + `"` +
+		createJSON(protoMessage.GetRequestId(), "requestId")
+	return jsonMessage + "}"
+}
+
+// populateJsonFromProtoDiscoverResp builds the JSON form of a
+// DiscoverResponseMessage. Metadata is a plain (already-JSON) string
+// field, so it's spliced in as a raw JSON value rather than
+// re-escaped as a JSON string, matching how the request-side
+// "metadata" key is used in CORE section 5.5.
+func populateJsonFromProtoDiscoverResp(protoMessage *pb.DiscoverResponseMessage) string {
+	jsonMessage := "{"
+	jsonMessage += `"action":"discover"`
+	if protoMessage.GetStatus() == 0 { //SUCCESSFUL
+		metadata := protoMessage.GetMetadata()
+		if len(metadata) == 0 {
+			metadata = "{}"
+		}
+		jsonMessage += `,"metadata":` + metadata
+	} else { // ERROR
+		jsonMessage += getJsonError(protoMessage.GetErrorResponse())
+	}
+	jsonMessage += `,"ts":"` + protoMessage.GetTs() + `"` + createJSON(protoMessage.GetRequestId(), "requestId")
 	return jsonMessage + "}"
 }
 

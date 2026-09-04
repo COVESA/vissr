@@ -1593,6 +1593,56 @@ func handleServiceSet(requestMap map[string]interface{}, responseMap map[string]
 	dataChan <- responseMap
 }
 
+// handleServiceMultiSet processes a VISSv3.2 Multiple Data Update
+// request (CORE section 5.2.2): requestMap["data"] is an array of
+// {"path","value"} objects - already resolved to fully-qualified,
+// dot-delimited leaf paths by handleMultiSetRequest in the core
+// server - and each is written via the state-storage backend
+// (setVehicleData), exactly as handleServiceSet does for a single
+// path/value pair. On the first backend failure, a single
+// service_unavailable error response is returned; there is no partial
+// application semantics defined by CORE for this case, so it stops at
+// the first error.
+func handleServiceMultiSet(requestMap map[string]interface{}, responseMap map[string]interface{}, dataChan chan map[string]interface{}) {
+	dataArray, ok := requestMap["data"].([]interface{})
+	if !ok || len(dataArray) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+		dataChan <- errorResponseMap
+		return
+	}
+	var ts string
+	for i := 0; i < len(dataArray); i++ {
+		elem, ok := dataArray[i].(map[string]interface{})
+		if !ok {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+			dataChan <- errorResponseMap
+			return
+		}
+		path, ok := elem["path"].(string)
+		if !ok {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "") //invalid_data
+			dataChan <- errorResponseMap
+			return
+		}
+		switch value := elem["value"].(type) {
+		case string:
+			ts = setVehicleData(path, value)
+		case map[string]interface{}:
+			data, _ := json.Marshal(value)
+			ts = setVehicleData(path, string(data))
+		default:
+			ts = ""
+		}
+		if len(ts) == 0 {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 7, "") //service_unavailable
+			dataChan <- errorResponseMap
+			return
+		}
+	}
+	responseMap["ts"] = ts
+	dataChan <- responseMap
+}
+
 // handleServiceGet processes a "get" action: unpacks the path array,
 // validates an optional filter, fetches the data pack via
 // getDataPackMap, and pushes the response on dataChan. Extracted from
@@ -1714,7 +1764,7 @@ func handleServiceUnsubscribe(requestMap map[string]interface{}, responseMap map
 // handleInternalKillSubscriptions processes the
 // "internal-killsubscriptions" action: scans the subscription list and
 // removes every entry whose RouterId matches the request. No response
-// is emitted — this is an internal cleanup message. Returns the
+// is emitted - this is an internal cleanup message. Returns the
 // updated subscriptionList. Extracted from ServiceMgrInit in PR #129.
 func handleInternalKillSubscriptions(requestMap map[string]interface{}, subscriptionList []SubscriptionState) []SubscriptionState {
 	isRemoved := true
@@ -1758,7 +1808,7 @@ func handleUnknownAction(requestMap map[string]interface{}, dataChan chan map[st
 // handleIntervalNotification handles a fire on subscriptionChan (an
 // interval-based subscription's timer ticked). Looks up the
 // subscription, builds a notification event with the current data
-// pack, and pushes it to backendChan with a non-blocking select — the
+// pack, and pushes it to backendChan with a non-blocking select - the
 // original arm drops the event rather than block when backendChan is
 // full. Extracted from ServiceMgrInit in follow-up PR B to #129.
 func handleIntervalNotification(subscriptionId int, subscriptionList []SubscriptionState, backendChan chan map[string]interface{}) {
@@ -2030,7 +2080,15 @@ func ServiceMgrInit(mgrId int, serviceMgrChan chan map[string]interface{}, state
 			switch requestMap["action"] {
 			case "invoke": // invokeVehicleService(...
 			case "set":
-				handleServiceSet(requestMap, responseMap, dataChan)
+				if _, isMultiSet := requestMap["data"]; isMultiSet {
+					// VISSv3.2 Multiple Data Update (CORE section 5.2.2):
+					// the core server resolves "data" to an array of
+					// {"path","value"} objects (see handleMultiSetRequest)
+					// instead of the single-signal "path"/"value" pair.
+					handleServiceMultiSet(requestMap, responseMap, dataChan)
+				} else {
+					handleServiceSet(requestMap, responseMap, dataChan)
+				}
 			case "get":
 				handleServiceGet(requestMap, responseMap, dataChan)
 			case "subscribe":

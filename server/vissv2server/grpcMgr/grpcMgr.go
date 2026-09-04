@@ -291,14 +291,40 @@ func (s *Server) GetRequest(ctx context.Context, in *pb.GetRequestMessage) (*pb.
 	return utils.GetResponseJsonToPb(vssResp), nil
 }
 
+// MultiGetRequest implements the VISSv3.2 Multiple Tree Addressability
+// Read (CORE section 5.1.1.2) as a separate, additive gRPC RPC, so
+// that existing GetRequest clients/servers remain wire compatible.
+func (s *Server) MultiGetRequest(ctx context.Context, in *pb.MultiGetRequestMessage) (*pb.MultiGetResponseMessage, error) {
+	vssReq := utils.MultiGetRequestPbToJson(in)
+	utils.Info.Println(vssReq)
+	vssResp := dispatchGrpcUnaryRequest(vssReq)
+	return utils.MultiGetResponseJsonToPb(vssResp), nil
+}
+
 func (s *Server) SetRequest(ctx context.Context, in *pb.SetRequestMessage) (*pb.SetResponseMessage, error) {
 	vssResp := dispatchGrpcUnaryRequest(utils.SetRequestPbToJson(in))
+	return utils.SetResponseJsonToPb(vssResp), nil
+}
+
+// MultiSetRequest implements the VISSv3.2 Multiple Data Update (CORE
+// section 5.2.2) as a separate, additive gRPC RPC, so that existing
+// SetRequest clients/servers remain wire compatible. Not supported
+// over HTTP, see CORE section 5.2.
+func (s *Server) MultiSetRequest(ctx context.Context, in *pb.MultiSetRequestMessage) (*pb.SetResponseMessage, error) {
+	vssResp := dispatchGrpcUnaryRequest(utils.MultiSetRequestPbToJson(in))
 	return utils.SetResponseJsonToPb(vssResp), nil
 }
 
 func (s *Server) UnsubscribeRequest(ctx context.Context, in *pb.UnsubscribeRequestMessage) (*pb.UnsubscribeResponseMessage, error) {
 	vssResp := dispatchGrpcUnaryRequest(utils.UnsubscribeRequestPbToJson(in))
 	return utils.UnsubscribeResponseJsonToPb(vssResp), nil
+}
+
+// DiscoverRequest implements CORE section 5.5 Discovery (both Signal
+// Discovery and Forest Discovery) as a unary gRPC RPC.
+func (s *Server) DiscoverRequest(ctx context.Context, in *pb.DiscoverRequestMessage) (*pb.DiscoverResponseMessage, error) {
+	vssResp := dispatchGrpcUnaryRequest(utils.DiscoverRequestPbToJson(in))
+	return utils.DiscoverResponseJsonToPb(vssResp), nil
 }
 
 func (s *Server) SubscribeRequest(in *pb.SubscribeRequestMessage, stream pb.VISS_SubscribeRequestServer) error {

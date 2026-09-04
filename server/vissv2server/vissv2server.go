@@ -399,6 +399,78 @@ func getTokenContext(reqMap map[string]interface{}) string {
 	return ""
 }
 
+// isDiscoverRequest reports whether the request action is the
+// VISSv3.2 dedicated "discover" method (CORE section 5.5), covering
+// both Signal Discovery and Forest Discovery. Discover requests are
+// answered directly by handleDiscoverRequest and never reach
+// serviceMgr, mirroring how the pre-existing "metadata" filter
+// variant is handled inline in issueServiceRequest.
+func isDiscoverRequest(action string) bool {
+	return action == "discover"
+}
+
+// handleDiscoverRequest answers a VISSv3.2 "discover" action request.
+// A path of "HIM" or "HIM.<treename>" performs Forest Discovery,
+// returning metadata about the set of trees the server manages (read
+// from the HIM configuration file, excluding the "local" property).
+// Any other path performs Signal Discovery, returning metadata about
+// the subtree rooted at path, limited to the given depth (0 means
+// unlimited), reusing the same synthesizeJsonTree machinery as the
+// pre-existing "metadata" filter variant. On success, the response is
+// forwarded on backendChan[tDChanIndex] with the "path" and "depth"
+// request fields replaced by a "metadata" object field, per CORE
+// section 5.5. On failure, a bad_request error is forwarded instead.
+func handleDiscoverRequest(requestMap map[string]interface{}, tDChanIndex int) {
+	rootPath, ok := requestMap["path"].(string)
+	if !ok {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid path")
+		backendChan[tDChanIndex] <- errorResponseMap
+		return
+	}
+	depthStr, ok := requestMap["depth"].(string)
+	if !ok {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid depth")
+		backendChan[tDChanIndex] <- errorResponseMap
+		return
+	}
+	depth, err := strconv.Atoi(depthStr)
+	if err != nil {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "invalid depth")
+		backendChan[tDChanIndex] <- errorResponseMap
+		return
+	}
+	var metadataStr string
+	if rootPath == "HIM" || strings.HasPrefix(rootPath, "HIM.") {
+		metadataStr = himJsonify()
+	} else {
+		VSSTreeRoot := utils.SetRootNodePointer(rootPath)
+		if VSSTreeRoot == nil {
+			setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+			return
+		}
+		tokenContext := getTokenContext(requestMap)
+		if len(tokenContext) == 0 {
+			tokenContext = "Undefined+Undefined+Undefined"
+		}
+		metadataStr = synthesizeJsonTree(rootPath, depth, tokenContext, VSSTreeRoot)
+	}
+	if len(metadataStr) == 0 {
+		setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+		return
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(metadataStr), &metadata); err != nil {
+		utils.Error.Printf("handleDiscoverRequest: metadata unmarshal error: %v", err)
+		setErrorAndForward(requestMap, tDChanIndex, 0, "") //bad_request
+		return
+	}
+	delete(requestMap, "path")
+	delete(requestMap, "depth")
+	requestMap["ts"] = utils.GetRfcTime()
+	requestMap["metadata"] = metadata
+	backendChan[tDChanIndex] <- requestMap
+}
+
 // isInternalAction reports whether the request is one of the
 // internal-only control actions (kill-subscriptions, cancel-subscription)
 // that bypass the normal validation/auth path and go straight to
@@ -409,7 +481,7 @@ func isInternalAction(action string) bool {
 }
 
 // isUnsubscribeRequest reports whether the request action is the
-// client-driven "unsubscribe" — these are forwarded directly to
+// client-driven "unsubscribe" - these are forwarded directly to
 // serviceDataChan from serveRequest without going through the
 // validation/auth pipeline in issueServiceRequest. Extracted in PR #128.
 func isUnsubscribeRequest(action string) bool {
@@ -419,7 +491,7 @@ func isUnsubscribeRequest(action string) bool {
 // setErrorAndForward fills errorResponseMap with the given error code
 // and description (using the request fields from requestMap) and pushes
 // it to the backend channel for the transport manager identified by
-// tDChanIndex. Extracted in PR #128 — the SetErrorResponse → backendChan
+// tDChanIndex. Extracted in PR #128 - the SetErrorResponse → backendChan
 // → return pattern was duplicated inline six times inside
 // issueServiceRequest, and the function-level deduplication makes the
 // happy path much easier to read.
@@ -460,7 +532,7 @@ func expandPathFilter(parameter string, rootPath string) ([]string, bool) {
 // Extracted from issueServiceRequest in PR #128 so the dispatch
 // branches can be table-tested without the atsChannel goroutine.
 // (The verifyToken delegation path itself still requires a live ats
-// goroutine and is not covered by the new tests — same as before.)
+// goroutine and is not covered by the new tests - same as before.)
 func authorizeAccess(requestMap map[string]interface{}, paths string, maxValidation int) (errorCode int, tokenHandle string, gatingId string) {
 	if requestMap["authorization"] == nil {
 		return 2, "", ""
@@ -480,11 +552,244 @@ func serveRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanInde
 	if p, ok := requestMap["path"].(string); ok {
 		requestMap["path"] = utils.UrlToPath(p) // replace slash with dot
 	}
-	if action, _ := requestMap["action"].(string); isUnsubscribeRequest(action) {
+	action, _ := requestMap["action"].(string)
+	if isUnsubscribeRequest(action) {
 		serviceDataChan[sDChanIndex] <- requestMap
 		return
 	}
+	if isDiscoverRequest(action) {
+		handleDiscoverRequest(requestMap, tDChanIndex)
+		return
+	}
+	if isMultiSignalRequest(action, requestMap) {
+		handleMultiSignalRequest(action, requestMap, tDChanIndex, sDChanIndex)
+		return
+	}
 	issueServiceRequest(requestMap, tDChanIndex, sDChanIndex)
+}
+
+// isMultiSignalRequest reports whether requestMap is a VISSv3.2
+// multi-signal request: a "get" (Multiple Tree Addressability Read,
+// CORE section 5.1.1.2) or "set" (Multiple Data Update, CORE section
+// 5.2.2) action addressing an array of signals via the top-level
+// "data" field, rather than a single "path". The two variants are
+// disambiguated downstream by the shape of the array elements: plain
+// path strings for get, {"path","value"} objects for set.
+func isMultiSignalRequest(action string, requestMap map[string]interface{}) bool {
+	if action != "get" && action != "set" {
+		return false
+	}
+	if _, hasPath := requestMap["path"]; hasPath {
+		return false
+	}
+	_, hasData := requestMap["data"].([]interface{})
+	return hasData
+}
+
+// handleMultiSignalRequest dispatches a multi-signal request (see
+// isMultiSignalRequest) to the matching handler.
+func handleMultiSignalRequest(action string, requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
+	if action == "get" {
+		handleMultiGetRequest(requestMap, tDChanIndex, sDChanIndex)
+		return
+	}
+	handleMultiSetRequest(requestMap, tDChanIndex, sDChanIndex)
+}
+
+// resolveSignalPath resolves a single multi-signal path element against
+// its own HIM tree - the signals addressed in a multi-signal request
+// may belong to different trees, see CORE sections 5.1.1.2 and 5.2.2  - 
+// and returns the first matching SearchData_t together with the
+// validation requirement reported by the search. ok is false if the
+// path's root tree is unknown or the path does not resolve to at least
+// one node.
+func resolveSignalPath(path string) (searchData utils.SearchData_t, validation int, ok bool) {
+	VSSTreeRoot := utils.SetRootNodePointer(path)
+	if VSSTreeRoot == nil {
+		return utils.SearchData_t{}, 0, false
+	}
+	v := -1
+	matches, sd := searchTree(VSSTreeRoot, path, true, true, 0, nil, &v)
+	if matches == 0 {
+		return utils.SearchData_t{}, 0, false
+	}
+	return sd[0], v, true
+}
+
+// authorizeMultiSignalAccess runs the authorizeAccess check for a
+// multi-signal request's aggregated maxValidation, and on failure sends
+// the appropriate token-error response and forwards it to
+// backendChan[tDChanIndex]. Returns ok=false when the caller should
+// stop (either because a response was already forwarded due to a
+// token/access error, or because maxValidation was in an unexpected
+// state); the caller must return immediately without sending anything
+// else in that case.
+func authorizeMultiSignalAccess(requestMap map[string]interface{}, tDChanIndex int, paths string, maxValidation int) (tokenHandle string, gatingId string, ok bool) {
+	if requestMap["origin"] == "internal" { // internal message, no validation needed
+		maxValidation = 0
+	}
+	switch maxValidation % 10 {
+	case 0: // validation not required
+		return "", "", true
+	case 1, 2:
+		errorCode, handle, gId := authorizeAccess(requestMap, paths, maxValidation)
+		if errorCode != 0 {
+			setTokenErrorResponse(requestMap, errorCode)
+			backendChan[tDChanIndex] <- errorResponseMap
+			return "", "", false
+		}
+		return handle, gId, true
+	default: // should not be possible...
+		setErrorAndForward(requestMap, tDChanIndex, 7, "") //service_unavailable
+		return "", "", false
+	}
+}
+
+// handleMultiGetRequest processes a VISSv3.2 Multiple Tree
+// Addressability Read request (CORE section 5.1.1.2): requestMap["data"]
+// is a JSON array of path strings, which may address signals in
+// different HIM trees. Each path is resolved and validated exactly as
+// a single-signal get would be; on the first failing path, a single
+// error response is returned, per CORE: "The error message shall be
+// associated with the first element in the array that the server
+// fails in validating." On success, requestMap["path"] is rewritten to
+// the resolved-paths JSON array - reusing the same wire convention
+// already used by the pre-existing "paths" filter multi-match
+// expansion - requestMap["data"] is removed, and the request is
+// forwarded to serviceMgr exactly like a single get: handleServiceGet
+// already knows how to build an array-shaped data response from this
+// "path" shape.
+func handleMultiGetRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
+	dataArray, ok := requestMap["data"].([]interface{})
+	if !ok || len(dataArray) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid data") //invalid_data
+		backendChan[tDChanIndex] <- errorResponseMap
+		return
+	}
+	paths := ""
+	maxValidation := -1
+	for i := 0; i < len(dataArray); i++ {
+		pathStr, ok := dataArray[i].(string)
+		if !ok {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "data array element must be a path string") //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
+		searchData, validation, ok := resolveSignalPath(utils.UrlToPath(pathStr))
+		if !ok {
+			setErrorAndForward(requestMap, tDChanIndex, 6, "") //unavailable_data
+			return
+		}
+		pathLen := getPathLen(string(searchData.NodePath[:]))
+		paths += "\"" + string(searchData.NodePath[:pathLen]) + "\", "
+		maxValidation = utils.GetMaxValidation(validation, maxValidation)
+	}
+	if len(paths) >= 2 {
+		paths = paths[:len(paths)-2]
+	}
+	paths = "[" + paths + "]"
+	tokenHandle, gatingId, ok := authorizeMultiSignalAccess(requestMap, tDChanIndex, paths, maxValidation)
+	if !ok {
+		return
+	}
+	delete(requestMap, "data")
+	requestMap["path"] = paths
+	if tokenHandle != "" {
+		requestMap["handle"] = tokenHandle
+	}
+	if gatingId != "" {
+		requestMap["gatingId"] = gatingId
+	}
+	serviceDataChan[sDChanIndex] <- requestMap
+}
+
+// handleMultiSetRequest processes a VISSv3.2 Multiple Data Update
+// request (CORE section 5.2.2): requestMap["data"] is a JSON array of
+// {"path","value"} objects, which may address signals in different HIM
+// trees. Each element is resolved and validated (actuator-only, struct
+// value verification for Types.* datatypes) exactly as a single-signal
+// set would be; on the first failing element, a single error response
+// is returned, per CORE: "The error message shall be associated with
+// the first element in the array that the server fails in validating."
+// On success, the resolved data array, together with the authorization
+// handle/gatingId, is forwarded to serviceMgr's handleServiceMultiSet,
+// which applies each path/value pair via the state-storage backend.
+func handleMultiSetRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
+	dataArray, ok := requestMap["data"].([]interface{})
+	if !ok || len(dataArray) == 0 {
+		utils.SetErrorResponse(requestMap, errorResponseMap, 1, "missing/invalid data") //invalid_data
+		backendChan[tDChanIndex] <- errorResponseMap
+		return
+	}
+	resolved := make([]interface{}, 0, len(dataArray))
+	paths := ""
+	maxValidation := -1
+	for i := 0; i < len(dataArray); i++ {
+		elem, ok := dataArray[i].(map[string]interface{})
+		if !ok {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "data array element must be a path/value object") //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
+		pathStr, ok := elem["path"].(string)
+		if !ok {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "data array element missing/invalid path") //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
+		value, hasValue := elem["value"]
+		if !hasValue {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "data array element missing value") //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
+		searchData, validation, ok := resolveSignalPath(utils.UrlToPath(pathStr))
+		if !ok {
+			setErrorAndForward(requestMap, tDChanIndex, 6, "") //unavailable_data
+			return
+		}
+		if utils.VSSgetType(searchData.NodeHandle) != utils.ACTUATOR {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, "Forbidden to write to read-only resource") //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
+		}
+		datatype := utils.VSSgetDatatype(searchData.NodeHandle)
+		if strings.HasPrefix(datatype, "Types") {
+			val, ok := value.(map[string]interface{})
+			if !ok {
+				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "struct value must be an object")
+				backendChan[tDChanIndex] <- errorResponseMap
+				return
+			}
+			res := verifyStruct(val, datatype, 0)
+			if res != "ok" {
+				utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
+				backendChan[tDChanIndex] <- errorResponseMap
+				return
+			}
+		}
+		pathLen := getPathLen(string(searchData.NodePath[:]))
+		resolvedPath := string(searchData.NodePath[:pathLen])
+		paths += "\"" + resolvedPath + "\", "
+		maxValidation = utils.GetMaxValidation(validation, maxValidation)
+		resolved = append(resolved, map[string]interface{}{"path": resolvedPath, "value": value})
+	}
+	if len(paths) >= 2 {
+		paths = paths[:len(paths)-2]
+	}
+	paths = "[" + paths + "]"
+	tokenHandle, gatingId, ok := authorizeMultiSignalAccess(requestMap, tDChanIndex, paths, maxValidation)
+	if !ok {
+		return
+	}
+	requestMap["data"] = resolved
+	if tokenHandle != "" {
+		requestMap["handle"] = tokenHandle
+	}
+	if gatingId != "" {
+		requestMap["gatingId"] = gatingId
+	}
+	serviceDataChan[sDChanIndex] <- requestMap
 }
 
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
@@ -751,7 +1056,7 @@ func himJsonify() string {
 		utils.Error.Printf("error reading viss.him")
 		return ""
 	}
-	err = yaml.Unmarshal([]byte(data), &himMap)
+	err = yaml.Unmarshal(preprocessHimYaml(data), &himMap)
 	if err != nil {
 		utils.Error.Printf("him file unmarshal error: %v", err)
 		return ""
@@ -763,6 +1068,40 @@ func himJsonify() string {
 		return ""
 	}
 	return string(data)
+}
+
+// preprocessHimYaml converts the flat, non-indented block format used by
+// viss.him (see the file for examples) into valid nested YAML that
+// gopkg.in/yaml.v3 can unmarshal into a map[string]interface{} keyed by
+// each top-level entry name (e.g. "HIM", "HIM.Vehicle"). Each block starts
+// with a line of the form "<name>:" (nothing after the colon, and no
+// embedded colon before it) and is followed by zero or more "key: value"
+// lines, which are re-indented by two spaces so that YAML parses them as
+// nested under that block instead of colliding as duplicate top-level
+// keys, which is what a literal parse of viss.him's layout produces.
+// Comment lines (leading '#') and blank lines are dropped, matching the
+// two `himJsonify` and `InitForest` (treeutils.go) readers' existing
+// tolerance for viss.him's comments.
+func preprocessHimYaml(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	var out strings.Builder
+	for _, line := range lines {
+		s := strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		if strings.HasSuffix(s, ":") && !strings.Contains(strings.TrimSuffix(s, ":"), ":") {
+			// New top-level block header, e.g. "HIM.Vehicle:"
+			out.WriteString(s)
+			out.WriteString("\n")
+			continue
+		}
+		// A "key: value" line belonging to the current block.
+		out.WriteString("  ")
+		out.WriteString(s)
+		out.WriteString("\n")
+	}
+	return []byte(out.String())
 }
 
 func removeLocalProperty(himMap map[string]interface{}) map[string]interface{} {

@@ -13,9 +13,19 @@ Peter Winzell - Volvo Cars
 # COVESA VISS Reference Implementation - VISSR 
 This project provides a reference implementation of the released [COVESA VISSv2.0 specification](https://github.com/COVESA/vehicle-information-service-specification/releases/tag/v2.0) on the v2.0 branch,
 the master branch contains reference implementations of the [VISSv3.0 and the subsequent VISSv3.1](https://github.com/COVESA/vissr/releases/tag/v3.1.0) specifications.
+The v3.2 branch contains a reference implementation of the [released VISSv3.2](https://github.com/COVESA/vehicle-information-service-specification/releases/tag/v3.2) specification.
 
 # Tutorial
 A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
+
+## VISSv3.2 new features
+* Multi-signal Get/Set: a single "get" or "set" request can now address an array of signals (potentially spanning multiple HIM trees) via a top-level "data" field, instead of the single "path" field.
+  * Get: `{"action":"get","data":["Vehicle.Speed","Trailer1.Cargo.Hold1.Temperature"],"requestId":"1"}`
+  * Set: `{"action":"set","data":[{"path":"Vehicle.Powertrain.Transmission.PerformanceMode","value":"sport"}],"requestId":"2"}`
+  * Multi-signal Set is not supported over HTTP; multi-signal Get and Set are supported over WebSocket, MQTT, UDS, and gRPC (via the additive `MultiGetRequest`/`MultiSetRequest` RPCs, so existing v3.1 `GetRequest`/`SetRequest` clients and servers remain wire compatible).
+* Discovery: a new dedicated "discover" action for retrieving metadata about vehicle signals (Signal Discovery) or about the set of trees the server manages (Forest Discovery), supplementing the pre-existing "metadata" filter variant on a Read request.
+  * Signal Discovery: `{"action":"discover","path":"Vehicle.Powertrain.FuelSystem","depth":"2","requestId":"3"}`
+  * Forest Discovery: `{"action":"discover","path":"HIM","depth":"0","requestId":"4"}` (path may also address a single tree, e.g. `"HIM.Vehicle"`)
 
 ## VISSv3.1 new features
 * Support for the HIM Vehicle data profile.

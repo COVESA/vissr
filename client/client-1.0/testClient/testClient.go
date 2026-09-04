@@ -461,6 +461,20 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 	defer cancel()
 	switch reqMap["action"].(string) {
 	case "get":
+		if _, isMultiGet := reqMap["data"]; isMultiGet {
+			// VISSv3.2 Multiple Tree Addressability Read (CORE section
+			// 5.1.1.2): a top-level "data" array of paths, dispatched to
+			// the additive MultiGetRequest RPC instead of GetRequest.
+			pbRequest := utils.MultiGetRequestJsonToPb(vssRequest)
+			pbResponse, err := client.MultiGetRequest(ctx, pbRequest)
+			if err == nil {
+				vssResponse := utils.MultiGetResponsePbToJson(pbResponse)
+				fmt.Printf("Response:%s\n\n", vssResponse)
+			} else {
+				fmt.Printf("Response error:%s\n", err)
+			}
+			break
+		}
 		pbRequest := utils.GetRequestJsonToPb(vssRequest)
 		pbResponse, err := client.GetRequest(ctx, pbRequest)
 		if err == nil {
@@ -470,10 +484,33 @@ func performGrpcCommand(vssRequest string, client pb.VISSClient) {
 			fmt.Printf("Response error:%s\n", err)
 		}
 	case "set":
+		if _, isMultiSet := reqMap["data"]; isMultiSet {
+			// VISSv3.2 Multiple Data Update (CORE section 5.2.2): a
+			// top-level "data" array of {path,value} objects, dispatched
+			// to the additive MultiSetRequest RPC instead of SetRequest.
+			pbRequest := utils.MultiSetRequestJsonToPb(vssRequest)
+			pbResponse, err := client.MultiSetRequest(ctx, pbRequest)
+			if err == nil {
+				vssResponse := utils.SetResponsePbToJson(pbResponse)
+				fmt.Printf("Response:%s\n\n", vssResponse)
+			} else {
+				fmt.Printf("Response error:%s\n", err)
+			}
+			break
+		}
 		pbRequest := utils.SetRequestJsonToPb(vssRequest)
 		pbResponse, err := client.SetRequest(ctx, pbRequest)
 		if err == nil {
 			vssResponse := utils.SetResponsePbToJson(pbResponse)
+			fmt.Printf("Response:%s\n\n", vssResponse)
+		} else {
+			fmt.Printf("Response error:%s\n", err)
+		}
+	case "discover":
+		pbRequest := utils.DiscoverRequestJsonToPb(vssRequest)
+		pbResponse, err := client.DiscoverRequest(ctx, pbRequest)
+		if err == nil {
+			vssResponse := utils.DiscoverResponsePbToJson(pbResponse)
 			fmt.Printf("Response:%s\n\n", vssResponse)
 		} else {
 			fmt.Printf("Response error:%s\n", err)

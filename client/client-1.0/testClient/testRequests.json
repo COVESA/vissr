@@ -88,6 +88,36 @@
                 }
             },
             "requestId": "247"
+        },
+        {
+            "action": "get",
+            "data": [
+                "Vehicle.Speed",
+                "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"
+            ],
+            "requestId": "248"
+        },
+        {
+            "action": "set",
+            "data": [
+                {
+                    "path": "Vehicle.TripMeterReading",
+                    "value": "true"
+                }
+            ],
+            "requestId": "249"
+        },
+        {
+            "action": "discover",
+            "path": "Vehicle.ADAS",
+            "depth": "1",
+            "requestId": "250"
+        },
+        {
+            "action": "discover",
+            "path": "HIM",
+            "depth": "0",
+            "requestId": "251"
         }
     ],
     "mqtt": [
@@ -129,6 +159,36 @@
                 }
             },
             "requestId": "246"
+        },
+        {
+            "action": "get",
+            "data": [
+                "Vehicle.Speed",
+                "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"
+            ],
+            "requestId": "248"
+        },
+        {
+            "action": "set",
+            "data": [
+                {
+                    "path": "Vehicle.TripMeterReading",
+                    "value": "true"
+                }
+            ],
+            "requestId": "249"
+        },
+        {
+            "action": "discover",
+            "path": "Vehicle.ADAS",
+            "depth": "1",
+            "requestId": "250"
+        },
+        {
+            "action": "discover",
+            "path": "HIM",
+            "depth": "0",
+            "requestId": "251"
         }
     ],
     "grpc": [
@@ -170,6 +230,36 @@
                 }
             },
             "requestId": "246"
+        },
+        {
+            "action": "get",
+            "data": [
+                "Vehicle.Speed",
+                "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"
+            ],
+            "requestId": "248"
+        },
+        {
+            "action": "set",
+            "data": [
+                {
+                    "path": "Vehicle.TripMeterReading",
+                    "value": "true"
+                }
+            ],
+            "requestId": "249"
+        },
+        {
+            "action": "discover",
+            "path": "Vehicle.ADAS",
+            "depth": "1",
+            "requestId": "250"
+        },
+        {
+            "action": "discover",
+            "path": "HIM",
+            "depth": "0",
+            "requestId": "251"
         }
     ],
     "uds": [
@@ -235,6 +325,36 @@
                 }
             },
             "requestId": "247"
+        },
+        {
+            "action": "get",
+            "data": [
+                "Vehicle.Speed",
+                "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"
+            ],
+            "requestId": "248"
+        },
+        {
+            "action": "set",
+            "data": [
+                {
+                    "path": "Vehicle.TripMeterReading",
+                    "value": "true"
+                }
+            ],
+            "requestId": "249"
+        },
+        {
+            "action": "discover",
+            "path": "Vehicle.ADAS",
+            "depth": "1",
+            "requestId": "250"
+        },
+        {
+            "action": "discover",
+            "path": "HIM",
+            "depth": "0",
+            "requestId": "251"
         }
     ]
 }

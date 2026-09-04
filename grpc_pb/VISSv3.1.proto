@@ -26,11 +26,26 @@ enum SubscribeResponseType {
 service VISS {
   rpc GetRequest (GetRequestMessage) returns (GetResponseMessage);
 
+  // Multiple Tree Addressability Read, see CORE section 5.1.1.2. Defined as
+  // a separate rpc/message, additive to GetRequest/GetRequestMessage, so
+  // that existing v3.1 GetRequestMessage clients and servers remain wire
+  // compatible.
+  rpc MultiGetRequest (MultiGetRequestMessage) returns (MultiGetResponseMessage);
+
   rpc SetRequest (SetRequestMessage) returns (SetResponseMessage);
+
+  // Multiple Data Update, see CORE section 5.2.2. Defined as a separate
+  // rpc/message, additive to SetRequest/SetRequestMessage, so that existing
+  // v3.1 SetRequestMessage clients and servers remain wire compatible. Not
+  // supported over HTTP, see CORE section 5.2.
+  rpc MultiSetRequest (MultiSetRequestMessage) returns (SetResponseMessage);
 
   rpc SubscribeRequest (SubscribeRequestMessage) returns (stream SubscribeStreamMessage);
 
   rpc UnsubscribeRequest (UnsubscribeRequestMessage) returns (UnsubscribeResponseMessage);
+
+  // Discovery, see CORE section 5.5 (signal and forest discovery).
+  rpc DiscoverRequest (DiscoverRequestMessage) returns (DiscoverResponseMessage);
 }
 
 message ErrorResponseMessage {
@@ -130,11 +145,41 @@ message GetResponseMessage {
         optional string Authorization = 6;
 }
 
+message MultiGetRequestMessage {
+        repeated string Data = 1;
+        optional string Authorization = 2;
+        optional string DC = 3;
+        string RequestId = 4;
+}
+
+message MultiGetResponseMessage {
+        ResponseStatus Status = 1;
+        message SuccessResponseMessage {
+            DataPackages DataPack = 1;
+        }
+        optional SuccessResponseMessage SuccessResponse = 2;
+        optional ErrorResponseMessage ErrorResponse = 3;
+        string RequestId = 4;
+        string Ts = 5;
+        optional string Authorization = 6;
+}
+
 message SetRequestMessage {
         string Path = 1;
         string Value = 2;
         optional string Authorization = 3;
         string RequestId = 4;
+}
+
+message MultiSetRequestMessage {
+        message SetData {
+            string Path = 1;
+            string Value = 2;
+        }
+        repeated SetData Data = 1;
+        optional string Authorization = 2;
+        string RequestId = 3;
+        optional string Ts = 4;
 }
 
 message SetResponseMessage {
@@ -190,6 +235,20 @@ message UnsubscribeResponseMessage {
         string Ts = 4;
 }
 
+message DiscoverRequestMessage {
+        string Path = 1;
+        string Depth = 2;
+        string RequestId = 3;
+}
+
+message DiscoverResponseMessage {
+        ResponseStatus Status = 1;
+        string Metadata = 2;
+        optional ErrorResponseMessage ErrorResponse = 3;
+        string RequestId = 4;
+        string Ts = 5;
+}
+
 // ********** For non-gRPC usage of protobuf ***********
 
 enum MessageMethod {
@@ -197,6 +256,9 @@ enum MessageMethod {
     SET = 1;
     SUBSCRIBE = 2;
     UNSUBSCRIBE = 3;
+    MULTIGET = 4;
+    MULTISET = 5;
+    DISCOVER = 6;
 }
 
 enum MessageType {
@@ -211,6 +273,9 @@ message ProtobufMessage {
     optional SetMessage Set = 3;
     optional SubscribeMessage Subscribe = 4;
     optional UnsubscribeMessage Unsubscribe = 5;
+    optional MultiGetMessage MultiGet = 6;
+    optional MultiSetMessage MultiSet = 7;
+    optional DiscoverMessage Discover = 8;
 }
 
 message GetMessage {
@@ -219,9 +284,21 @@ message GetMessage {
     optional GetResponseMessage Response = 3;
 }
 
+message MultiGetMessage {
+    MessageType MType = 1;
+    optional MultiGetRequestMessage Request = 2;
+    optional MultiGetResponseMessage Response = 3;
+}
+
 message SetMessage {
     MessageType MType = 1;
     optional SetRequestMessage Request = 2;
+    optional SetResponseMessage Response = 3;
+}
+
+message MultiSetMessage {
+    MessageType MType = 1;
+    optional MultiSetRequestMessage Request = 2;
     optional SetResponseMessage Response = 3;
 }
 
@@ -235,4 +312,10 @@ message UnsubscribeMessage {
     MessageType MType = 1;
     optional UnsubscribeRequestMessage Request = 2;
     optional UnsubscribeResponseMessage Response = 3;
+}
+
+message DiscoverMessage {
+    MessageType MType = 1;
+    optional DiscoverRequestMessage Request = 2;
+    optional DiscoverResponseMessage Response = 3;
 }

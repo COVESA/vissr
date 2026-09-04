@@ -49,6 +49,19 @@ Subscribe request:
 Unsubscribe request:
 {"action":"unsubscribe","subscriptionId":"1","requestId":"240"}
 
+// VISSv3.2 requests
+
+Multiple Tree Addressability Read request (get, data is an array of paths, may span multiple trees):
+{"action":"get","data":["Vehicle.Powertrain.CombustionEngine.RPM","Vehicle.Speed"],"requestId":"248"}
+
+Multiple Data Update request (set, data is an array of path/value objects, may span multiple trees, not supported over HTTP):
+{"action":"set","data":[{"path":"Vehicle.Powertrain.Transmission.PerformanceMode","value":"sport"}],"requestId":"249"}
+
+Discovery requests (replaces/supplements the "metadata" filter variant above):
+{"action":"discover","path":"Vehicle.Powertrain.FuelSystem","depth":"2","requestId":"250"}
+{"action":"discover","path":"HIM","depth":"0","requestId":"251"}
+{"action":"discover","path":"HIM.Vehicle","depth":"0","requestId":"252"}
+
 
 
 // HTTP request examples

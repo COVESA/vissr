@@ -252,6 +252,18 @@ func TestGetDcConfig_PathsMultiple(t *testing.T) {
 	}
 }
 
+// TestGetDcConfig_DataArrayMultiple covers the VISSv3.2 Multiple Tree
+// Addressability Read wire shape (CORE section 5.1.1.2): a top-level
+// "data" array instead of the pre-existing "paths" filter variant must
+// also be recognized as a multi-path request (singlePath=false).
+func TestGetDcConfig_DataArrayMultiple(t *testing.T) {
+	req := `{"action":"get","data":["A","B"],"requestId":"r","dc":"2+1"}`
+	dcValue, _, isGet, singlePath := getDcConfig(req)
+	if dcValue != "2+1" || !isGet || singlePath {
+		t.Errorf("got dc=%q isGet=%v singlePath=%v", dcValue, isGet, singlePath)
+	}
+}
+
 // --------------------------------------------------------------------------
 // checkCompressionResponse — branch coverage for every action +
 // ResponseHandling case.
@@ -1128,6 +1140,23 @@ func TestCheckCompressionRequest_Handling2_GetWithPaths(t *testing.T) {
 	idx := getDcCacheIndex("r-h2")
 	if idx == -1 {
 		t.Fatal("not cached for handling-2")
+	}
+	if dataCompressionCache[idx].ResponseHandling != 2 {
+		t.Errorf("got handling=%d; want 2", dataCompressionCache[idx].ResponseHandling)
+	}
+}
+
+// TestCheckCompressionRequest_Handling2_MultiGetDataArray covers the
+// VISSv3.2 Multiple Tree Addressability Read wire shape: a top-level
+// "data" array must produce the same responseHandling==2 as the
+// pre-existing "paths" filter variant.
+func TestCheckCompressionRequest_Handling2_MultiGetDataArray(t *testing.T) {
+	initDcCache()
+	req := `{"action":"get","data":["A","B"],"requestId":"r-h2-data","dc":"2+1"}`
+	checkCompressionRequest(req)
+	idx := getDcCacheIndex("r-h2-data")
+	if idx == -1 {
+		t.Fatal("not cached for handling-2 (data array)")
 	}
 	if dataCompressionCache[idx].ResponseHandling != 2 {
 		t.Errorf("got handling=%d; want 2", dataCompressionCache[idx].ResponseHandling)

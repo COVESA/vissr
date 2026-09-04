@@ -91,7 +91,13 @@ func getDcConfig(reqMessage string) (string, string, bool, bool) {
 	singlePath := false
 	dcValue = getValueForKey(reqMessage, `"dc"`)
 	isGet = strings.Contains(reqMessage, `"get"`)
-	singlePath = !strings.Contains(reqMessage, `"paths"`)
+	// A request addresses multiple paths either via the pre-existing
+	// "paths" filter variant, or (VISSv3.2) via a top-level "data" array
+	// in a Multiple Tree Addressability Read request (CORE section
+	// 5.1.1.2). Either way the response will contain more than one
+	// {path,dp} element, so path compression must not be applied the
+	// same way as for a genuinely single-path get.
+	singlePath = !strings.Contains(reqMessage, `"paths"`) && !strings.Contains(reqMessage, `"data"`)
 	payloadId = getValueForKey(reqMessage, `"requestId"`)
 	return dcValue, payloadId, isGet, singlePath
 }
@@ -396,7 +402,7 @@ func compressPaths(respMessage string, sortedList []string) string {
 // core: applies compression-response post-processing and forwards to
 // the connected WS client via RemoveRoutingForwardResponse. Extracted
 // from WsMgrInit's for/select loop so the response path can be unit-
-// tested independently of the goroutine machinery — see
+// tested independently of the goroutine machinery - see
 // wsMgr_dispatch_test.go.
 func handleWsTransportResponse(respMessage string, transportMgrChan chan string) {
 	utils.Info.Printf("WS mgr hub: Response from server core:%s", respMessage)
