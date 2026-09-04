@@ -543,6 +543,10 @@ func traverseNode(thisNode *Node_t, context *SearchContext_t) int {
 }
 
 func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) int {
+	if context.NumOfMatches == MAXFOUNDNODES-1 {
+		*done = true
+		return 0
+	}
 	if (getPathSegment(0, context) == "*") {
 		context.SpeculationIndex++
 	}
@@ -578,6 +582,9 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 			}
 		}
 		context.NumOfMatches++
+		if context.NumOfMatches == MAXFOUNDNODES-1 {
+			Info.Printf("Max number of matching nodes reached")
+		}
 		if (context.SpeculationIndex >= 0) {
 			context.SpeculativeMatches[context.SpeculationIndex]++
 		}
@@ -622,7 +629,7 @@ func isEndOfScope(context *SearchContext_t) bool {
 }
 
 func compareNodeName(nodeName string, pathName string) bool {
-	//fmt.Printf("compareNodeName(): nodeName=%s, pathName=%s\n", nodeName, pathName)
+	//Info.Printf("compareNodeName(): nodeName=%s, pathName=%s\n", nodeName, pathName)
 	if (nodeName == pathName || pathName == "*") {
 		return true
 	}
@@ -676,7 +683,7 @@ func incDepth(thisNode *Node_t, context *SearchContext_t) {
  * decDepth() shall reverse speculative wildcard matches that have failed, and also decrement currentDepth.
  **/
 func decDepth(speculationSucceded int, context *SearchContext_t) {
-	//fmt.Printf("decDepth():speculationSucceded=%d\n", speculationSucceded)
+	//Info.Printf("decDepth():speculationSucceded=%d\n", speculationSucceded)
 	if (context.SpeculationIndex >= 0 && context.SpeculativeMatches[context.SpeculationIndex] > 0) {
 		if (speculationSucceded == 0) {  // it failed so remove a saved match
 			context.NumOfMatches--
@@ -898,7 +905,7 @@ func writeNode(thisNode *Node_t) {
 
     treeFp.Write(serializeUInt((uint8)(thisNode.Children)))
 
-//    fmt.Printf("writeNode: %s\n", thisNode.Name)
+//    Info.Printf("writeNode: %s\n", thisNode.Name)
 }
 
 func calculatAllowedStrLen(allowedDef []string) int {
@@ -911,7 +918,7 @@ func calculatAllowedStrLen(allowedDef []string) int {
 
 func allowedWrite(allowed string) {
     treeFp.Write(intToHex(len(allowed)))
-//fmt.Printf("allowedHexLen: %s\n", string(intToHex(len(allowed))))
+//Info.Printf("allowedHexLen: %s\n", string(intToHex(len(allowed))))
     treeFp.Write([]byte(allowed))
 }
 
@@ -934,7 +941,7 @@ func serializeUInt(intVal interface{}) []byte {
         buf[0] = byte(intVal.(uint32) & 0x00FF)
         return buf
       default:
-        fmt.Println(intVal, "is of an unknown type")
+        Info.Println(intVal, "is of an unknown type")
         return nil
     }
 }
@@ -954,7 +961,7 @@ func deSerializeUInt(buf []byte) interface{} {
         intVal = (uint32)((uint32)((uint32)(buf[3])*16777216) + (uint32)((uint32)(buf[2])*65536) + (uint32)((uint32)(buf[1])*256) + (uint32)(buf[0]))
         return intVal
       default:
-        fmt.Printf("Buffer length=%d is of an unknown size", len(buf))
+        Info.Printf("Buffer length=%d is of an unknown size", len(buf))
         return nil
     }
 }
@@ -1060,7 +1067,7 @@ func VSSGetLeafNodesList(rootNode *Node_t, rootNodeName string, listFname string
 	var err error
 	treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
-		fmt.Printf("Could not open %s for writing tree data\n", listFname)
+		Error.Printf("Could not open %s for writing tree data\n", listFname)
 		return 0
 	}
 	defer treeFp.Close()
@@ -1080,7 +1087,7 @@ func VSSGetDefaultList(rootNode *Node_t, rootNodeName string, listFname string) 
 	var err error
 	treeFp, err = os.OpenFile(listFname, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
-		fmt.Printf("Could not open %s for writing tree data\n", listFname)
+		Error.Printf("Could not open %s for writing tree data\n", listFname)
 		return 0
 	}
 	defer treeFp.Close()
@@ -1109,14 +1116,14 @@ func VSSReadTree(fname string) *Node_t {
 	var err error
 	treeFp, err = os.OpenFile(fname, os.O_RDONLY, 0644)
 	if err != nil {
-		fmt.Printf("Could not open %s for reading tree. Error= %s\n", fname, err)
+		Error.Printf("Could not open %s for reading tree. Error= %s\n", fname, err)
 		return nil
 	}
 	defer treeFp.Close()
 	initReadMetadata()
 	root, err := traverseAndReadNode(nil)
 	if err != nil {
-		fmt.Printf("VSSReadTree: parse failed: %s\n", err)
+		Error.Printf("VSSReadTree: parse failed: %s\n", err)
 		return nil
 	}
 	printReadMetadata()
@@ -1131,7 +1138,7 @@ func VSSWriteTree(fname string, root *Node_t) {
 	var err error
 	treeFp, err = os.OpenFile(fname, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
-		fmt.Printf("Could not open %s for writing tree data\n", fname)
+		Error.Printf("Could not open %s for writing tree data\n", fname)
 		return
 	}
 	defer treeFp.Close()
