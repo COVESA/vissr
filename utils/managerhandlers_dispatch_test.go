@@ -20,6 +20,7 @@ package utils
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -73,13 +74,23 @@ func TestForwardWsRequest_PerformsHandshake(t *testing.T) {
 		close(done)
 	}()
 
+	// forwardWsRequest pushes to clientBackendChannel (a synchronous,
+	// buffered send) strictly before it returns and done is closed, so
+	// by the time done is observably closed, clientBackendChannel is
+	// guaranteed to already hold the value. Racing the two in a single
+	// select is therefore a bug, not a safety net: once both are
+	// ready, select picks between them uniformly at random, so this
+	// used to fail ~50% of the times done and the channel send race to
+	// "ready" at the same instant (bug-race regression). Read the
+	// backend channel directly instead, with a timeout as the only
+	// failure signal for "the helper never sent anything".
 	select {
 	case got := <-clientBackendChannel:
 		if got != "fake-hub-response" {
 			t.Fatalf("backend got %q; want the response we pre-seeded", got)
 		}
-	case <-done:
-		t.Fatalf("forwardWsRequest returned without pushing to backend channel")
+	case <-time.After(time.Second):
+		t.Fatalf("forwardWsRequest did not push to backend channel in time")
 	}
 	<-done
 
