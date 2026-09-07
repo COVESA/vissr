@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -470,26 +471,31 @@ func processFeederServerMessage(serverMessageMap map[string]interface{}, inputCh
 	}
 }
 
+// udsReader reads newline-delimited JSON messages from the server over the
+// feeder's UDS connection. UDS SOCK_STREAM sockets, like TCP, do not
+// preserve message boundaries: two back-to-back server writes (e.g. the two
+// "set" messages emitted for a VISSv3.2 multi-set request) can arrive
+// concatenated in a single Read(), as "{...}{...}" with no separator, which
+// previously made json.Unmarshal fail on the trailing data and silently
+// dropped both messages. udsWriter (both here and on the server side) now
+// terminates every message with '\n', and bufio.Scanner's default
+// bufio.ScanLines split function reassembles partial reads and splits
+// coalesced ones on that delimiter, so each Scan() yields exactly one
+// message regardless of how the underlying reads were chunked.
 func udsReader(conn net.Conn, inputChan chan DomainData, udsChan chan string, configData ConfigData) {
 	defer conn.Close()
-	buf := make([]byte, 8192)
-	for {
-		n, err := conn.Read(buf)
-		if err != nil {
-			utils.Error.Printf("udsReader:Read failed, err = %s", err)
-			if err == io.EOF {
-				return
-			}
-			time.Sleep(1 * time.Second)
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, 8192), MaxReadBytes)
+	for scanner.Scan() {
+		message := scanner.Bytes()
+		if len(message) == 0 {
 			continue
 		}
-		utils.Info.Printf("udsReader:Message from server: %s", string(buf[:n]))
-		// n cannot exceed len(buf); fill of the buffer suggests truncation.
-		if n == len(buf) {
-			utils.Error.Printf("udsReader: message at buffer size (%d); likely truncated, dropping", n)
-			continue
-		}
-		handleServerMessage(buf[:n], inputChan, udsChan, configData)
+		utils.Info.Printf("udsReader:Message from server: %s", string(message))
+		handleServerMessage(message, inputChan, udsChan, configData)
+	}
+	if err := scanner.Err(); err != nil {
+		utils.Error.Printf("udsReader:Read failed, err = %s", err)
 	}
 }
 
@@ -546,13 +552,18 @@ func removeNotifications(pathList []interface{}) {
 	}
 }
 
+// udsWriter writes messages from udsChan to the server over the feeder's UDS
+// connection, terminating each with '\n' so the server's line-delimited
+// reader (see serviceMgr's feederReader) can tell where one message ends
+// and the next begins on the stream socket. See udsReader for why this
+// delimiter is required.
 func udsWriter(conn net.Conn, udsChan chan string) {
 	defer conn.Close()
 	for {
 		select {
 		case message := <-udsChan:
 		utils.Info.Printf("udsWriter:Message to server: %s", message)
-			_, err := conn.Write([]byte(message))
+			_, err := conn.Write([]byte(message + "\n"))
 			if err != nil {
 				utils.Error.Printf("udsWriter:Write failed, err = %s", err)
 			}

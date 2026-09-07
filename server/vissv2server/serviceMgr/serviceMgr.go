@@ -13,6 +13,7 @@
 package serviceMgr
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"github.com/apache/iotdb-client-go/client"
@@ -84,6 +85,11 @@ type FeederChannelElem struct {
 }
 var feederChannelList []FeederChannelElem
 const MAXFEEDERS = 5
+
+// maxFeederMessageBytes caps how large a single newline-delimited message
+// to/from a feeder may grow to before feederReader gives up buffering it,
+// mirroring the feeder-side udsReader's MaxReadBytes cap.
+const maxFeederMessageBytes = 1 << 20 // 1 MiB
 
 type FeederRegElem struct {
 	Name string
@@ -1005,8 +1011,15 @@ func configureDefault(udsConn net.Conn) {
 			utils.Error.Printf("configureDefault: Failed to read default configuration from %s with error = %s", defaultFile, err)
 			return
 		}
-		defaultMessage := `{"action": "update", "defaultList": ` + string(data) + "}"
-		_, err = udsConn.Write([]byte(defaultMessage))
+		// Raw newlines in a pretty-printed defaultListX.json are pure JSON
+		// whitespace (a literal, unescaped newline inside a JSON string
+		// value would make the file invalid JSON to begin with), so it's
+		// safe to fold them out here -- necessary because the message is
+		// itself terminated with '\n' as the framing delimiter to the
+		// feeder (see udsWriter/udsReader for why a delimiter is needed).
+		fileContent := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", " "), "\n", " ")
+		defaultMessage := `{"action": "update", "defaultList": ` + fileContent + "}"
+		_, err = udsConn.Write([]byte(defaultMessage + "\n"))
 		if err != nil {
 			utils.Error.Printf("configureDefault:Feeder write failed, err = %s", err)
 		}
@@ -1257,7 +1270,7 @@ func feederFrontend(toFeeder chan string, fromFeederRorC chan string, fromFeeder
 					}
 					for i := 0; i < len(feederRegList); i++ {
 						if feederRegList[i].Conn != nil && feederRegList[i].InfoType == infoType {
-							_, err := feederRegList[i].Conn.Write([]byte(message))
+							_, err := feederRegList[i].Conn.Write([]byte(message + "\n"))
 							if err != nil {
 								utils.Error.Printf("feederFrontend:write to feeder %s failed, err = %s", feederRegList[i].Name, err)
 							}
@@ -1369,7 +1382,7 @@ func handleToFeederMessage(message string, fromFeederCl chan string, feederNotif
 	}
 	for i := 0; i < len(feederRegList); i++ {
 		if feederRegList[i].Conn != nil && feederRegList[i].InfoType == infoType {
-			_, err := feederRegList[i].Conn.Write([]byte(message))
+			_, err := feederRegList[i].Conn.Write([]byte(message + "\n"))
 			if err != nil {
 				utils.Error.Printf("feederFrontend:write to feeder %s failed, err=%v", feederRegList[i].Name, err)
 			}
@@ -1541,16 +1554,26 @@ func feederReaderMgr(fromFeeders chan string) {
 	}
 }
 
+// feederReader reads newline-delimited JSON messages sent by the feeder
+// over its UDS connection. UDS SOCK_STREAM sockets, like TCP, do not
+// preserve message boundaries: two back-to-back writes from the feeder
+// could otherwise arrive concatenated in a single Read(), with no
+// separator between them. The feeder's udsWriter terminates every message
+// with '\n', and bufio.Scanner's default split function (ScanLines)
+// reassembles partial reads and splits any coalesced ones on that
+// delimiter, so each Scan() yields exactly one message.
 func feederReader(udsConn net.Conn, feederName string, feederChannelIndex int) {
-	buf := make([]byte, 512)
-	for {
-		nr, err := udsConn.Read(buf)
-		if err != nil {
-			utils.Error.Printf("feederReader:Read from %s failed, err = %s", feederName, err)
-			break
-		} else {
-			feederChannelList[feederChannelIndex].Channel <- string(buf[:nr])
+	scanner := bufio.NewScanner(udsConn)
+	scanner.Buffer(make([]byte, 0, 4096), maxFeederMessageBytes)
+	for scanner.Scan() {
+		message := scanner.Text()
+		if len(message) == 0 {
+			continue
 		}
+		feederChannelList[feederChannelIndex].Channel <- message
+	}
+	if err := scanner.Err(); err != nil {
+		utils.Error.Printf("feederReader:Read from %s failed, err = %s", feederName, err)
 	}
 }
 

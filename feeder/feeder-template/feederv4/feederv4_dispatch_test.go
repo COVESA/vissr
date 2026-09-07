@@ -25,8 +25,10 @@
 package main
 
 import (
+	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/covesa/vissr/utils"
 )
@@ -180,3 +182,59 @@ func TestProcessFeederServerMessage_MissingActionIsNoOp(t *testing.T) {
 // Once #121 lands, the test below can assert correct deletion. For
 // now it would assert the buggy behaviour, so it's omitted to avoid
 // pinning the bug.
+
+// TestUdsReader_ConcatenatedSetMessagesBothProcessed is a regression test
+// for the bug reported against a VISSv3.2 "Multiple Data Update" (set)
+// request with two paths: the server writes one JSON "set" message onto
+// the feeder's UDS connection per path, back-to-back, with no separator
+// between them (e.g. two conn.Write calls in quick succession from
+// serviceMgr's feederFrontend). Because UDS SOCK_STREAM sockets, like TCP,
+// do not preserve message boundaries, both writes could previously
+// coalesce into a single Read() on the feeder side, yielding
+// `{"action":...}{"action":...}` with no comma/newline/array-bracket
+// between the two objects. The old udsReader unmarshalled the whole
+// buffer as one JSON value, which failed with a "invalid character '{'
+// after top-level value" error, and BOTH set messages were silently
+// dropped.
+//
+// The fix has udsWriter (both here and on the server) terminate every
+// message with '\n', and udsReader/feederReader use a bufio.Scanner
+// (ScanLines) to split correctly regardless of how the underlying Read()
+// calls chunked the bytes. This test writes the two set messages encoded
+// exactly as the fixed udsWriter would (newline-terminated) in a single
+// net.Conn.Write call -- simulating the OS coalescing two writes into one
+// read -- and asserts both are decoded and forwarded on inputChan.
+func TestUdsReader_ConcatenatedSetMessagesBothProcessed(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+
+	inputChan := make(chan DomainData, 4)
+	udsChan := make(chan string, 4)
+	cfg := ConfigData{Scope: []string{"Vehicle"}}
+
+	go udsReader(server, inputChan, udsChan, cfg)
+
+	msg1 := `{"action": "set", "data": {"path":"Vehicle.TripMeterReading", "dp":{"value":"true", "ts":"2026-09-07T11:51:16.158Z"}}}`
+	msg2 := `{"action": "set", "data": {"path":"Vehicle.ADAS.CruiseControl.IsActive", "dp":{"value":"true", "ts":"2026-09-07T11:51:16.158Z"}}}`
+	// Simulate two back-to-back writer calls landing in a single Read() by
+	// writing both newline-terminated messages in one Write().
+	if _, err := client.Write([]byte(msg1 + "\n" + msg2 + "\n")); err != nil {
+		t.Fatalf("client.Write failed: %v", err)
+	}
+
+	got := map[string]string{}
+	for i := 0; i < 2; i++ {
+		select {
+		case dd := <-inputChan:
+			got[dd.Name] = dd.Value
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for DomainData #%d; got so far: %+v", i+1, got)
+		}
+	}
+	if got["Vehicle.TripMeterReading"] != "true" {
+		t.Errorf("Vehicle.TripMeterReading not forwarded correctly, got map=%+v", got)
+	}
+	if got["Vehicle.ADAS.CruiseControl.IsActive"] != "true" {
+		t.Errorf("Vehicle.ADAS.CruiseControl.IsActive not forwarded correctly, got map=%+v", got)
+	}
+}

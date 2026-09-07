@@ -6,6 +6,7 @@ package serviceMgr
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net"
 	"os"
 	"runtime"
@@ -4917,6 +4918,68 @@ func TestGetMetadataDomainDp_KnownDomains(t *testing.T) {
 		if !strings.Contains(result, "value") {
 			t.Errorf("domain=%q: expected JSON with value key; got %q", tc.domain, result)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// feederReader — concatenated-message regression test
+//
+// Regression test for the bug where a VISSv3.2 "Multiple Data Update" (set)
+// request with two paths caused serviceMgr's feederFrontend to issue two
+// back-to-back Conn.Write calls to a feeder's UDS connection, one per "set"
+// message, with no delimiter between them. Because UDS SOCK_STREAM sockets
+// (like TCP) don't preserve message boundaries, the two writes could
+// coalesce into a single Read() as `{"action":...}{"action":...}` -- which
+// the old feederReader passed whole, as one opaque string, onto
+// feederChannelList[i].Channel, corrupting downstream JSON parsing.
+//
+// The fix appends '\n' after every message written to a feeder (see
+// feederFrontend, handleToFeederMessage, configureDefault) and switches
+// feederReader to a bufio.Scanner (ScanLines), which reassembles partial
+// reads and splits coalesced ones on the delimiter. This test writes two
+// newline-terminated "set" messages in a single Write() call -- simulating
+// the OS coalescing two separate writer calls into one read -- and asserts
+// feederReader emits them as two distinct, individually-parseable messages
+// on the channel.
+// --------------------------------------------------------------------------
+
+func TestFeederReader_ConcatenatedMessagesSplitCorrectly(t *testing.T) {
+	resetFeederGlobals()
+	server, client := net.Pipe()
+	defer client.Close()
+
+	feederChannelList[0].Channel = make(chan string, 4)
+	go feederReader(server, "test-feeder", 0)
+
+	msg1 := `{"action": "set", "data": {"path":"Vehicle.TripMeterReading", "dp":{"value":"true", "ts":"2026-09-07T11:51:16.158Z"}}}`
+	msg2 := `{"action": "set", "data": {"path":"Vehicle.ADAS.CruiseControl.IsActive", "dp":{"value":"true", "ts":"2026-09-07T11:51:16.158Z"}}}`
+	if _, err := client.Write([]byte(msg1 + "\n" + msg2 + "\n")); err != nil {
+		t.Fatalf("client.Write failed: %v", err)
+	}
+
+	var got []string
+	for i := 0; i < 2; i++ {
+		select {
+		case m := <-feederChannelList[0].Channel:
+			got = append(got, m)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for message #%d; got so far: %v", i+1, got)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d messages; want 2: %v", len(got), got)
+	}
+	for _, m := range got {
+		var decoded map[string]interface{}
+		if err := json.Unmarshal([]byte(m), &decoded); err != nil {
+			t.Errorf("message %q failed to unmarshal as standalone JSON: %v", m, err)
+		}
+	}
+	if got[0] != msg1 {
+		t.Errorf("first message = %q; want %q", got[0], msg1)
+	}
+	if got[1] != msg2 {
+		t.Errorf("second message = %q; want %q", got[1], msg2)
 	}
 }
 
