@@ -864,6 +864,19 @@ func convertDomainData(north2SouthConv bool, inData DomainData, feederMap []Feed
 	return outData
 }
 
+// convertValue converts value between the VSS and vehicle domains using
+// the scaling table entry at convertIndex. On any conversion failure
+// (out-of-range index, malformed scaling entry, or a value not covered
+// by the entry -- e.g. an enum key/value that isn't in the table) it
+// returns utils.InlineErrorDataConversionFailed rather than "". A prior
+// version of this code returned "" on failure, which convertDomainData
+// then propagated into outData.Value unchanged; because that empty
+// string doesn't fail any of the caller's emptiness checks (only
+// outData.Name is checked before writing to state storage), it ended up
+// silently written to the state storage backend as-is, invisibly
+// discarding the actual set value while still reporting write success.
+// Writing the in-line error sentinel instead surfaces the failure to
+// a subsequent get, per the VISS in-line error reporting convention.
 func convertValue(value string, convertIndex uint16, inDatatype int8, outDatatype int8, north2SouthConv bool) string {
 	if convertIndex == 0 { // no conversion
 		return value
@@ -873,12 +886,12 @@ func convertValue(value string, convertIndex uint16, inDatatype int8, outDatatyp
 	idx := int(convertIndex) - 1
 	if idx < 0 || idx >= len(scalingDataList) {
 		utils.Error.Printf("convertValue: convertIndex %d out of range for scalingDataList(len=%d)", convertIndex, len(scalingDataList))
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 	var convertDataMap interface{}
 	if err := json.Unmarshal([]byte(scalingDataList[idx]), &convertDataMap); err != nil {
 		utils.Error.Printf("convertValue:Error unmarshal scalingDataList item=%s", scalingDataList[idx])
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 	switch vv := convertDataMap.(type) {
 	case map[string]interface{}:
@@ -889,7 +902,7 @@ func convertValue(value string, convertIndex uint16, inDatatype int8, outDatatyp
 		return linearConversion(vv, north2SouthConv, value)
 	default:
 		utils.Error.Printf("convertValue: convert data=%s has unknown format (got %T)", scalingDataList[idx], convertDataMap)
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 }
 
@@ -910,25 +923,28 @@ func enumConversion(enumObj map[string]interface{}, north2SouthConv bool, inValu
 			}
 		}
 	}
+	// inValue has no matching entry in enumObj (e.g. a set request's value
+	// isn't one of the enum's defined VSS keys). See convertValue's doc
+	// comment for why this must not be "".
 	utils.Error.Printf("enumConversion: value=%s is out of range.", inValue)
-	return ""
+	return utils.InlineErrorDataConversionFailed
 }
 
 func linearConversion(coeffArray []interface{}, north2SouthConv bool, inValue string) string { // coeffArray = [A, B], y = Ax +B, y is VSS value
 	if len(coeffArray) < 2 {
 		utils.Error.Printf("linearConversion: coefficient array too short (len=%d, need 2)", len(coeffArray))
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 	x, err := strconv.ParseFloat(inValue, 64)
 	if err != nil {
 		utils.Error.Printf("linearConversion: input value=%s cannot be converted to float.", inValue)
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 	A, okA := coeffArray[0].(float64)
 	B, okB := coeffArray[1].(float64)
 	if !okA || !okB {
 		utils.Error.Printf("linearConversion: coefficients must be numbers (got A=%T, B=%T)", coeffArray[0], coeffArray[1])
-		return ""
+		return utils.InlineErrorDataConversionFailed
 	}
 	var y float64
 	if north2SouthConv {
@@ -936,7 +952,7 @@ func linearConversion(coeffArray []interface{}, north2SouthConv bool, inValue st
 	} else {
 		if A == 0 {
 			utils.Error.Printf("linearConversion: south-to-north divide-by-zero (A=0)")
-			return ""
+			return utils.InlineErrorDataConversionFailed
 		}
 		y = (x - B) / A
 	}

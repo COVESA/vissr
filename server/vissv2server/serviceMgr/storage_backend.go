@@ -40,9 +40,10 @@ type StorageBackend interface {
 	// Get returns the canonical {"value":"...", "ts":"..."} JSON
 	// string for the data point at path. On error or missing data,
 	// returns the same sentinel-value JSON the original inline
-	// switches emitted (e.g. {"value":"visserr:Data-not-available",
-	// "ts":"..."}). Callers (getDataPackMap and subscribe LatestDataPoint
-	// capture) pass the result through to clients as-is.
+	// switches emitted (e.g. {"value":"viss-inline:Data-not-available",
+	// "ts":"..."}, see utils.InlineErrorDataNotAvailable). Callers
+	// (getDataPackMap and subscribe LatestDataPoint capture) pass the
+	// result through to clients as-is.
 	Get(path string) string
 
 	// Set writes value at path. Returns the timestamp used for the
@@ -77,13 +78,13 @@ func (s *sqliteBackend) Get(path string) string {
 		if err := rows.Err(); err != nil {
 			utils.Warning.Printf("sqliteBackend.Get: rows.Err for path=%s err=%v", path, err)
 		}
-		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+		return `{"value":"` + utils.InlineErrorDataNotAvailable + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	value := ""
 	timestamp := ""
 	if err := rows.Scan(&value, &timestamp); err != nil {
 		utils.Warning.Printf("Data not found: %s for path=%s", err, path)
-		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+		return `{"value":"` + utils.InlineErrorDataNotAvailable + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
 }
@@ -128,7 +129,7 @@ func (r *redisBackend) Get(path string) string {
 			utils.Error.Printf("Job failed. Error()=%s", err.Error())
 			return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 		}
-		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+		return `{"value":"` + utils.InlineErrorDataNotAvailable + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	return dp
 }
@@ -161,7 +162,7 @@ func (m *memcacheBackend) Get(path string) string {
 			return `{"value":"Database-error", "ts":"` + utils.GetRfcTime() + `"}`
 		}
 		utils.Warning.Printf("Data not found.")
-		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+		return `{"value":"` + utils.InlineErrorDataNotAvailable + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	return string(mcItem.Value)
 }
@@ -193,7 +194,7 @@ func (i *iotdbBackend) Get(path string) string {
 	sessionDataSet, err := i.session.ExecuteQueryStatement(selectLastSQL, &i.config.Timeout)
 	if err != nil {
 		utils.Error.Printf("IoTDB: Query failed with error=%s", err)
-		return `{"value":"visserr:Data-not-available", "ts":"` + utils.GetRfcTime() + `"}`
+		return `{"value":"` + utils.InlineErrorDataNotAvailable + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
 	success, nextErr := sessionDataSet.Next()
 	if nextErr == nil && success {
