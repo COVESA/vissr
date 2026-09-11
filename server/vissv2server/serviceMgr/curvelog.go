@@ -733,7 +733,7 @@ func clCapture1dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int
 		if !okVal || !okTs {
 			continue
 		}
-		if valStr == "visserr:Data-not-available" {
+		if valStr == utils.InlineErrorDataNotAvailable {
 			continue
 		}
 		_, ts := readRing(&aRingBuffer, 0) // read latest written
@@ -1025,7 +1025,7 @@ func clCapture2dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int
 		if !ok1 || !ok2 {
 			continue
 		}
-		if val1Str == "visserr:Data-not-available" || val2Str == "visserr:Data-not-available" {
+		if val1Str == utils.InlineErrorDataNotAvailable || val2Str == utils.InlineErrorDataNotAvailable {
 			continue
 		}
 		ts1New, ok1 := stringField(dpMap1, "ts")
@@ -1192,7 +1192,7 @@ func clCapture3dim(clChan chan CLPack, triggChannelIndex int, subscriptionId int
 		if !ok1 || !ok2 || !ok3 {
 			continue
 		}
-		if val1Str == "visserr:Data-not-available" || val2Str == "visserr:Data-not-available" || val3Str == "visserr:Data-not-available" {
+		if val1Str == utils.InlineErrorDataNotAvailable || val2Str == utils.InlineErrorDataNotAvailable || val3Str == utils.InlineErrorDataNotAvailable {
 			continue
 		}
 		ts1New, ok1 := stringField(dpMap1, "ts")

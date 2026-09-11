@@ -29,6 +29,43 @@ import (
 const IpModel = 0 // IpModel = [0,1,2] = [localhost,extIP,envVarIP]
 const IpEnvVarName = "GEN2MODULEIP"
 
+// InlineErrorPrefix is the sentinel prefix used for VISS in-line error
+// reporting (VISSv3.2 Transport spec, section "In-line Error Reporting"):
+// when a value can't be retrieved/produced for a signal in a response
+// that otherwise carries valid values for other signals, the "value"
+// field is replaced with this prefix followed by an error tag, instead
+// of failing the whole request. Per spec: "The prefix 'viss-inline:'
+// MUST NOT be used in any ordinary string values." This was previously
+// implemented in this codebase under the non-normative "visserr:" prefix;
+// it has been renamed to match the specification's wire format.
+const InlineErrorPrefix = "viss-inline:"
+
+// InlineErrorDataNotAvailable is the in-line error value used when a
+// data point has no value in the state storage backend for the
+// requested path (e.g. never set, or the backend query/lookup failed).
+const InlineErrorDataNotAvailable = InlineErrorPrefix + "Data-not-available"
+
+// InlineErrorDataConversionFailed is the in-line error value used when a
+// value could be read from or was received for a signal, but a required
+// north/south domain-value conversion (e.g. a feeder's enum or linear
+// scaling lookup) failed -- e.g. because the incoming value has no
+// matching entry in the configured conversion table. Callers write this
+// sentinel to state storage instead of silently dropping the write or
+// storing an empty/wrong value, so a subsequent get surfaces the failure
+// instead of returning stale or default data.
+//
+// NOTE: unlike InlineErrorDataNotAvailable ("viss-inline:Data-not-available",
+// which IS defined by the VISS specification's in-line error reporting
+// convention -- see the Transport spec, "In-line Error Reporting" section),
+// "Data-conversion-failed" is a VISSR-specific extension of that
+// convention and is NOT currently part of the VISS specification. It
+// reuses the same "viss-inline:" prefix and general shape so existing
+// spec-aware clients that just treat any "viss-inline:*"-prefixed value
+// as an unavailable/errored data point keep working, but the specific
+// tag itself has no normative meaning outside this reference
+// implementation.
+const InlineErrorDataConversionFailed = InlineErrorPrefix + "Data-conversion-failed"
+
 var jsonSchema *jsonschema.Schema
 
 // Access control values: none=0, write-only=1. read-write=2, consent +=10

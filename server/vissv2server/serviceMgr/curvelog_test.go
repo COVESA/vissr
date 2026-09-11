@@ -1085,7 +1085,7 @@ func TestReturnSingleDp_PublishesToChannel(t *testing.T) {
 	resetClState()
 	// Stub the storage layer enough that getVehicleData returns something.
 	// getVehicleData is implemented in serviceMgr.go; we only need its
-	// fallback (visserr:Data-not-available) for an end-to-end push.
+	// fallback (viss-inline:Data-not-available) for an end-to-end push.
 	ch := make(chan CLPack, 1)
 	go returnSingleDp(ch, 42, "Vehicle.Speed")
 	select {
