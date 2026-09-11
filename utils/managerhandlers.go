@@ -229,9 +229,9 @@ func splitToPathQueryKeyValue(path string) (string, string, string) {
 // Manages first communication with Client
 func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChannel chan string) {
 	path := req.RequestURI
-	if len(path) == 0 {
-		path = "empty-path" // will generate error as not found in VSS tree
-	}
+//	if len(path) == 0 {
+//		path = "empty-path" // will generate error as not found in VSS tree
+//	}
 	path = strings.ReplaceAll(path, "%22", "\"")
 	path = strings.ReplaceAll(path, "%20", "")
 	var requestMap = make(map[string]interface{})
@@ -255,8 +255,8 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		fallthrough // should work for POST also...
 	case "GET":
 		requestMap["action"] = "get"
-	case "POST": // set
-		requestMap["action"] = "set"
+	case "POST": // set / multi-set / multi-get
+//		requestMap["action"] = "set"
 		// Bound the request body before io.ReadAll. Without this an
 		// anonymous client can send a Content-Length: <huge> or a
 		// never-closing chunked body and ReadAll will allocate until
@@ -271,7 +271,18 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		}
 		var bodyMap map[string]interface{}
 		MapRequest(string(body), &bodyMap)
-		requestMap["value"] = bodyMap["value"]
+		if path == "" || path == "/" { // multi-set/get
+			delete(requestMap, "path")
+			if strings.Contains(string(body), "value") {
+				requestMap["action"] = "set"
+			} else {
+				requestMap["action"] = "get"
+			}
+			requestMap["data"] = bodyMap["data"]
+		} else { // set
+			requestMap["action"] = "set"
+			requestMap["value"] = bodyMap["value"]
+		}
 	default:
 		//		http.Error(w, "400 Unsupported method", http.StatusBadRequest)
 		Warning.Printf("Only GET and POST methods are supported.")

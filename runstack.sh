@@ -18,7 +18,7 @@ startme() {
 	cd ../../../
 
 	echo "Starting server"
-	screen -S vissv2server -dm bash -c "pushd server/vissv2server && ./vissv2server -m &> ./logs/vissv2server-log.txt && popd"
+	screen -S vissv2server -dm bash -c "pushd server/vissv2server && ./vissv2server -m -d &> ./logs/vissv2server-log.txt && popd"
 
 	sleep 1s
 	echo "Starting feederv4"
