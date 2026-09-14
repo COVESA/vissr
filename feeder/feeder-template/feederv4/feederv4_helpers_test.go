@@ -25,6 +25,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/covesa/vissr/utils"
 )
 
 // TestFileExists covers the path-exists check.
@@ -162,28 +164,51 @@ func TestIncDpIndex(t *testing.T) {
 }
 
 // TestEnumConversion maps between VSS enum values via the enum object.
+// enumObj keys are VSS-domain values, enumObj values are vehicle-domain
+// values (see enumConversion's doc comment). north2SouthConv=true takes
+// a VSS-domain input (a key) and returns the vehicle-domain value;
+// north2SouthConv=false takes a vehicle-domain input (a value) and
+// returns the VSS-domain key.
 func TestEnumConversion_NorthBound(t *testing.T) {
-	// North-bound: vehicle value -> VSS key.
+	// VSS ("Off"/"On") -> vehicle ("0"/"1").
 	enum := map[string]interface{}{
 		"Off": "0",
 		"On":  "1",
 	}
-	got := enumConversion(enum, true, "0")
-	// Implementation could either return "Off" or pass-through depending
-	// on direction. Just assert the function doesn't panic.
-	if got == "" {
-		t.Logf("note: enumConversion northbound returned empty (acceptable as long as no panic)")
+	got := enumConversion(enum, true, "Off")
+	if got != "0" {
+		t.Errorf("enumConversion northbound = %q; want %q", got, "0")
 	}
 }
 
 func TestEnumConversion_SouthBound(t *testing.T) {
+	// vehicle ("0"/"1") -> VSS ("Off"/"On").
 	enum := map[string]interface{}{
 		"Off": "0",
 		"On":  "1",
 	}
-	got := enumConversion(enum, false, "Off")
-	if got == "" {
-		t.Logf("note: enumConversion southbound returned empty (acceptable as long as no panic)")
+	got := enumConversion(enum, false, "0")
+	if got != "Off" {
+		t.Errorf("enumConversion southbound = %q; want %q", got, "Off")
+	}
+}
+
+// TestEnumConversion_ValueNotInTable is a regression test: a value with
+// no matching entry in enumObj (e.g. a set request whose value isn't one
+// of the enum's defined VSS keys, as in the "SPORT" -> Vehicle.Powertrain.
+// Transmission.PerformanceMode bug) must return the VISS in-line error
+// sentinel, not "". Returning "" let the failed conversion be written to
+// state storage as an empty value indistinguishable from success; a
+// subsequent get would then see whatever the backend defaults to for a
+// missing/empty stored value instead of a clear conversion-failure marker.
+func TestEnumConversion_ValueNotInTable(t *testing.T) {
+	enum := map[string]interface{}{
+		"NORMAL": "0",
+		"ECONOMY": "1",
+	}
+	got := enumConversion(enum, true, "SPORT")
+	if got != utils.InlineErrorDataConversionFailed {
+		t.Errorf("enumConversion(out-of-table value) = %q; want %q", got, utils.InlineErrorDataConversionFailed)
 	}
 }
 
@@ -198,13 +223,17 @@ func TestLinearConversion_Identity(t *testing.T) {
 }
 
 func TestLinearConversion_BadInput(t *testing.T) {
-	// Non-numeric value should not panic.
+	// Non-numeric value should not panic, and must return the in-line
+	// error sentinel rather than "" (see convertValue's doc comment).
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("linearConversion panicked on non-numeric input: %v", r)
 		}
 	}()
-	_ = linearConversion([]interface{}{float64(2), float64(0)}, true, "not a number")
+	got := linearConversion([]interface{}{float64(2), float64(0)}, true, "not a number")
+	if got != utils.InlineErrorDataConversionFailed {
+		t.Errorf("linearConversion(non-numeric input) = %q; want %q", got, utils.InlineErrorDataConversionFailed)
+	}
 }
 
 // TODO(testing): the following functions need code refactoring before
