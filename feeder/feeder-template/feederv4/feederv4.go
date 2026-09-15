@@ -749,6 +749,9 @@ func simulateInput(simCtx *simulateDataCtx) DomainData {
 }
 
 func calcInputValue(iteration int, setValue string) string {
+	if !utils.IsNumber(setValue) {
+		return setValue
+	}
 	setVal, _ := strconv.Atoi(setValue)
 	newVal := setVal - 10 + iteration
 	return strconv.Itoa(newVal)
@@ -850,12 +853,14 @@ func convertDomainData(north2SouthConv bool, inData DomainData, feederMap []Feed
 	matchIndex := sort.Search(len(feederMap), func(i int) bool { return feederMap[i].Name >= inData.Name })
 	if matchIndex == len(feederMap) || feederMap[matchIndex].Name != inData.Name {
 		utils.Error.Printf("convertDomainData:Failed to map= %s", inData.Name)
-		return inData //assume 1-to-1...
+		inData.Value = utils.InlineErrorDataConversionFailed
+		return inData
 	}
 	// Defensive: MapIndex from disk can be out of range.
 	mapIdx := int(feederMap[matchIndex].MapIndex)
 	if mapIdx < 0 || mapIdx >= len(feederMap) {
 		utils.Error.Printf("convertDomainData:MapIndex %d for %q out of range [0,%d)", mapIdx, inData.Name, len(feederMap))
+		inData.Value = utils.InlineErrorDataConversionFailed
 		return inData
 	}
 	outData.Name = feederMap[mapIdx].Name
