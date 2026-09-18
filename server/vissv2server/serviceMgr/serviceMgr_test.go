@@ -1618,15 +1618,60 @@ func TestEvaluateChangeFilter_NumberEqNoDiff(t *testing.T) {
 }
 
 func TestEvaluateChangeFilter_BoolNe(t *testing.T) {
-	// diff = "false" is boolean: IsBoolean("false") => true
+	// diff = "false" is boolean, but is not the VISS-conformant "0" that
+	// compareValues' bool branch requires -- so this must return false.
 	param := `{"logic-op":"ne","diff":"false"}`
 	dp := `{"value":"true","ts":"2026-01-01T00:00:00Z"}`
 	ok, _ := evaluateChangeFilter(param, "false", "true", dp)
-	// compareValues("ne", "false", "true", "false", "bool")
-	// diff is not "0" so returns false for bool
-	// evaluateChangeFilter with IsBoolean(diff) => datatype="bool"
-	// but diff="false" != "0" => compareValues returns false
-	_ = ok // just ensure no panic
+	if ok {
+		t.Errorf("diff=\"false\" (not \"0\") on a bool signal should return false; got true")
+	}
+}
+
+// TestEvaluateChangeFilter_BoolGtWithConformantDiff is a regression test
+// for the bug where a VISS-conformant boolean change-filter subscription
+// (e.g. {"logic-op":"gt","diff":"0"} on Vehicle.Cabin.Door.Row1.
+// DriverSide.IsOpen, per CORE's Change Filter Operation) never fired.
+// evaluateChangeFilter used to decide "bool" vs "number" datatype by
+// calling utils.IsBoolean on the filter's diff parameter rather than on
+// the signal's own value; since a boolean signal's diff is
+// conventionally the numeric-looking "0" (compareValues' bool branch
+// itself requires diff=="0"), IsBoolean("0") was always false, so
+// datatype was always forced to "number", and compareValues then failed
+// to strconv.ParseFloat("true"/"false", ...) and silently returned
+// false for every logic-op, regardless of whether the value actually
+// changed. These four cases mirror the exact filters from the bug
+// report (gt, ne, lt) plus eq, all with the spec-conformant diff="0".
+func TestEvaluateChangeFilter_BoolWithConformantDiff(t *testing.T) {
+	dp := `{"value":"true","ts":"2026-01-01T00:00:00Z"}`
+	cases := []struct {
+		name        string
+		logicOp     string
+		latestValue string
+		currentValue string
+		want        bool
+	}{
+		{"gt: false->true is a rising transition", "gt", "false", "true", true},
+		{"gt: true->false is not a rising transition", "gt", "true", "false", false},
+		{"gt: no change", "gt", "true", "true", false},
+		{"lt: true->false is a falling transition", "lt", "true", "false", true},
+		{"lt: false->true is not a falling transition", "lt", "false", "true", false},
+		{"ne: false->true is any change", "ne", "false", "true", true},
+		{"ne: true->false is any change", "ne", "true", "false", true},
+		{"ne: no change", "ne", "true", "true", false},
+		{"eq: no change", "eq", "true", "true", true},
+		{"eq: changed", "eq", "false", "true", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			param := `{"logic-op":"` + tc.logicOp + `","diff":"0"}`
+			ok, _ := evaluateChangeFilter(param, tc.latestValue, tc.currentValue, dp)
+			if ok != tc.want {
+				t.Errorf("evaluateChangeFilter(%s, latest=%s, current=%s) = %v; want %v",
+					param, tc.latestValue, tc.currentValue, ok, tc.want)
+			}
+		})
+	}
 }
 
 func TestEvaluateChangeFilter_BadJSON(t *testing.T) {
