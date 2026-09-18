@@ -376,8 +376,20 @@ func evaluateChangeFilter(opValue string, latestValue string, currentValue strin
 		utils.Error.Printf("evaluateChangeFilter: Unmarshal error=%s", err)
 		return false, ""
 	}
+	// Bug fix: the datatype used to select compareValues' bool-vs-number
+	// branch must be derived from the signal's own value (latestValue/
+	// currentValue), not from the filter's "diff" parameter. Per VISS
+	// CORE's Change Filter Operation, a boolean signal's "diff" is
+	// conventionally the numeric-looking string "0" (compareValues'
+	// "bool" branch itself requires diff=="0"), so utils.IsBoolean(diff)
+	// is always false for a real boolean-signal subscription -- which
+	// previously forced datatype to "number" and made compareValues try
+	// strconv.ParseFloat("true"/"false", ...), which always fails and
+	// silently returns false. That made every "change" filter subscription
+	// on a boolean-valued path (e.g. Vehicle.Cabin.Door.Row1.DriverSide.
+	// IsOpen) never fire, regardless of logic-op.
 	datatype := "number"
-	if utils.IsBoolean(changeFilter.Diff) {
+	if utils.IsBoolean(currentValue) || utils.IsBoolean(latestValue) {
 		datatype = "bool"
 	}
 	val1 := compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff, datatype)
