@@ -256,7 +256,7 @@ func writeSerializedTreeFixture(t *testing.T, root *Node_t) string {
 func TestRoundTrip_SingleLeaf(t *testing.T) {
 	orig := &Node_t{
 		Name:        "Vehicle",
-		NodeType:    "sensor",
+		NodeType:    SENSOR,
 		Uuid:        "vin-uuid",
 		Description: "the vehicle root",
 		Datatype:    "string",
@@ -284,7 +284,7 @@ func TestRoundTrip_SingleLeaf(t *testing.T) {
 func TestRoundTrip_BranchWithEmptyDatatype(t *testing.T) {
 	leaf := &Node_t{
 		Name:     "Speed",
-		NodeType: "sensor",
+		NodeType: SENSOR,
 		Datatype: "float",
 	}
 	root := &Node_t{
@@ -317,7 +317,7 @@ func TestRoundTrip_BranchWithEmptyDatatype(t *testing.T) {
 func TestRoundTrip_NodeWithAllowedValues(t *testing.T) {
 	leaf := &Node_t{
 		Name:       "Mode",
-		NodeType:   "actuator",
+		NodeType:   ACTUATOR,
 		Datatype:   "string",
 		Allowed:    3,
 		AllowedDef: []string{"OFF", "AUTO", "MANUAL"},
@@ -350,7 +350,7 @@ func TestVSSReadTree_NonexistentFile(t *testing.T) {
 // truncated binary used to silently parse into a zero-initialized
 // tree; now it returns nil.
 func TestVSSReadTree_TruncatedFile(t *testing.T) {
-	leaf := &Node_t{Name: "Speed", NodeType: "sensor", Datatype: "float"}
+	leaf := &Node_t{Name: "Speed", NodeType: SENSOR, Datatype: "float"}
 	root := &Node_t{
 		Name: "Vehicle", NodeType: BRANCH,
 		Children: 1, Child: []*Node_t{leaf},
@@ -411,7 +411,7 @@ func TestVSSReadTree_DepthCap(t *testing.T) {
 		// All inner nodes have one child; deepest is a leaf with 0
 		// children. We always declare 1 to force depth growth; the
 		// reader stops at MAX_TREE_DEPTH so the leaf detail is moot.
-		writeNodeRaw("N", BRANCH, 1)
+		writeNodeRaw("N", "branch", 1)
 	}
 	// Final leaf with 0 children
 	writeNodeRaw("L", "sensor", 0)
@@ -445,7 +445,7 @@ func TestVSSReadTree_PopulateNodeErrorPropagates(t *testing.T) {
 // VSSReadTree / VSSWriteTree calls don't crash. The mutex serializes
 // them. Run with -race to detect any unguarded access.
 func TestTreeFpMutex_NoCrashUnderConcurrency(t *testing.T) {
-	leaf := &Node_t{Name: "Speed", NodeType: "sensor", Datatype: "float"}
+	leaf := &Node_t{Name: "Speed", NodeType: SENSOR, Datatype: "float"}
 	root := &Node_t{Name: "Vehicle", NodeType: BRANCH, Children: 1, Child: []*Node_t{leaf}}
 	tmp := t.TempDir()
 	fname := filepath.Join(tmp, "concurrent.bin")

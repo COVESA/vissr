@@ -45,7 +45,7 @@ func ValidateSetValue(node *Node_t, value string) error {
 	case SENSOR:
 		return &ValidationError{403, fmt.Sprintf("signal %q is read-only (sensor)", node.Name)}
 	default:
-		return &ValidationError{400, fmt.Sprintf("node %q is not a signal (type=%s)", node.Name, node.NodeType)}
+		return &ValidationError{400, fmt.Sprintf("node %q is not a signal (type=%s)", node.Name, NodetypeToString(node.NodeType))}
 	}
 
 	// Allowed-value check takes priority: if the list is defined, the value

@@ -1089,7 +1089,7 @@ func buildIoStructMetadata(node *utils.Node_t) map[string]interface{} {
 			continue
 		}
 		params[utils.VSSgetName(child)] = map[string]interface{}{
-			"type":     utils.VSSgetType(child),
+			"type":     utils.NodetypeToString(utils.VSSgetType(child)),
 			"datatype": utils.VSSgetDatatype(child),
 		}
 	}

@@ -98,61 +98,8 @@ type SearchContext_t struct {
 // matrix preserving inherited value with read-write having priority over write-only and consent over no consent
 //var validationMatrix [5][5]int = [5][5]int{{0,1,2,11,12}, {1,1,2,11,12}, {2,2,2,12,12}, {11,11,12,11,12}, {12,12,12,12,12}}
 
-const (   // non-exhaustive list of node types
-    SENSOR = "sensor"
-    ACTUATOR = "actuator"
-    ATTRIBUTE = "attribute"
-    BRANCH = "branch"
-    STRUCT = "struct"
-    PROPERTY = "property"
-    PROCEDURE = "procedure"
-    IOSTRUCT = "iostruct"
-)
-
-type Node_t struct {
-    Name string
-    NodeType string
-    Uuid string
-    Description string
-    Datatype string
-    Min string
-    Max string
-    Unit string
-    Allowed uint8
-    AllowedDef []string
-    DefaultValue string
-    Validate uint8
-    Children uint8
-    Parent *Node_t
-    Child []*Node_t
-}
-
-func ValidateToInt(validate string) uint8 {
-    validation := (uint8)(0)
-    if strings.Contains(validate, "write-only") {
-        validation = 1
-    } else if strings.Contains(validate, "read-write") {
-        validation = 2
-    }
-    if strings.Contains(validate, "consent") {
-        validation += 10
-    }
-    return validation
-}
-
-func ValidateToString(validate uint8) string {
-    var validation string
-    if (validate%10 == 1) {
-        validation = "write-only"
-    }
-    if (validate%10 == 2) {
-        validation = "read-write"
-    }
-    if (validate/10 == 1) {
-        validation = "+consent"
-    }
-    return validation
-}
+// Node_t, the NodeTypes_t constants (SENSOR, ACTUATOR, BRANCH, PROCEDURE, ...), the
+// node type string mapping and ValidateToInt/ValidateToString live in datamodel.go.
 
 func getMaxValidation(newValidation int, currentMaxValidation int) int {
 	return validationMatrix[translateToMatrixIndex(newValidation)][translateToMatrixIndex(currentMaxValidation)]
@@ -269,8 +216,8 @@ func NewBranchNode(name string, children ...*Node_t) *Node_t {
 }
 
 // NewSignalNode creates a signal Node_t (sensor, actuator, or attribute).
-// nodeType must be one of the SENSOR, ACTUATOR, ATTRIBUTE constants.
-func NewSignalNode(name, nodeType, datatype, description, min, max, unit string) *Node_t {
+// nodeType is one of the SENSOR, ACTUATOR, ATTRIBUTE (Vehicle-Data profile) or RO, RW (Data profile) constants.
+func NewSignalNode(name string, nodeType NodeTypes_t, datatype, description, min, max, unit string) *Node_t {
 	return &Node_t{
 		Name:        name,
 		NodeType:    nodeType,
@@ -634,7 +581,7 @@ func saveMatchingNode(thisNode *Node_t, context *SearchContext_t, done *bool) in
 		context.SpeculationIndex++
 	}
 	context.MaxValidation = getMaxValidation(VSSgetValidation(thisNode), context.MaxValidation)
-	if (VSSgetType(thisNode) != BRANCH || context.LeafNodesOnly == false) {
+	if (IsContainerType(VSSgetType(thisNode)) == false || context.LeafNodesOnly == false) {
 		if ( isGetLeafNodeList == false && isGetDefaultList == false) {
 			context.SearchData[context.NumOfMatches].NodePath = context.MatchPath
 			context.SearchData[context.NumOfMatches].NodeHandle = thisNode
@@ -840,8 +787,13 @@ func populateNode(thisNode *Node_t) error {
 	if thisNode.Name, err = readLenPrefixedString8(); err != nil {
 		return fmt.Errorf("name: %w", err)
 	}
-	if thisNode.NodeType, err = readLenPrefixedString8(); err != nil {
+	nodeTypeStr, err := readLenPrefixedString8()
+	if err != nil {
 		return fmt.Errorf("nodeType: %w", err)
+	}
+	thisNode.NodeType = NodeTypes_t(StringToNodetype(nodeTypeStr))
+	if thisNode.NodeType == 0 {
+		return fmt.Errorf("unknown node type %q", nodeTypeStr)
 	}
 	if thisNode.Uuid, err = readLenPrefixedString8(); err != nil {
 		return fmt.Errorf("uuid: %w", err)
@@ -857,7 +809,7 @@ func populateNode(thisNode *Node_t) error {
 	thisNode.Description = string(descrBytes)
 
 	// Bug-6 fix: read the datatype bytes UNCONDITIONALLY. The
-	// original code only consumed the bytes when NodeType != BRANCH,
+	// original code only consumed the bytes when NodeType was not a container,
 	// but the writer always writes them (just usually empty for
 	// BRANCH). A malformed/malicious tree where a BRANCH had a
 	// non-empty datatype length would desync the read stream and
@@ -871,7 +823,7 @@ func populateNode(thisNode *Node_t) error {
 	if err != nil {
 		return fmt.Errorf("datatype: %w", err)
 	}
-	if thisNode.NodeType != BRANCH {
+	if IsTypeWithoutDatatype(thisNode.NodeType) == false {
 		thisNode.Datatype = string(datatypeBytes)
 	}
 
@@ -910,7 +862,7 @@ func populateNode(thisNode *Node_t) error {
 		thisNode.AllowedDef[i] = elem
 	}
 
-	if thisNode.DefaultValue, err = readLenPrefixedString8(); err != nil {
+	if thisNode.DefaultAllowed, err = readLenPrefixedString8(); err != nil {
 		return fmt.Errorf("default: %w", err)
 	}
 
@@ -932,8 +884,9 @@ func writeNode(thisNode *Node_t) {
     treeFp.Write(serializeUInt((uint8)(len(thisNode.Name))))
     treeFp.Write([]byte(thisNode.Name))
 
-    treeFp.Write(serializeUInt((uint8)(len(thisNode.NodeType))))
-    treeFp.Write([]byte(thisNode.NodeType))
+    nodeType := NodetypeToString(thisNode.NodeType)
+    treeFp.Write(serializeUInt((uint8)(len(nodeType))))
+    treeFp.Write([]byte(nodeType))
 
     treeFp.Write(serializeUInt((uint8)(len(thisNode.Uuid))))
     treeFp.Write([]byte(thisNode.Uuid))
@@ -972,9 +925,9 @@ func writeNode(thisNode *Node_t) {
         allowedWrite(thisNode.AllowedDef[i])
     }
 
-    treeFp.Write(serializeUInt((uint8)(len(thisNode.DefaultValue))))
-    if (len(thisNode.DefaultValue) > 0) {
-        treeFp.Write([]byte(thisNode.DefaultValue))
+    treeFp.Write(serializeUInt((uint8)(len(thisNode.DefaultAllowed))))
+    if (len(thisNode.DefaultAllowed) > 0) {
+        treeFp.Write([]byte(thisNode.DefaultAllowed))
     }
 
     Validate := ValidateToString(thisNode.Validate)
@@ -1247,12 +1200,15 @@ func VSSgetChild(nodeHandle *Node_t, childNo int) *Node_t {
 	return nil
 }
 
-func VSSgetType(nodeHandle *Node_t) string {
+func VSSgetType(nodeHandle *Node_t) NodeTypes_t {
 	return nodeHandle.NodeType
 }
 
 func VSSgetDatatype(nodeHandle *Node_t) string {
-	return nodeHandle.Datatype
+	if IsTypeWithoutDatatype(VSSgetType(nodeHandle)) == false {
+		return nodeHandle.Datatype
+	}
+	return ""
 }
 
 func VSSgetUUID(nodeHandle *Node_t) string {
@@ -1260,7 +1216,7 @@ func VSSgetUUID(nodeHandle *Node_t) string {
 }
 
 func VSSgetDefault(nodeHandle *Node_t) string {
-	return nodeHandle.DefaultValue
+	return nodeHandle.DefaultAllowed
 }
 
 func VSSgetValidation(nodeHandle *Node_t) int {
@@ -1272,8 +1228,7 @@ func VSSgetDescr(nodeHandle *Node_t) string {
 }
 
 func VSSgetNumOfAllowedElements(nodeHandle *Node_t) int {
-	nodeType := VSSgetType(nodeHandle);
-	if (nodeType != BRANCH && nodeType != STRUCT) {
+	if IsTypeWithoutDatatype(VSSgetType(nodeHandle)) == false {
 		return (int)(nodeHandle.Allowed)
 	}
 	return 0
@@ -1284,8 +1239,7 @@ func VSSgetAllowedElement(nodeHandle *Node_t, index int) string {
 }
 
 func VSSgetUnit(nodeHandle *Node_t) string {
-	nodeType := VSSgetType(nodeHandle)
-	if (nodeType != BRANCH && nodeType != STRUCT) {
+	if IsTypeWithoutDatatype(VSSgetType(nodeHandle)) == false {
 		return nodeHandle.Unit
 	}
 	return ""
