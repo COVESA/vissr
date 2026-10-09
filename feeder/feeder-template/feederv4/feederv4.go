@@ -417,11 +417,14 @@ func processFeederServerMessage(serverMessageMap map[string]interface{}, inputCh
 			utils.Error.Printf("processFeederServerMessage: set message missing/invalid data field")
 			return
 		}
-		domainData, _, ok := splitToDomainDataAndTs(dataMap)
+		domainData, ts, ok := splitToDomainDataAndTs(dataMap)
 		if !ok {
 			return
 		}
 		if inFeederScope(domainData.Name, configData.Scope) {
+			if mongoSinkInst != nil {
+				mongoSinkInst.Write(domainData.Name, domainData.Value, setGrouper.GroupTs(ts, time.Now()))
+			}
 			select {
 			case inputChan <- domainData:
 			default:
@@ -996,6 +999,15 @@ func main() {
 		Required: false,
 		Help:     "statestorage database filename",
 		Default:  "../../server/vissv2server/serviceMgr/statestorage.db"})
+	mongoSinkEnable := parser.Flag("", "mongosink", &argparse.Options{Required: false, Help: "store set requests from the server in MongoDB, connection string read from the MONGODB_URI environment variable"})
+	mongoDbName := parser.String("", "mongodb", &argparse.Options{
+		Required: false,
+		Help:     "MongoDB database name used by --mongosink",
+		Default:  "vissr"})
+	mongoCollName := parser.String("", "mongocoll", &argparse.Options{
+		Required: false,
+		Help:     "MongoDB collection name used by --mongosink",
+		Default:  "feederSets"})
 	// Parse input
 	err := parser.Parse(os.Args)
 	if err != nil {
@@ -1052,6 +1064,21 @@ func main() {
 	default:
 		utils.Error.Printf("Unknown state storage type = %s", stateDbType)
 		os.Exit(1)
+	}
+
+	if *mongoSinkEnable {
+		mongoUri := os.Getenv("MONGODB_URI")
+		if len(mongoUri) == 0 {
+			utils.Error.Printf("--mongosink requires the MONGODB_URI environment variable")
+			os.Exit(1)
+		}
+		var mongoErr error
+		mongoSinkInst, mongoErr = newMongoSink(mongoUri, *mongoDbName, *mongoCollName)
+		if mongoErr != nil {
+			utils.Error.Printf("Could not connect to MongoDB, err = %s", mongoErr)
+			os.Exit(1)
+		}
+		utils.Info.Printf("MongoDB sink initialised, db=%s, collection=%s", *mongoDbName, *mongoCollName)
 	}
 
 	vssInputChan := make(chan DomainData, 3)
