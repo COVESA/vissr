@@ -9,7 +9,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/covesa/vissr/utils"
@@ -90,7 +92,19 @@ func mongoUpdateDoc(item setItem) bson.M {
 }
 
 // VISS transports all values as strings, store numbers and booleans with their native type so they can be queried as such.
+// An array value, e.g. ["118", "95", "75"], is stored as an array of typed values.
 func mongoTypedValue(value string) interface{} {
+	if strings.HasPrefix(value, "[") {
+		var items []interface{}
+		if err := json.Unmarshal([]byte(value), &items); err == nil {
+			for i, item := range items {
+				if str, ok := item.(string); ok {
+					items[i] = mongoTypedValue(str)
+				}
+			}
+			return items
+		}
+	}
 	if value == "true" || value == "false" {
 		return value == "true"
 	}

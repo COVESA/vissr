@@ -52,7 +52,7 @@ The database and collection names default to "vissr" and "feederSets".
 The server delivers a Set request with multiple data points to the feeder as one message per data point.
 Data points arriving within 200 ms of each other are treated as the same Set request and are upserted into one document,
 with the timestamp of its first data point as _id. The dot-separated path becomes a nested document,
-and numeric and boolean values are stored with their native type, e.g. Vehicle.Speed=50 is stored as
+and numeric and boolean values are stored with their native type, also inside array values such as ["118", "95", "75"], e.g. Vehicle.Speed=50 is stored as
 ```
 {"_id": "2026-10-05T23:02:44.611Z", "ts": "2026-10-05T23:02:44.611Z", "Vehicle": {"Speed": 50}, "updatedAt": <date>}
 ```

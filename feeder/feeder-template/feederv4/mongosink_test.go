@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -23,6 +24,24 @@ func TestMongoTypedValue(t *testing.T) {
 	for _, c := range cases {
 		if got := mongoTypedValue(c.in); got != c.want {
 			t.Errorf("mongoTypedValue(%q) = %v (%T), want %v (%T)", c.in, got, got, c.want, c.want)
+		}
+	}
+}
+
+func TestMongoTypedValueArray(t *testing.T) {
+	cases := []struct {
+		in   string
+		want interface{}
+	}{
+		{`["118", "95", "75"]`, []interface{}{118.0, 95.0, 75.0}},
+		{`["-1.5", "true", "abc"]`, []interface{}{-1.5, true, "abc"}},
+		{`[1, 2]`, []interface{}{1.0, 2.0}},
+		{`[]`, []interface{}{}},
+		{`[not json`, `[not json`},
+	}
+	for _, c := range cases {
+		if got := mongoTypedValue(c.in); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("mongoTypedValue(%q) = %#v, want %#v", c.in, got, c.want)
 		}
 	}
 }
