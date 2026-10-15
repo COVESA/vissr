@@ -274,7 +274,7 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	var newJsonBuffer string
 	nodeName := utils.VSSgetName(nodeHandle)
 	newJsonBuffer += `"` + nodeName + `":{`
-	nodeType := utils.VSSgetType(nodeHandle)
+	nodeType := utils.NodetypeToString(utils.VSSgetType(nodeHandle))
 	newJsonBuffer += `"type":"` + nodeType + `",`
 	nodeDefault := utils.VSSgetDefault(nodeHandle)
 	if len(nodeDefault) > 0 {
@@ -1016,7 +1016,7 @@ func getRangeBoundary(pMap map[string]interface{}) string {
 	return bVal
 }
 
-func initiateFileTransfer(requestMap map[string]interface{}, nodeType string, path string) map[string]interface{} {
+func initiateFileTransfer(requestMap map[string]interface{}, nodeType utils.NodeTypes_t, path string) map[string]interface{} {
 	var ftInitData utils.FileTransferCache
 	var responseMap = map[string]interface{}{}
 	routerId, _ := requestMap["RouterId"].(string)

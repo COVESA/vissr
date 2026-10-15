@@ -898,7 +898,7 @@ func TestVSSGetDefaultList_WithDefaults(t *testing.T) {
 		Name:         "Mode",
 		NodeType:     ACTUATOR,
 		Datatype:     "string",
-		DefaultValue: "OFF",
+		DefaultAllowed: "OFF",
 	}
 	root := NewBranchNode("Device", leaf)
 
@@ -1005,7 +1005,7 @@ func TestVSSgetUUID(t *testing.T) {
 }
 
 func TestVSSgetDefault(t *testing.T) {
-	node := &Node_t{DefaultValue: "42"}
+	node := &Node_t{DefaultAllowed: "42"}
 	if got := VSSgetDefault(node); got != "42" {
 		t.Errorf("VSSgetDefault = %q; want \"42\"", got)
 	}

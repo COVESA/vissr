@@ -1310,8 +1310,8 @@ func TestBuildIoStructMetadata_ReturnsParamMap(t *testing.T) {
 			t.Errorf("param %q: want map, got %T", name, entry)
 			continue
 		}
-		if m["type"] != utils.PROPERTY {
-			t.Errorf("param %q: type = %v, want %q", name, m["type"], utils.PROPERTY)
+		if m["type"] != utils.NodetypeToString(utils.PROPERTY) {
+			t.Errorf("param %q: type = %v, want %q", name, m["type"], utils.NodetypeToString(utils.PROPERTY))
 		}
 	}
 }
@@ -2106,7 +2106,7 @@ func TestBuildProcedureMetadata_NonIoStructChildSkipped(t *testing.T) {
 // Child slice entry is nil. This is the only way to drive the `if child == nil`
 // guards inside buildIoStructMetadata, validateIoParams, and
 // validateInputSignature without modifying production code.
-func newNodeWithNilChild(nodeType, name string) *utils.Node_t {
+func newNodeWithNilChild(nodeType utils.NodeTypes_t, name string) *utils.Node_t {
 	return &utils.Node_t{
 		Name:     name,
 		NodeType: nodeType,
