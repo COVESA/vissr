@@ -14,6 +14,7 @@
 *.rsa
 *.pem
 *.db
+paho-mqtt/cert/
 
 #log files
 ws-mgr-log.txt
@@ -66,6 +67,7 @@ vissv2server
 !vissv2server/mqtt_mgr/
 vendor/
 logs/
+.gradle/
 
 
 .gitignore
@@ -78,6 +80,7 @@ logs/
 /server/vissv2server/vss_vissv2_t.binary
 /server/vissv2server/atServer/purposelist_t.json
 /client/client-1.0/csv_client/csv_client
+/client/client-1.0/testClient/testClient
 /client/client-1.0/csv_client/data.csv
 /client/client-1.0/csv_client/data_curve_speed_maxerr_2.csv
 /client/client-1.0/csv_client/data_curver_speed_maxerr_1.csv
