@@ -5,7 +5,10 @@
 package paho_mqtt
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"os"
 	"sync"
 	"testing"
 )
@@ -13,7 +16,17 @@ import (
 func TestTcpLocalHost(t *testing.T) {
 	const TOPIC = "mytopic/test"
 
+	caCert, err := os.ReadFile("cert/ca.crt")
+	if err != nil {
+		t.Fatalf("failed to read cert/ca.crt (run ./generate-certs.sh first): %v", err)
+	}
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		t.Fatal("failed to append CA certificate to pool")
+	}
+
 	opts := mqtt.NewClientOptions().AddBroker("ssl://localhost:8883")
+	opts.SetTLSConfig(&tls.Config{RootCAs: caCertPool})
 	opts.SetUsername("homesecurity").SetPassword("rocktheworld")
 
 	client := mqtt.NewClient(opts)

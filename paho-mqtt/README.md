@@ -3,6 +3,7 @@ mosquitto mqtt broker. Docker image which pulls down and builds the broker. Conf
 
 To build and run locally.
 ```
+./generate-certs.sh
 docker build -t paho-mqtt .
 docker run -ti -p 8883:8883 -p 9001:9001 paho-mqtt:latest
 ```
