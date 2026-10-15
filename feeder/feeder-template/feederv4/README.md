@@ -40,3 +40,20 @@ This will be added at some later point.
 
 The runstack.sh bash script is updated to support registration of or or two feeders.
 The case wih two feeders is showing a scenario where a truck has Vehicle and Trailer1 trees and a corresponding Vehicle and Trailer1 feeders.
+
+## MongoDB sink
+The feeder can additionally store the Set requests it receives from the server in a MongoDB collection.
+The sink is disabled by default. Only Set requests that are in the feeder scope are stored.
+```
+MONGODB_URI=<connection string> ./feederv4 --mongosink [--mongodb <database>] [--mongocoll <collection>]
+```
+The database and collection names default to "vissr" and "feederSets".
+
+The server delivers a Set request with multiple data points to the feeder as one message per data point.
+Data points arriving within 200 ms of each other are treated as the same Set request and are upserted into one document,
+with the timestamp of its first data point as _id. The dot-separated path becomes a nested document,
+and numeric and boolean values are stored with their native type, also inside array values such as ["118", "95", "75"], e.g. Vehicle.Speed=50 is stored as
+```
+{"_id": "2026-10-05T23:02:44.611Z", "ts": "2026-10-05T23:02:44.611Z", "Vehicle": {"Speed": 50}, "updatedAt": <date>}
+```
+Writes are asynchronous, a slow or unreachable database does not block the feeder. If the write queue is full, data points are dropped and an error is logged.
