@@ -74,6 +74,11 @@ then it runs the testclient and displays its request messages and the associated
 * runstack.sh: This script builds and runs the server and the feederv3 simulating some signals,
 enabling any client implementation to connect to the server.
 
+Both scripts start a local Mosquitto MQTT broker in a Docker container (so Docker must be installed),
+and `./runtest.sh stopme` / `./runstack.sh stopme` stop it again.
+To use the public test.mosquitto.org broker instead, set the MQTT_BROKER_ADDR environment variable,
+e.g. `MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme`.
+
 See the tutorial for more information.
 
 ## Unit  testing

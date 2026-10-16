@@ -338,8 +338,14 @@ func initUnixDomainSocket() net.Conn {
 	return conn
 }
 
+// getBrokerSocket returns the MQTT broker URL. The broker address is read from
+// the MQTT_BROKER_ADDR environment variable, defaulting to a local broker
+// (127.0.0.1). This matches the behavior of the server's mqttMgr.
 func getBrokerSocket(isSecure bool) string {
-	FVTAddr := "test.mosquitto.org"
+	FVTAddr := os.Getenv("MQTT_BROKER_ADDR")
+	if FVTAddr == "" {
+		FVTAddr = "127.0.0.1"
+	}
 	if isSecure == true {
 		return "ssl://" + FVTAddr + ":8883"
 	}

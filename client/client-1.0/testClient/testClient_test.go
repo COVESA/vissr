@@ -131,18 +131,23 @@ func TestCreateListFromFile_TestClient_MissingFile(t *testing.T) {
 	}
 }
 
-// TestGetBrokerSocket documents the current testClient behaviour: it
-// hardcodes test.mosquitto.org as the broker. The server-side
-// equivalent was env-var-ified in ef639f0; this client still has the
-// hardcode. The test fails-by-design if anyone fixes it to use an env
-// var without updating the test.
-//
-// TODO(testing): refactor testClient to read MQTT_BROKER_ADDR like
-// mqttMgr does. The test below should then assert env var precedence.
-func TestGetBrokerSocket_HardcodedBroker(t *testing.T) {
-	got := getBrokerSocket(false)
-	if !strings.Contains(got, "test.mosquitto.org") {
-		t.Logf("note: getBrokerSocket no longer returns the hardcoded test.mosquitto.org broker (%q) — has it been env-var-ified? update this test if so", got)
+// TestGetBrokerSocket_DefaultLocal: with MQTT_BROKER_ADDR unset the client
+// addresses a local broker, matching the server-side mqttMgr behaviour.
+func TestGetBrokerSocket_DefaultLocal(t *testing.T) {
+	t.Setenv("MQTT_BROKER_ADDR", "")
+	if got, want := getBrokerSocket(false), "tcp://127.0.0.1:1883"; got != want {
+		t.Fatalf("getBrokerSocket(false) = %q; want %q", got, want)
+	}
+	if got, want := getBrokerSocket(true), "ssl://127.0.0.1:8883"; got != want {
+		t.Fatalf("getBrokerSocket(true) = %q; want %q", got, want)
+	}
+}
+
+// TestGetBrokerSocket_EnvOverride: MQTT_BROKER_ADDR replaces the default.
+func TestGetBrokerSocket_EnvOverride(t *testing.T) {
+	t.Setenv("MQTT_BROKER_ADDR", "test.mosquitto.org")
+	if got, want := getBrokerSocket(false), "tcp://test.mosquitto.org:1883"; got != want {
+		t.Fatalf("getBrokerSocket with env = %q; want %q", got, want)
 	}
 }
 
