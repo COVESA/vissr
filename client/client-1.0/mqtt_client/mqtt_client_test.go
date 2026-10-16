@@ -38,6 +38,20 @@ func TestGetBrokerSocket_Insecure(t *testing.T) {
 	}
 }
 
+func TestGetBrokerSocket_DefaultLocal(t *testing.T) {
+	t.Setenv("MQTT_BROKER_ADDR", "")
+	if got, want := getBrokerSocket(false), "tcp://127.0.0.1:1883"; got != want {
+		t.Errorf("getBrokerSocket(false) = %q; want %q", got, want)
+	}
+}
+
+func TestGetBrokerSocket_EnvOverride(t *testing.T) {
+	t.Setenv("MQTT_BROKER_ADDR", "test.mosquitto.org")
+	if got, want := getBrokerSocket(false), "tcp://test.mosquitto.org:1883"; got != want {
+		t.Errorf("getBrokerSocket with env = %q; want %q", got, want)
+	}
+}
+
 func TestGetBrokerSocket_Secure(t *testing.T) {
 	got := getBrokerSocket(true)
 	if !strings.HasPrefix(got, "ssl://") {
