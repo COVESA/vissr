@@ -80,6 +80,11 @@ This is testing the Service profile only, see above for testing of the VehicleDa
 * runstack.sh: This script builds and runs the server and the feederv4 simulating some signals,
 enabling any client implementation to connect to the server. This can be used for testing both of the profiles.
 
+The scripts start a local Mosquitto MQTT broker in a Docker container (so Docker must be installed),
+and `stopme` stops it again, e.g. `./runtest.sh stopme`.
+To use the public test.mosquitto.org broker instead, set the MQTT_BROKER_ADDR environment variable,
+e.g. `MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme`.
+
 See the [tutorial](https://covesa.github.io/vissr/build-system/#testing) for more information.
 
 ## Unit  testing

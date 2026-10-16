@@ -53,6 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate ephemeral TLS certificates
+        run: ./paho-mqtt/generate-certs.sh
+
       - name: Build mosquitto image
         run: docker build -t vissr-mosquitto ./paho-mqtt
 
