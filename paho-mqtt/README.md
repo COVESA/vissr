@@ -7,13 +7,13 @@ This directory contains the setup for two different Mosquitto brokers:
 
 | | Used by | Port | TLS / auth | Files |
 |---|---|---|---|---|
-| Local test broker | `runtest.sh`, `runstack.sh` (VISSR server and test clients) | 1883 | none, bound to 127.0.0.1 | `local-broker.sh`, `mosquitto-local.conf` |
+| Local test broker | `runtest.sh`, `runtest-service.sh`, `runstack.sh` (VISSR server and test clients) | 1883 | none, bound to 127.0.0.1 | `local-broker.sh`, `mosquitto-local.conf` |
 | TLS test broker | `go test ./paho-mqtt/...` and the CI `mqtt-tests` job | 8883 | self signed certificates, password file | `Dockerfile`, `mosquitto.conf`, `generate-certs.sh`, `pwd_file` |
 
 The VISSR server (mqttMgr) and the test clients connect with plain MQTT (`tcp://<MQTT_BROKER_ADDR>:1883`), which is why the TLS broker
 can not be used by the scripts, and a separate plain broker is used.
 
-### Local broker for runtest.sh and runstack.sh
+### Local broker for runtest.sh, runtest-service.sh and runstack.sh
 
 The scripts call `local-broker.sh` to start the broker in a Docker container (`vissr-mosquitto-local`, image `eclipse-mosquitto:2`),
 and to stop it again at `stopme`. It can also be used manually:

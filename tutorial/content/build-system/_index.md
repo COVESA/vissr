@@ -111,7 +111,7 @@ It uses the same MQTT broker handling as runtest.sh, and it is terminated by `./
 
 #### MQTT testing with local broker
 
-The scripts runtest.sh and runstack.sh use two environment variables to select the MQTT broker
+The scripts runtest.sh, runtest-service.sh and runstack.sh use two environment variables to select the MQTT broker
 and the vehicle VIN (which is used to create the server topic name).
 ```
 export MQTT_BROKER_ADDR=127.0.0.1
@@ -126,7 +126,7 @@ by calling the script paho-mqtt/local-broker.sh.
 It listens on 127.0.0.1:1883 without TLS or authentication, using the configuration file paho-mqtt/mosquitto-local.conf.
 Docker must therefore be installed, but no other installation is needed.
 The first start pulls the eclipse-mosquitto:2 image, which takes some time.
-The broker is stopped again by `./runtest.sh stopme` and `./runstack.sh stopme`.
+The broker is stopped again by `./runtest.sh stopme`, `./runtest-service.sh stopme` and `./runstack.sh stopme`.
 If something is already listening on port 1883, e.g. a broker that you have installed and started yourself,
 then the scripts use that broker and do not start (or stop) a container.
 The broker can also be handled manually:
@@ -142,6 +142,7 @@ To use the public broker instead of a local one, set the MQTT_BROKER_ADDR variab
 No local broker is then started (and Docker is not needed).
 ```
 MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme
+MQTT_BROKER_ADDR=test.mosquitto.org ./runtest-service.sh startme
 MQTT_BROKER_ADDR=test.mosquitto.org ./runstack.sh startme
 ```
 Any other broker address can be set in the same way.
@@ -150,7 +151,7 @@ Note that the public broker is shared with other users, and that it may lead to 
 ##### MQTT_VIN
 
 The MQTT_VIN variable determines the topic `/<VIN>/Vehicle` that the server subscribes to, and that the testClient publishes its requests to.
-The runtest.sh script sets it to WVWZZZ1KZEW000000 unless it is already set in the calling environment, so that the server and the testClient use the same topic.
+The runtest.sh and runtest-service.sh scripts set it to WVWZZZ1KZEW000000 unless it is already set in the calling environment, so that the server and the testClient use the same topic.
 If the MQTT_VIN variable is not set to the same value for both (or if it is set to an empty string) then the server reads the VIN from the Vehicle tree
 (Vehicle.VehicleIdentification.VIN), which must then have been set in the vspec file (default: xxx) to a correctly formatted VIN,
 and the testClient falls back to the VIN "VIN123". The topics will then not match and the MQTT requests will not be answered.
