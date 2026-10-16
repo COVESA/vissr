@@ -753,20 +753,10 @@ func handleMultiSetRequest(requestMap map[string]interface{}, tDChanIndex int, s
 			backendChan[tDChanIndex] <- errorResponseMap
 			return
 		}
-		datatype := utils.VSSgetDatatype(searchData.NodeHandle)
-		if strings.HasPrefix(datatype, "Types") {
-			val, ok := value.(map[string]interface{})
-			if !ok {
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, "struct value must be an object")
-				backendChan[tDChanIndex] <- errorResponseMap
-				return
-			}
-			res := verifyStruct(val, datatype, 0)
-			if res != "ok" {
-				utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
-				backendChan[tDChanIndex] <- errorResponseMap
-				return
-			}
+		if errMsg := validateStructSetValue(utils.VSSgetDatatype(searchData.NodeHandle), value); errMsg != "" {
+			utils.SetErrorResponse(requestMap, errorResponseMap, 1, errMsg) //invalid_data
+			backendChan[tDChanIndex] <- errorResponseMap
+			return
 		}
 		pathLen := getPathLen(string(searchData.NodePath[:]))
 		resolvedPath := string(searchData.NodePath[:pathLen])
@@ -889,20 +879,10 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 			// Bug fix: previous code did `VSSgetDatatype(...)[:5]` which
 			// panicked when the datatype string was shorter than 5 chars
 			// (e.g. "int", "bool"). Use strings.HasPrefix instead.
-			datatype := utils.VSSgetDatatype(searchData[0].NodeHandle)
-			if strings.HasPrefix(datatype, "Types") {
-				val, ok := requestMap["value"].(map[string]interface{})
-				if !ok {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, "struct value must be an object")
-					backendChan[tDChanIndex] <- errorResponseMap
-					return
-				}
-				res := verifyStruct(val, datatype, 0)
-				if res != "ok" {
-					utils.SetErrorResponse(requestMap, errorResponseMap, 1, res) //invalid_data
-					backendChan[tDChanIndex] <- errorResponseMap
-					return
-				}
+			if errMsg := validateStructSetValue(utils.VSSgetDatatype(searchData[0].NodeHandle), requestMap["value"]); errMsg != "" {
+				utils.SetErrorResponse(requestMap, errorResponseMap, 1, errMsg) //invalid_data
+				backendChan[tDChanIndex] <- errorResponseMap
+				return
 			}
 		}
 		totalMatches += matches
@@ -963,13 +943,34 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 	serviceDataChan[sDChanIndex] <- requestMap
 }
 
+// validateStructSetValue checks the value of a SET request against the
+// signal's datatype. Datatypes that are not struct types (those living in
+// the "Types" tree) are not checked here. It returns "" if the value is
+// acceptable, otherwise the error description for the client.
+func validateStructSetValue(datatype string, value interface{}) string {
+	if !strings.HasPrefix(datatype, "Types") {
+		return ""
+	}
+	val, ok := value.(map[string]interface{})
+	if !ok {
+		return "struct value must be an object"
+	}
+	if res := verifyStruct(val, datatype, 0); res != "ok" {
+		return res
+	}
+	return ""
+}
+
 func verifyStruct(value map[string]interface{}, typePath string, depth int) string {
 	typeDefRoot := utils.SetRootNodePointer(typePath[:utils.GetFirstDotIndex(typePath)])
 	if typeDefRoot == nil {
 		return "Struct cannot be verified"
 	}
+	if depth > 5 { // do not descend any deeper
+		return "Incorrect struct data"
+	}
 	matches, typeSearch := searchTree(typeDefRoot, typePath + ".*", true, true, 0, nil, nil)
-	if matches == 0 || !verifyStructMembers(value, typeSearch, matches, depth) || depth > 5 {
+	if matches == 0 || !verifyStructMembers(value, typeSearch, matches, depth) {
 		return "Incorrect struct data"
 	}
 	return "ok"
@@ -980,20 +981,31 @@ func verifyStructMembers(value map[string]interface{}, typeSearch []utils.Search
 		if !verifyStructMember(memName, typeSearch, matches) {
 			return false
 		}
-		switch memValue.(type) {
-			case map[string]interface{}: //inline struct
-				if verifyStruct(memValue.(map[string]interface{}), 
-						utils.VSSgetDatatype(typeSearch[getIndex(typeSearch, matches, memName)].NodeHandle), depth+1) != "ok" {
-					return false
-				}
+		memDatatype := utils.VSSgetDatatype(typeSearch[getIndex(typeSearch, matches, memName)].NodeHandle)
+		memValueMap, isObject := memValue.(map[string]interface{})
+		if isObject {  // inline struct
+			if verifyStruct(memValueMap, memDatatype, depth+1) != "ok" {
+				return false
+			}
+		} else if isStructMemberType(memDatatype) {  // a struct member must be given an object
+			return false
 		}
 	}
 	return true
 }
 
+// isStructMemberType reports whether datatype is a single struct type, i.e. one
+// that is defined in the Types tree, as opposed to a basic type or an array.
+func isStructMemberType(datatype string) bool {
+	return strings.HasPrefix(datatype, "Types") && !strings.HasSuffix(datatype, "[]")
+}
+
+// getIndex returns the index in typeSearch of the member named memName. The
+// name is matched case-insensitively, as in verifyStructMember. Returns 0 if
+// there is no such member.
 func getIndex(typeSearch []utils.SearchData_t, matches int , memName string) int {
 	for i := 0; i < matches; i++ {
-		if utils.GetLastDotSegment(typeSearch[i].NodePath) == memName {
+		if strings.EqualFold(utils.GetLastDotSegment(typeSearch[i].NodePath), memName) {
 			return i
 		}
 	}

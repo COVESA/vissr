@@ -148,6 +148,7 @@ corpus entry.
 | `calculateHash` (SHA-1)                  | `server/vissv2server/vissv2server_helpers_test.go`     |
 | `getRangeBoundary` / `getRangeBoundaries`| `server/vissv2server/vissv2server_helpers_test.go`     |
 | `FuzzGetRangeBoundaries`                 | `server/vissv2server/vissv2server_helpers_test.go`     |
+| `validateStructSetValue` / `verifyStruct` (struct-typed SET values, against the real `typedef.binary`) | `server/vissv2server/vissv2server_struct_test.go` |
 
 #### wsMgr (beyond pure helpers covered in PR #122)
 
@@ -203,7 +204,6 @@ Listed here for visibility:
 
 | Function                                                       | Why not testable                                                                            | Refactor approach                                                                       |
 |----------------------------------------------------------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| `vissv2server::issueServiceRequest` struct-typed SET branch (`strings.HasPrefix(datatype, "Types")` + `verifyStruct`) | Still inline in `issueServiceRequest`, which needs a loaded VSS tree and the backend channels. The branch and `verifyStruct` have no direct test (only `verifyStructMember` does). | Extract the SET-on-struct-Type branch into a function that takes (`requestMap`, `datatype`) and returns the error response, or nil. |
 | `mqttMgr::MqttMgrInit` loop, `mqttSubscribe` (success path)     | `MqttMgrInit` is a for/select loop with the per-message handling (schema validation, topic bookkeeping, forwarding) inline, and it needs a broker. `mqttSubscribe` creates its own client with `MQTT.NewClient`. (`publishMessage` takes an `MQTT.Client`, and its nil/empty-topic/disconnected paths and the `mqttSubscribe` connect-failure path are tested.) | Extract the per-message handler, as done for `httpMgr` and `grpcMgr`; pass a client factory so a mock `MQTT.Client` can be injected. |
 | `feederv4::feederRegister`, `statestorageSet`                   | Coupled to live UDS / SQLite / Redis / memcache.                                            | Inject a storage interface; mock for tests.                                             |
 | `feederv4::udsWriter`                                           | Infinite for/select loop on `udsChan` with no exit condition, writing to a live connection. (`udsReader` and the per-message dispatch are extracted and tested, using `net.Pipe`.) | Make the loop return when `udsChan` is closed, then drive it with `net.Pipe` like `udsReader`. |
