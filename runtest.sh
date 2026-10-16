@@ -5,7 +5,9 @@ usage() {
 }
 
 startme() {
-#	export MQTT_VIN=WVWZZZ1KZEW000000
+	# VIN used in the MQTT server topic /<VIN>/Vehicle. The server and the testClient
+	# must use the same value (both read MQTT_VIN), so it is set here.
+	export MQTT_VIN="${MQTT_VIN:-WVWZZZ1KZEW000000}"
 	# MQTT broker: by default a local Mosquitto broker is started in Docker
 	# (see paho-mqtt/local-broker.sh). To use the public broker instead, run:
 	#   MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme

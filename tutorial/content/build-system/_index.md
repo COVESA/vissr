@@ -138,8 +138,11 @@ Note that the public broker is shared with other users, and that it may lead to 
 
 ##### MQTT_VIN
 
-If the MQTT_VIN variable is set to an empty string (e.g. by commenting out the line in the script) then the server reads the VIN from the Vehicle tree
-(Vehicle.VehicleIdentification.VIN). This attribute must then have been set in the vspec file (default: xxx) to a correctly formatted VIN.
+The MQTT_VIN variable determines the topic `/<VIN>/Vehicle` that the server subscribes to, and that the testClient publishes its requests to.
+The runtest.sh script sets it to WVWZZZ1KZEW000000 unless it is already set in the calling environment, so that the server and the testClient use the same topic.
+If the MQTT_VIN variable is not set to the same value for both (or if it is set to an empty string) then the server reads the VIN from the Vehicle tree
+(Vehicle.VehicleIdentification.VIN), which must then have been set in the vspec file (default: xxx) to a correctly formatted VIN,
+and the testClient falls back to the VIN "VIN123". The topics will then not match and the MQTT requests will not be answered.
 
 ##### Running a local broker without Docker
 

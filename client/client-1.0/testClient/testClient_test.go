@@ -151,6 +151,18 @@ func TestGetBrokerSocket_EnvOverride(t *testing.T) {
 	}
 }
 
+// TestGetVissV2Topic: the server topic has the form /<VIN>/Vehicle, with a
+// single leading slash. publishVissV2Request must publish to it unchanged.
+func TestGetVissV2Topic(t *testing.T) {
+	t.Setenv("MQTT_VIN", "")
+	if got, want := getVissV2Topic(), "/VIN123/Vehicle"; got != want {
+		t.Fatalf("getVissV2Topic default = %q; want %q", got, want)
+	}
+	t.Setenv("MQTT_VIN", "WVWZZZ1KZEW000000")
+	if got, want := getVissV2Topic(), "/WVWZZZ1KZEW000000/Vehicle"; got != want {
+		t.Fatalf("getVissV2Topic with MQTT_VIN = %q; want %q", got, want)
+	}
+}
 func TestGetBrokerSocket_SecureScheme(t *testing.T) {
 	got := getBrokerSocket(true)
 	if !strings.HasPrefix(got, "ssl://") {
