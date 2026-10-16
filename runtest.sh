@@ -5,8 +5,14 @@ usage() {
 }
 
 startme() {
-#	export MQTT_VIN=WVWZZZ1KZEW000000
-	export MQTT_BROKER_ADDR=test.mosquitto.org
+	# VIN used in the MQTT server topic /<VIN>/Vehicle. The server and the testClient
+	# must use the same value (both read MQTT_VIN), so it is set here.
+	export MQTT_VIN="${MQTT_VIN:-WVWZZZ1KZEW000000}"
+	# MQTT broker: by default a local Mosquitto broker is started in Docker
+	# (see paho-mqtt/local-broker.sh). To use the public broker instead, run:
+	#   MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme
+	export MQTT_BROKER_ADDR="${MQTT_BROKER_ADDR:-127.0.0.1}"
+	./paho-mqtt/local-broker.sh start || exit 1
 
 	echo "Building server..."
 	cd server/vissv2server
@@ -45,6 +51,10 @@ stopme() {
 	screen -wipe
 }
 
+stopbroker() {
+	./paho-mqtt/local-broker.sh stop
+}
+
 if [ $# -ne 1 ]
 then
 	usage $0
@@ -57,6 +67,7 @@ case "$1" in
 		startme ;;
 	stopme)
 		stopme
+		stopbroker
 		;;
 	*)
 		usage

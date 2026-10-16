@@ -69,7 +69,9 @@ The testClient reads the testRequests.json file for the requests it will issue t
 and then it prints the requests and the responses in the terminal window.
 After each set of test requests for the same transport protocol it will wait until the keyboard return key is received,
 allowing the operator to gett time to inspect the request/response logs before continuing.
-When the MQTT protocol is run, the test.mosquitto.org broker is used which may lead to latencies between request and response.
+When the MQTT protocol is run, a local Mosquitto broker is used, which the script starts automatically in a Docker container
+(see [MQTT testing with local broker](#mqtt-testing-with-local-broker)).
+If the public test.mosquitto.org broker is used instead there may be latencies between request and response.
 In that case the testClient prompt for reading the return key may be found mixed into the log prints,
 but hitting the return key will still make it continue.
 If some logdata looks incorrect the operator can hit ctrl-C to terminate the testClient
@@ -83,7 +85,7 @@ Issue the following command in the root directory to run the tests:
 ```
 $ ./runtest.sh startme
 ```
-When the testing is completed the script should be run to terminate the server and feeder processes:
+When the testing is completed the script should be run to terminate the server and feeder processes, and the local MQTT broker:
 ```
 $ ./runtest.sh stopme
 ```
@@ -94,29 +96,65 @@ This data can be modified in the tripdata.json file in the feederv3 directory.
 To get the VISSR stack running to enable testing using e. g. a client under development,
 or any of the clients found in the [client directories](https://github.com/COVESA/vissr/tree/master/client),
 there is the runstack.sh script that builds and starts the server and the feederv3, with the feeder generating simulated input.
+It uses the same MQTT broker handling as runtest.sh, and it is terminated by `./runstack.sh stopme`.
 
 #### MQTT testing with local broker
 
-The script runtest.sh sets two environment variables that selects the MQTT broker to use
+The scripts runtest.sh and runstack.sh use two environment variables to select the MQTT broker
 and the vehicle VIN (which is used to create the server topic name).
 ```
-export MQTT_BROKER_ADDR=test.mosquitto.org
+export MQTT_BROKER_ADDR=127.0.0.1
 export MQTT_VIN=WVWZZZ1KZEW000000
 ```
-If the MQTT_BROKER_ADDR variable is set to an empty string (e.g. by commenting out the line in the script) then the server will try to address a local broker.
+The MQTT_BROKER_ADDR variable is read by the server and by the testClient and mqtt_client clients.
+If it is not set (or set to an empty string) they address a local broker on 127.0.0.1.
+The scripts default to a local broker, by setting MQTT_BROKER_ADDR=127.0.0.1 unless it is already set in the calling environment.
 
-If the MQTT_VIN variable is set to an empty string (e.g. by comenting out the line in the script) then the server reads the VIN from the Vehicle tree
-(Vehicle.VehicleIdentification.VIN). This attribute must then have been set in the vspec file (default: xxx) to a correctly formatted VIN.
+The default local broker is a Mosquitto broker that the scripts start in a Docker container (named vissr-mosquitto-local)
+by calling the script paho-mqtt/local-broker.sh.
+It listens on 127.0.0.1:1883 without TLS or authentication, using the configuration file paho-mqtt/mosquitto-local.conf.
+Docker must therefore be installed, but no other installation is needed.
+The first start pulls the eclipse-mosquitto:2 image, which takes some time.
+The broker is stopped again by `./runtest.sh stopme` and `./runstack.sh stopme`.
+If something is already listening on port 1883, e.g. a broker that you have installed and started yourself,
+then the scripts use that broker and do not start (or stop) a container.
+The broker can also be handled manually:
+```
+./paho-mqtt/local-broker.sh start
+./paho-mqtt/local-broker.sh status
+./paho-mqtt/local-broker.sh stop
+```
 
-An example is shown below of how to install and run a local broker which then need to be done before executing the runtest.sh script.
+##### Using the public test.mosquitto.org broker
+
+To use the public broker instead of a local one, set the MQTT_BROKER_ADDR variable when starting the scripts.
+No local broker is then started (and Docker is not needed).
+```
+MQTT_BROKER_ADDR=test.mosquitto.org ./runtest.sh startme
+MQTT_BROKER_ADDR=test.mosquitto.org ./runstack.sh startme
+```
+Any other broker address can be set in the same way.
+Note that the public broker is shared with other users, and that it may lead to latencies between request and response.
+
+##### MQTT_VIN
+
+The MQTT_VIN variable determines the topic `/<VIN>/Vehicle` that the server subscribes to, and that the testClient publishes its requests to.
+The runtest.sh script sets it to WVWZZZ1KZEW000000 unless it is already set in the calling environment, so that the server and the testClient use the same topic.
+If the MQTT_VIN variable is not set to the same value for both (or if it is set to an empty string) then the server reads the VIN from the Vehicle tree
+(Vehicle.VehicleIdentification.VIN), which must then have been set in the vspec file (default: xxx) to a correctly formatted VIN,
+and the testClient falls back to the VIN "VIN123". The topics will then not match and the MQTT requests will not be answered.
+
+##### Running a local broker without Docker
+
+A local broker can also be installed and started without Docker, in which case the scripts will find it listening on port 1883
+and use it as is. An example for how to do this is shown below.
 ```
 brew install mosquitto          # one-time
 mosquitto -c <(printf 'listener 1883\nallow_anonymous true\n') &
 ```
-
 ### Manual MQTT testing with local broker
 
-If a local broker is installed and started as described above then manual MQTT testing is also an option as describd below.
+If a local broker is running, as described above (e.g. started by `./paho-mqtt/local-broker.sh start`), then manual MQTT testing is also an option as described below. The mosquitto_pub and mosquitto_sub commands are part of the mosquitto client tools. With the Docker broker they can instead be run through `docker exec vissr-mosquitto-local mosquitto_pub ...`.
 
 1. Start the server with MQTT enabled + a test VIN
 ```
