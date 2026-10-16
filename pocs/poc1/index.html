@@ -12,22 +12,22 @@
     <title>Test run of the different VISSR supported protocols :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1792057718" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1792057718" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1792138885" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1792138885" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1792057718" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1792138885" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1792057718"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1792138885"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1792057718"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1792057718"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1792138885"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1792138885"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1792057718"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1792138885"></script>
 
     
   </div>
@@ -881,7 +881,10 @@ If not, then instruction for installing Golang is found <a href="/vissr/build-sy
 <p>If this repo is not cloned to the development environment, this is done by the command:</p>
 <p>$ git clone <a href="https://github.com/covesa/vissr.git">https://github.com/covesa/vissr.git</a></p>
 <p>The shell script runtest.sh that is found in the VISSR root directory will build the server, the feederv3 and the testClient,
-and then start them.</p>
+and then start them.
+It also starts a local Mosquitto MQTT broker in a Docker container (so Docker must be installed) that is used for the MQTT tests.
+To use the public test.mosquitto.org broker instead, start the script with the environment variable MQTT_BROKER_ADDR set to it,
+see <a href="/vissr/build-system/#mqtt-testing-with-local-broker">MQTT testing with local broker</a>.</p>
 <p>The test client will then issue a few commands to the server over each of the transport protocols HTTP, Websocket, gRPC, and MQTT, respectively.
 The issued requests and the received responses are shown in the terminal window.
 After each set of requests over one of the transport protocols the UI asks for the Return key to be pushed before next transport protocol is tested.</p>
@@ -889,7 +892,7 @@ After each set of requests over one of the transport protocols the UI asks for t
 running the script again should fix it.</p>
 <p>To start the script, issue the command:</p>
 <p>$ ./runtest.sh startme</p>
-<p>The server and feeder processes are not automatically terminated after the test, to trminate them issue the command:</p>
+<p>The server, feeder and local MQTT broker processes are not automatically terminated after the test, to terminate them issue the command:</p>
 <p>$ ./runtest.sh stopme</p>
 
 
@@ -1369,19 +1372,19 @@ running the script again should fix it.</p>
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1792057718"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1792057718"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1792057718"></script>
-    <script src="/vissr/js/jquery.sticky.js?1792057718"></script>
-    <script src="/vissr/js/featherlight.min.js?1792057718"></script>
-    <script src="/vissr/js/highlight.pack.js?1792057718"></script>
+    <script src="/vissr/js/clipboard.min.js?1792138885"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1792138885"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1792138885"></script>
+    <script src="/vissr/js/jquery.sticky.js?1792138885"></script>
+    <script src="/vissr/js/featherlight.min.js?1792138885"></script>
+    <script src="/vissr/js/highlight.pack.js?1792138885"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1792057718"></script>
-    <script src="/vissr/js/learn.js?1792057718"></script>
-    <script src="/vissr/js/hugo-learn.js?1792057718"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1792138885"></script>
+    <script src="/vissr/js/learn.js?1792138885"></script>
+    <script src="/vissr/js/hugo-learn.js?1792138885"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1792057718"></script>
+            <script src="/vissr/mermaid/mermaid.js?1792138885"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });
