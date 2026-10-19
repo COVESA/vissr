@@ -23,9 +23,19 @@ var mqttChannel chan string
 
 var errorResponseMap = map[string]interface{}{}
 
+// NodeValue is the routing entry for one client request: the reply topic that
+// the response (and, for a subscribe request, all later events) is published
+// to, identified by the topicId that is carried in the RouterId of the
+// messages that the server core sends back.
 type NodeValue struct {
 	topicId int
 	topic   string
+	// subscriptionId is set on a "subscribe" entry when the subscribe response
+	// arrives. It lets the entry be released when the subscription is ended.
+	subscriptionId string
+	// unsubscribeTarget is, on an "unsubscribe" entry, the subscriptionId that
+	// the request asked to end.
+	unsubscribeTarget string
 }
 
 type Node struct {
@@ -159,6 +169,11 @@ func pushTopic(topic string, topicId int) {
 func popTopic(topicId int) {
 	topicListMu.Lock()
 	defer topicListMu.Unlock()
+	popTopicLocked(topicId)
+}
+
+// popTopicLocked is popTopic for callers that already hold topicListMu.
+func popTopicLocked(topicId int) {
 	if topicList.head == nil {
 		return
 	}
@@ -176,6 +191,97 @@ func popTopic(topicId int) {
 			return
 		}
 	}
+}
+
+// findTopicLocked returns the entry with the given topicId, or nil. The caller must hold topicListMu.
+func findTopicLocked(topicId int) *Node {
+	for n := topicList.head; n != nil; n = n.next {
+		if n.value.topicId == topicId {
+			return n
+		}
+	}
+	return nil
+}
+
+// registerRequest records the reply topic of a client request that is forwarded to the
+// server core, so that the response can be routed back to the client. For an unsubscribe
+// request the subscriptionId it names is remembered, see routeResponse.
+func registerRequest(topic string, topicId int, request string) {
+	pushTopic(topic, topicId)
+	var requestMap map[string]interface{}
+	if err := json.Unmarshal([]byte(request), &requestMap); err != nil {
+		return
+	}
+	if action, _ := requestMap["action"].(string); action == "unsubscribe" {
+		if target, ok := requestMap["subscriptionId"].(string); ok {
+			topicListMu.Lock()
+			if n := findTopicLocked(topicId); n != nil {
+				n.value.unsubscribeTarget = target
+			}
+			topicListMu.Unlock()
+		}
+	}
+}
+
+// routeResponse returns the reply topic for a message from the server core with the given
+// topicId, and releases the entry when the message is the last one for the request, so that
+// the list does not grow for as long as the server runs:
+//
+//	get, set, discover      one response: released with it
+//	any error response      the request is finished: released (an error on an unsubscribe
+//	                        leaves the subscription running, so only the unsubscribe entry goes)
+//	subscribe               kept for the events that follow; the subscriptionId of the
+//	                        response is recorded on the entry
+//	subscription            kept; an error event means the server has ended the subscription: released
+//	unsubscribe             released, together with the subscribe entry of the subscription it ended
+//
+// Messages that are not understood (not JSON, no string action, an action that is not listed,
+// e.g. a multi-event action of a service profile) never release anything: a leaked entry only
+// costs memory, but a released entry silently drops every later event of that request.
+// A subscription whose client goes away without unsubscribing is not released here.
+func routeResponse(topicId int, response string) string {
+	topicListMu.Lock()
+	defer topicListMu.Unlock()
+	node := findTopicLocked(topicId)
+	if node == nil {
+		return ""
+	}
+	topic := node.value.topic
+	var responseMap map[string]interface{}
+	if err := json.Unmarshal([]byte(response), &responseMap); err != nil {
+		return topic
+	}
+	action, ok := responseMap["action"].(string)
+	if !ok {
+		return topic
+	}
+	isError := responseMap["error"] != nil
+	switch action {
+	case "get", "set", "discover":
+		popTopicLocked(topicId)
+	case "subscribe":
+		if isError {
+			popTopicLocked(topicId)
+		} else if subscriptionId, ok := responseMap["subscriptionId"].(string); ok {
+			node.value.subscriptionId = subscriptionId
+		}
+	case "subscription":
+		if isError {
+			popTopicLocked(topicId)
+		}
+	case "unsubscribe":
+		target := node.value.unsubscribeTarget
+		popTopicLocked(topicId)
+		if !isError && target != "" {
+			for n := topicList.head; n != nil; n = n.next {
+				if n.value.subscriptionId == target {
+					popTopicLocked(n.value.topicId)
+					break
+				}
+			}
+		}
+	}
+	return topic
 }
 
 // publishMessage publishes payload on the given MQTT topic via the
@@ -369,7 +475,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 				publishMessage(serverSubscription, topic, utils.FinalizeMessage(errorResponseMap))
 				continue
 			}
-			pushTopic(topic, topicId)
+			registerRequest(topic, topicId, payload)
 			AddRoutingInfoAndForward(payload, mgrId, topicId, transportMgrChan)
 			topicId++
 
@@ -377,7 +483,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 			utils.Info.Printf("MQTT hub: Message from VISSv2 server:%s", vissv2Message)
 			// link routerId to topic, remove routerId from message, create mqtt message, send message to mqtt transport
 			payload, topicHandle := utils.RemoveInternalData(string(vissv2Message))
-			publishMessage(serverSubscription, getTopic(topicHandle), payload)
+			publishMessage(serverSubscription, routeResponse(topicHandle, payload), payload)
 		}
 	}
 }
