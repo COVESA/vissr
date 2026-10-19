@@ -121,7 +121,7 @@ corpus entry.
 | Area                                                           | Test file                                                            |
 |----------------------------------------------------------------|----------------------------------------------------------------------|
 | `utils.IsNumber`, `IsBoolean` predicates                        | `utils/common_broader_test.go`                                       |
-| `utils.PathToUrl` ⇄ `UrlToPath` round-trip                      | `utils/common_broader_test.go`                                       |
+| `utils.PathToUrl` â‡„ `UrlToPath` round-trip                      | `utils/common_broader_test.go`                                       |
 | `utils.GetMaxValidation`                                        | `utils/common_broader_test.go`                                       |
 | `utils.ExtractRootName`                                         | `utils/common_broader_test.go`                                       |
 | `utils.GenerateHmac` / `VerifyTokenSignature` round-trip + tamper | `utils/common_broader_test.go`                                       |
@@ -195,6 +195,10 @@ points are tested via runtest.sh integration.
 |---------------------------|-----------------------------------------------------------------|
 | `feeder-rl`                | `feeder/feeder-rl/feeder-rl_test.go` (PR #122)                  |
 | `feeder-template/feederv4` | `feeder/feeder-template/feederv4/feederv4_helpers_test.go`      |
+| `feeder-template/feederv4` (storage writers: sqlite, redis, memcache) | `feeder/feeder-template/feederv4/feederv4_storage_test.go` |
+| `feeder-template/feederv4` (`feederRegister`) | `feeder/feeder-template/feederv4/feederv4_register_test.go` |
+| `feeder-template/feederv4` (random simulation, `udsWriter`) | `feeder/feeder-template/feederv4/feederv4_testability_test.go` |
+| `feeder-template/feederv4` (`mongoSink`) | `feeder/feeder-template/feederv4/mongosink_test.go` |
 | `feeder-evic`              | `feeder/feeder-evic/evicFeeder_test.go`                         |
 | `feeder-evic/evicSim`      | `feeder/feeder-evic/evicSim/evicSim_test.go`                    |
 
@@ -210,25 +214,22 @@ Listed here for visibility:
 | Function                                                       | Why not testable                                                                            | Refactor approach                                                                       |
 |----------------------------------------------------------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
 | `mqttMgr::MqttMgrInit` loop, `mqttSubscribe` (success path)     | `MqttMgrInit` is a for/select loop with the per-message handling (schema validation, forwarding) inline, and it needs a broker. (The reply-topic bookkeeping is extracted into `registerRequest` / `routeResponse` and tested.) `mqttSubscribe` creates its own client with `MQTT.NewClient`. (`publishMessage` takes an `MQTT.Client`, and its nil/empty-topic/disconnected paths and the `mqttSubscribe` connect-failure path are tested.) | Extract the per-message handler, as done for `httpMgr` and `grpcMgr`; pass a client factory so a mock `MQTT.Client` can be injected. |
-| `feederv4::feederRegister`, `statestorageSet`                   | Coupled to live UDS / SQLite / Redis / memcache.                                            | Inject a storage interface; mock for tests.                                             |
-| `feederv4::udsWriter`                                           | Infinite for/select loop on `udsChan` with no exit condition, writing to a live connection. (`udsReader` and the per-message dispatch are extracted and tested, using `net.Pipe`.) | Make the loop return when `udsChan` is closed, then drive it with `net.Pipe` like `udsReader`. |
-| `feederv4::simulateInput`, `selectRandomInput`, `getRandomVssfMapIndex` | Non-deterministic (global `math/rand`).                                              | Inject `*rand.Rand`; seed in tests.                                                     |
-| `feederv4::newMongoSink`, `mongoSink.writer`                    | Coupled to a live MongoDB (`*mongo.Collection`). The pure helpers `mongoTypedValue` and `mongoUpdateDoc` are tested. | Hide the collection behind a small interface with `UpdateOne`; mock for tests.          |
+| `feederv4::newMongoSink` | Connects to and pings a live MongoDB (`mongo.Connect`, `Ping`). The sink itself (`Write`, `writer`, `store`) works against a one method `updater` interface and is tested with a fake collection; the pure helpers `mongoTypedValue` and `mongoUpdateDoc` are tested. | Pass the connect function in, or cover it with an integration test against a MongoDB container (as CI does for the MQTT broker). |
 | `feeder-evic::statestorageSet`, `initUdsEndpoint`, `initVSSInterfaceMgr`, `writeCanDriverLoop`; `feeder-evic` and `evicSim`: `initVehicleInterfaceMgr`, `initCanDriverInput` / `initCanDriverOutput`, `canDriverClient`, `serverSession`, `reDialer` | Coupled to live network / DB, or long-running loops. `handleUdsConn` (extracted from `initUdsEndpoint`) can be driven with `net.Pipe` but has no test yet. | Same shape: inject interfaces, extract per-message handlers, extract a single-attempt helper from `reDialer`. |
 | `filetransfer_client::initWebSocket*`, `controlClient`, `dataClient`, `downloadFile`, `uploadFile` | Need a running vissv2server.                                         | Already integration-tested via runtest.sh.                                              |
 | `testClient` and `mqtt_client`: `mqttSubscribe`, `publishMessage` (`testClient` also `mqttTesterRun`) | Connect to a real broker (`MQTT_BROKER_ADDR`, default `127.0.0.1`) and call `os.Exit(1)` or `panic` on connect/subscribe/publish failure, which would kill the test process. | Return errors instead of exiting, and take an `MQTT.Client` (or factory) so a mock can be injected. Already integration-tested via runtest.sh with the local broker. |
 
 ## Subsystems with genuinely no .go code
 
-- `server/vissv2server/forest/` — VSS-tree binary data files only.
-- `server/transport_sec/` — TLS certs and `transportSec.json` config only.
-- `client/client-1.0/Javascript/`, `transport_sec/` — no Go code (JS client, certs, sample configs).
+- `server/vissv2server/forest/` â€” VSS-tree binary data files only.
+- `server/transport_sec/` â€” TLS certs and `transportSec.json` config only.
+- `client/client-1.0/Javascript/`, `transport_sec/` â€” no Go code (JS client, certs, sample configs).
 
 ## Note on `.gitignore`
 
 The repo's `.gitignore` has unanchored patterns `feeder` and
 `agt_server` (lines 30, 53) that silently swallow any path with those
-names — multiple test files in this PR and PR #122 needed
+names â€” multiple test files in this PR and PR #122 needed
 `git add -f`. The patterns should be anchored
 (`/feeder/feeder-template/feederv4/feeder` for the actual built
 binary, etc.) in a separate cleanup PR.
