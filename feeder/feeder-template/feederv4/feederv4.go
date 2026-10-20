@@ -329,46 +329,70 @@ func initVSSInterfaceMgr(inputChan chan DomainData, outputChan chan DomainData, 
 	}
 }
 
+// statestorageSet writes the datapoint to the configured state storage and returns 0 on
+// success and -1 on failure (also if no state storage is configured).
 func statestorageSet(path string, val string, ts string) int {
+	var err error
 	switch stateDbType {
 	case "sqlite":
-		stmt, err := dbHandle.Prepare("UPDATE VSS_MAP SET c_value=?, c_ts=? WHERE `path`=?")
-		if err != nil {
-			utils.Error.Printf("Could not prepare for statestorage updating, err = %s", err)
-			return -1
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(val, ts, path)
-		if err != nil {
-			utils.Error.Printf("Could not update statestorage, err = %s", err)
-			return -1
-		}
-		return 0
+		err = sqliteSet(dbHandle, path, val, ts)
 	case "redis":
-		dp, err := marshalDatapointJSON(val, ts)
-		if err != nil {
-			utils.Error.Printf("statestorageSet:Marshal error=%v", err)
-			return -1
-		}
-		if err := redisClient.Set(path, dp, time.Duration(0)).Err(); err != nil {
-			utils.Error.Printf("Job failed. Err=%s", err)
-			return -1
-		}
-		return 0
+		err = redisSet(redisClient, path, val, ts)
 	case "memcache":
-		dp, err := marshalDatapointJSON(val, ts)
-		if err != nil {
-			utils.Error.Printf("statestorageSet:Marshal error=%v", err)
-			return -1
-		}
-		if err := memcacheClient.Set(&memcache.Item{Key: path, Value: []byte(dp)}); err != nil {
-			utils.Error.Printf("Job failed. Err=%s", err)
-			return -1
-		}
-		return 0
+		err = memcacheSet(memcacheClient, path, val, ts)
+	default:
+		return -1
 	}
-	return -1
+	if err != nil {
+		utils.Error.Printf("statestorageSet: write to %s state storage failed for %q, err = %s", stateDbType, path, err)
+		return -1
+	}
+	return 0
+}
+
+// The per backend writers take the storage handle as a parameter so that they can be
+// tested against a temporary database or a fake server instead of the process wide ones.
+
+// sqliteSet updates the current value and time stamp of path in the VSS_MAP table.
+// Note that a path that has no row in the table is not an error: the update then matches
+// no row and nothing is stored.
+func sqliteSet(db *sql.DB, path string, val string, ts string) error {
+	if db == nil { // main only logs, and carries on, if the database file is missing
+		return fmt.Errorf("sqlite state storage not initialised")
+	}
+	stmt, err := db.Prepare("UPDATE VSS_MAP SET c_value=?, c_ts=? WHERE `path`=?")
+	if err != nil {
+		return fmt.Errorf("could not prepare for statestorage updating: %w", err)
+	}
+	defer stmt.Close()
+	if _, err = stmt.Exec(val, ts, path); err != nil {
+		return fmt.Errorf("could not update statestorage: %w", err)
+	}
+	return nil
+}
+
+// redisSet stores the datapoint, as {"value":..., "ts":...}, under the key path.
+func redisSet(client *redis.Client, path string, val string, ts string) error {
+	if client == nil {
+		return fmt.Errorf("redis state storage not initialised")
+	}
+	dp, err := marshalDatapointJSON(val, ts)
+	if err != nil {
+		return fmt.Errorf("marshal error: %w", err)
+	}
+	return client.Set(path, dp, time.Duration(0)).Err()
+}
+
+// memcacheSet stores the datapoint, as {"value":..., "ts":...}, under the key path.
+func memcacheSet(client *memcache.Client, path string, val string, ts string) error {
+	if client == nil {
+		return fmt.Errorf("memcache state storage not initialised")
+	}
+	dp, err := marshalDatapointJSON(val, ts)
+	if err != nil {
+		return fmt.Errorf("marshal error: %w", err)
+	}
+	return client.Set(&memcache.Item{Key: path, Value: []byte(dp)})
 }
 
 // marshalDatapointJSON encodes the {"value":..., "ts":...} datapoint using
@@ -560,16 +584,20 @@ func removeNotifications(pathList []interface{}) {
 // reader (see serviceMgr's feederReader) can tell where one message ends
 // and the next begins on the stream socket. See udsReader for why this
 // delimiter is required.
+//
+// udsWriter returns, and closes conn, when udsChan is closed. (Without the
+// check a closed channel yields "" immediately and forever, which made the
+// loop write an endless stream of bare newlines.) A failed write is only
+// logged and the loop continues: the senders on udsChan block until the
+// message is taken, so a writer that stopped on a write error would block
+// them forever.
 func udsWriter(conn net.Conn, udsChan chan string) {
 	defer conn.Close()
-	for {
-		select {
-		case message := <-udsChan:
+	for message := range udsChan {
 		utils.Info.Printf("udsWriter:Message to server: %s", message)
-			_, err := conn.Write([]byte(message + "\n"))
-			if err != nil {
-				utils.Error.Printf("udsWriter:Write failed, err = %s", err)
-			}
+		_, err := conn.Write([]byte(message + "\n"))
+		if err != nil {
+			utils.Error.Printf("udsWriter:Write failed, err = %s", err)
 		}
 	}
 }
@@ -615,12 +643,31 @@ func splitToDomainDataAndTs(serverMessageMap map[string]interface{}) (DomainData
 	return domainData, ts, true
 }
 
+// intner is the part of *rand.Rand that the random simulation uses. It lets a test script the
+// "random" numbers. The default (nil) is the package level math/rand, which unlike a *rand.Rand
+// is safe for concurrent use.
+type intner interface {
+	Intn(n int) int
+}
+
+type globalRand struct{}
+
+func (globalRand) Intn(n int) int { return rand.Intn(n) }
+
+func orGlobalRand(r intner) intner {
+	if r == nil {
+		return globalRand{}
+	}
+	return r
+}
+
 type simulateDataCtx struct {
 	RandomSim bool        // true=random, false=stepwise change of signal written to
 	Fmap      []FeederMap // used for random simulation
 	Path      string      // signal written to
 	SetVal    string      // value written
 	Iteration int
+	Rand      intner // source of random numbers, nil = math/rand
 }
 
 type ActuatorSimCtx struct {
@@ -740,7 +787,7 @@ func makeDataPoint(path string, value string) DomainData {
 func simulateInput(simCtx *simulateDataCtx) DomainData {
 	var input DomainData
 	if simCtx.RandomSim == true {
-		return selectRandomInput(simCtx.Fmap)
+		return selectRandomInput(simCtx.Fmap, simCtx.Rand)
 	}
 	if simCtx.Iteration == 10 {
 		simCtx.RandomSim = true
@@ -760,22 +807,23 @@ func calcInputValue(iteration int, setValue string) string {
 	return strconv.Itoa(newVal)
 }
 
-func selectRandomInput(fMap []FeederMap) DomainData {
+func selectRandomInput(fMap []FeederMap, r intner) DomainData {
+	r = orGlobalRand(r)
 	var domainData DomainData
-	signalIndex := getRandomVssfMapIndex(fMap)
+	signalIndex := getRandomVssfMapIndex(fMap, r)
 	if signalIndex < 0 || signalIndex >= len(fMap) {
 		// No suitable signal - return empty DomainData; the consumer will skip it.
 		return domainData
 	}
 	domainData.Name = fMap[signalIndex].Name
 	if fMap[signalIndex].Datatype == 0 { // uint8, maybe allowed...
-		domainData.Value = strconv.Itoa(rand.Intn(10))
+		domainData.Value = strconv.Itoa(r.Intn(10))
 	} else if fMap[signalIndex].Datatype == 9 { // double, maybe lat/long
-		domainData.Value = strconv.Itoa(rand.Intn(90))
+		domainData.Value = strconv.Itoa(r.Intn(90))
 	} else if fMap[signalIndex].Datatype == 10 { // bool
-		domainData.Value = strconv.Itoa(rand.Intn(2))
+		domainData.Value = strconv.Itoa(r.Intn(2))
 	} else {
-		domainData.Value = strconv.Itoa(rand.Intn(1000))
+		domainData.Value = strconv.Itoa(r.Intn(1000))
 	}
 //	utils.Info.Printf("Simulated data from Vehicle interface: Name=%s, Value=%s", domainData.Name, domainData.Value)
 	return domainData
@@ -785,11 +833,11 @@ func selectRandomInput(fMap []FeederMap) DomainData {
 // vehicle-side leaf). Returns -1 if fMap is empty or contains no qualifying
 // entries. Pre-fix used `% (len(fMap)-1)` which skipped the last slot and
 // divided by zero when len(fMap)==1.
-func getRandomVssfMapIndex(fMap []FeederMap) int {
+func getRandomVssfMapIndex(fMap []FeederMap, r intner) int {
 	if len(fMap) == 0 {
 		return -1
 	}
-	signalIndex := rand.Intn(len(fMap))
+	signalIndex := orGlobalRand(r).Intn(len(fMap))
 	// Walk at most len(fMap) entries so we don't loop forever if no entry
 	// satisfies the predicate.
 	for attempts := 0; attempts < len(fMap); attempts++ {

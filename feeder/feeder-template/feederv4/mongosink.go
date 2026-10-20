@@ -37,8 +37,14 @@ type setItem struct {
 	Ts    string
 }
 
+// updater is the one operation of a MongoDB collection that the sink uses. *mongo.Collection
+// implements it; tests supply a fake.
+type updater interface {
+	UpdateOne(ctx context.Context, filter any, update any, opts ...options.Lister[options.UpdateOneOptions]) (*mongo.UpdateResult, error)
+}
+
 type mongoSink struct {
-	collection *mongo.Collection
+	collection updater
 	queue      chan setItem
 }
 
@@ -55,12 +61,17 @@ func newMongoSink(uri string, dbName string, collName string) (*mongoSink, error
 		client.Disconnect(context.Background())
 		return nil, err
 	}
-	sink := &mongoSink{
-		collection: client.Database(dbName).Collection(collName),
-		queue:      make(chan setItem, MONGO_QUEUE_SIZE),
-	}
+	sink := newMongoSinkFor(client.Database(dbName).Collection(collName), MONGO_QUEUE_SIZE)
 	go sink.writer()
 	return sink, nil
+}
+
+// newMongoSinkFor creates a sink that writes to collection. The caller starts the writer.
+func newMongoSinkFor(collection updater, queueSize int) *mongoSink {
+	return &mongoSink{
+		collection: collection,
+		queue:      make(chan setItem, queueSize),
+	}
 }
 
 func (m *mongoSink) Write(path string, value string, ts string) {
@@ -71,17 +82,24 @@ func (m *mongoSink) Write(path string, value string, ts string) {
 	}
 }
 
+// writer stores the queued items, one at a time and in order, until the queue is closed.
+// A failed write is logged and the item is dropped; the writer carries on with the next one.
 func (m *mongoSink) writer() {
 	for item := range m.queue {
-		ctx, cancel := context.WithTimeout(context.Background(), MONGO_WRITE_TIMEOUT)
-		_, err := m.collection.UpdateOne(ctx, bson.M{"_id": item.Ts}, mongoUpdateDoc(item), options.UpdateOne().SetUpsert(true))
-		cancel()
-		if err != nil {
-			utils.Error.Printf("mongoSink: write failed for %q, err=%s", item.Path, err)
-		} else {
-			utils.Info.Printf("mongoSink: stored %s=%s (ts=%s)", item.Path, item.Value, item.Ts)
-		}
+		m.store(item)
 	}
+}
+
+// store upserts one item into the document _id = item.Ts.
+func (m *mongoSink) store(item setItem) {
+	ctx, cancel := context.WithTimeout(context.Background(), MONGO_WRITE_TIMEOUT)
+	defer cancel()
+	_, err := m.collection.UpdateOne(ctx, bson.M{"_id": item.Ts}, mongoUpdateDoc(item), options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		utils.Error.Printf("mongoSink: write failed for %q, err=%s", item.Path, err)
+		return
+	}
+	utils.Info.Printf("mongoSink: stored %s=%s (ts=%s)", item.Path, item.Value, item.Ts)
 }
 
 func mongoUpdateDoc(item setItem) bson.M {
