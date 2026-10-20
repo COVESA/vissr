@@ -173,6 +173,7 @@ corpus entry.
 |-----------------------------------------|--------------------------------------------------------|
 | `getSubscriptionId` (valid / missing / malformed JSON) | `server/vissv2server/grpcMgr/grpcMgr_helpers_test.go` |
 | `extractClientId` (valid + malformed parse) | `server/vissv2server/grpcMgr/grpcMgr_helpers_test.go` |
+| unsubscribe handling: `updateRoutingList`, `killSubscribeStream`, `getSubscribeRoutingData` / `resetGrpcRoutingData` guards, hub still serving after a subscribe + unsubscribe | `server/vissv2server/grpcMgr/grpcMgr_test.go` |
 
 #### Clients (`client/client-1.0/`)
 

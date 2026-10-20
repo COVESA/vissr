@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,9 +278,7 @@ func TestGetSubscribeRoutingData_FindsBySubscriptionId(t *testing.T) {
 	setGrpcRoutingData(id, ch, true)
 	updateGrpcRoutingData(id, "sub-ABCD")
 
-	// Build a minimal subscribe-response JSON that getSubscriptionId can parse.
-	resp := `{"action":"subscription","subscriptionId":"sub-ABCD"}`
-	gotId, gotCh := getSubscribeRoutingData(resp)
+	gotId, gotCh := getSubscribeRoutingData("sub-ABCD")
 	if gotId != id {
 		t.Fatalf("getSubscribeRoutingData: clientId = %d; want %d", gotId, id)
 	}
@@ -293,8 +293,7 @@ func TestGetSubscribeRoutingData_MissingId(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	resp := `{"action":"subscription","subscriptionId":"sub-NOTFOUND"}`
-	gotId, gotCh := getSubscribeRoutingData(resp)
+	gotId, gotCh := getSubscribeRoutingData("sub-NOTFOUND")
 	if gotId != -1 {
 		t.Fatalf("getSubscribeRoutingData on missing id = %d; want -1", gotId)
 	}
@@ -303,23 +302,23 @@ func TestGetSubscribeRoutingData_MissingId(t *testing.T) {
 	}
 }
 
-// TestGetSubscribeRoutingData_MalformedJSON: a non-JSON response must
-// not panic; it should return -1 and nil.
-func TestGetSubscribeRoutingData_MalformedJSON(t *testing.T) {
+// TestGetSubscribeRoutingData_EmptyId: every unused or freshly reset slot has SubscriptionId "", so a
+// lookup of "" must not match any of them. It matched an unallocated slot (nil channel) or a live client
+// that had not subscribed to anything.
+func TestGetSubscribeRoutingData_EmptyId(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("getSubscribeRoutingData panicked on malformed JSON: %v", r)
-		}
-	}()
-	gotId, gotCh := getSubscribeRoutingData(`{not valid json}`)
+	// a live client that has not subscribed to anything (SubscriptionId == "")
+	ch := make(chan string, 1)
+	id := getClientId()
+	setGrpcRoutingData(id, ch, false)
+
+	gotId, gotCh := getSubscribeRoutingData("")
 	if gotId != -1 || gotCh != nil {
-		t.Logf("getSubscribeRoutingData on bad JSON: id=%d ch=%v (both -1/nil expected)", gotId, gotCh)
+		t.Fatalf("getSubscribeRoutingData(\"\") = (%d, %v); want (-1, nil)", gotId, gotCh)
 	}
 }
-
 // ---------------------------------------------------------------------------
 // updateRoutingList
 // ---------------------------------------------------------------------------
@@ -406,62 +405,197 @@ func TestUpdateRoutingList_SubscribeErrorResetsClientId(t *testing.T) {
 	}
 }
 
-// TestUpdateRoutingList_UnsubscribeForwardsAndResets: an "unsubscribe"
-// response must forward to the subscribe channel and reset the client.
-// We simulate both the subscribe-side and unsubscribe-side clientIds.
-func TestUpdateRoutingList_UnsubscribeForwardsAndResets(t *testing.T) {
+// TestUpdateRoutingList_UnsubscribeResetsCaller: an "unsubscribe" response frees the slot of the client
+// that sent the unsubscribe request, and nothing else. The response is in the form that the server core
+// produces, which has no subscriptionId. (An earlier version of this test put a subscriptionId in the
+// response, which hid that the code looked the subscribing stream up with it.)
+func TestUpdateRoutingList_UnsubscribeResetsCaller(t *testing.T) {
 	initLists()
 	defer initLists()
 
-	// Set up the subscribe-side channel. getSubscribeRoutingData looks
-	// up by subscriptionId, so we need a routing entry with a matching
-	// subscriptionId.
 	subCh := make(chan string, 1)
 	subId := getClientId()
-	if subId == -1 {
-		t.Fatalf("no free slot for subscribe client")
-	}
 	setGrpcRoutingData(subId, subCh, true)
 	updateGrpcRoutingData(subId, "sub-UNSUB")
 
-	// Set up the unsubscribe-side channel.
-	unsubCh := make(chan string, 1)
 	unsubId := getClientId()
-	if unsubId == -1 {
-		t.Fatalf("no free slot for unsubscribe client")
-	}
-	setGrpcRoutingData(unsubId, unsubCh, false)
+	setGrpcRoutingData(unsubId, make(chan string, 1), false)
 
-	// The "unsubscribe" response carries the subscriptionId so
-	// getSubscribeRoutingData can find the subscribe-side channel.
-	resp := `{"action":"unsubscribe","subscriptionId":"sub-UNSUB"}`
-
-	// updateRoutingList sends on subscribeChan, which blocks unless
-	// consumed. Run it in a goroutine so we can drain subCh.
 	done := make(chan struct{})
 	go func() {
-		updateRoutingList(resp, unsubId, false)
+		updateRoutingList(`{"action":"unsubscribe","requestId":"123","ts":"2026-01-01T00:00:00Z"}`, unsubId, false)
 		close(done)
 	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("updateRoutingList blocked on an unsubscribe response without a subscriptionId")
+	}
 
-	// Drain the message sent to the subscribe-side channel.
+	grpcStateMu.Lock()
+	callerTaken := grpcClientIndexList[unsubId]
+	subTaken := grpcClientIndexList[subId]
+	grpcStateMu.Unlock()
+	if callerTaken {
+		t.Errorf("the unsubscribing client's slot %d is still taken; want freed", unsubId)
+	}
+	if !subTaken {
+		t.Errorf("the subscribing client's slot %d was freed; only killSubscribeStream may end it", subId)
+	}
 	select {
 	case got := <-subCh:
-		_ = got
-	case <-done:
-		t.Fatalf("updateRoutingList returned before forwarding to subscribe channel")
-	}
-	<-done
-
-	// The unsubscribe client slot should now be freed.
-	grpcStateMu.Lock()
-	taken := grpcClientIndexList[unsubId]
-	grpcStateMu.Unlock()
-	if taken {
-		t.Fatalf("unsubscribe client slot %d still taken; want freed", unsubId)
+		t.Errorf("the subscribing stream received %q; it must not get the unsubscribe response", got)
+	default:
 	}
 }
 
+// The regression behind the gRPC DeadlineExceeded on every request after a subscribe/unsubscribe: the
+// unsubscribe response (which has no subscriptionId) used to be sent on the channel of an unrelated
+// slot. With no such slot allocated that channel is nil, the send blocks forever, and the single hub
+// goroutine that makes this call serves every gRPC client.
+func TestRemoveRoutingForwardResponse_UnsubscribeResponseDoesNotWedgeTheHub(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	unsubCh := make(chan string, 1)
+	unsubId := getClientId()
+	setGrpcRoutingData(unsubId, unsubCh, false)
+
+	done := make(chan struct{})
+	go func() {
+		RemoveRoutingForwardResponse(`{"RouterId":"3?` + strconv.Itoa(unsubId) + `", "action":"unsubscribe","requestId":"123","ts":"2026-01-01T00:00:00Z"}`)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RemoveRoutingForwardResponse is stuck on the unsubscribe response: the hub loop would be wedged")
+	}
+	select {
+	case got := <-unsubCh:
+		if !strings.Contains(got, `"unsubscribe"`) {
+			t.Errorf("unsubscribing client got %q; want the unsubscribe response", got)
+		}
+	default:
+		t.Error("the unsubscribe response was not delivered to the client that sent the request")
+	}
+}
+
+// After the first unsubscribe the hub must go on serving other requests.
+func TestHub_ServesRequestsAfterASubscribeAndUnsubscribe(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	subCh := make(chan string, 4)
+	subId := getClientId()
+	setGrpcRoutingData(subId, subCh, true)
+	RemoveRoutingForwardResponse(`{"RouterId":"3?` + strconv.Itoa(subId) + `", "action":"subscribe","requestId":"5","subscriptionId":"9","ts":"t"}`)
+	<-subCh
+
+	unsubId := getClientId()
+	setGrpcRoutingData(unsubId, make(chan string, 1), false)
+	killSubscribeStream("9") // what the UnsubscribeRequest handler does first
+	<-subCh                  // the kill message
+	RemoveRoutingForwardResponse(`{"RouterId":"3?` + strconv.Itoa(unsubId) + `", "action":"unsubscribe","requestId":"6","ts":"t"}`)
+
+	// a multi-get after that, as in the test client
+	getCh := make(chan string, 1)
+	getId := getClientId()
+	setGrpcRoutingData(getId, getCh, false)
+	done := make(chan struct{})
+	go func() {
+		RemoveRoutingForwardResponse(`{"RouterId":"3?` + strconv.Itoa(getId) + `", "action":"get","requestId":"248","ts":"t","data":[]}`)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hub did not serve a get after an unsubscribe")
+	}
+	if got := <-getCh; !strings.Contains(got, `"requestId":"248"`) {
+		t.Errorf("get response = %q", got)
+	}
+}
+
+// killSubscribeStream sends the kill message to the stream that owns the subscription, and only to it.
+func TestKillSubscribeStream_SendsKillMessageToOwningStream(t *testing.T) {
+	initLists()
+	defer initLists()
+
+	ownerCh := make(chan string, 1)
+	ownerId := getClientId()
+	setGrpcRoutingData(ownerId, ownerCh, true)
+	updateGrpcRoutingData(ownerId, "sub-1")
+	otherCh := make(chan string, 1)
+	otherId := getClientId()
+	setGrpcRoutingData(otherId, otherCh, true)
+	updateGrpcRoutingData(otherId, "sub-2")
+
+	killSubscribeStream("sub-1")
+
+	select {
+	case got := <-ownerCh:
+		if !strings.Contains(got, KILL_MESSAGE) || extractClientId(got) != ownerId {
+			t.Errorf("kill message = %q; want %q for clientId %d", got, KILL_MESSAGE, ownerId)
+		}
+	default:
+		t.Fatal("the owning stream did not get a kill message")
+	}
+	select {
+	case got := <-otherCh:
+		t.Errorf("another stream received %q", got)
+	default:
+	}
+}
+
+func TestKillSubscribeStream_UnknownOrEmptyIdIsANoOp(t *testing.T) {
+	initLists()
+	defer initLists()
+	ch := make(chan string, 1)
+	id := getClientId()
+	setGrpcRoutingData(id, ch, true)
+	updateGrpcRoutingData(id, "sub-1")
+
+	done := make(chan struct{})
+	go func() { killSubscribeStream("nope"); killSubscribeStream(""); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("killSubscribeStream blocked for an unknown or empty id")
+	}
+	select {
+	case got := <-ch:
+		t.Errorf("a stream received %q for an unknown id", got)
+	default:
+	}
+}
+
+// resetGrpcRoutingData(-1) is what SubscribeRequest calls when the client disconnects before the first
+// response arrived. It used to match the first free slot and panic on grpcClientIndexList[-1].
+func TestResetGrpcRoutingData_NegativeIdIsIgnored(t *testing.T) {
+	initLists()
+	defer initLists()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("resetGrpcRoutingData(-1) panicked: %v", r)
+		}
+	}()
+	resetGrpcRoutingData(-1)
+	resetGrpcRoutingData(-5)
+}
+
+// A freed slot must not keep the subscriptionId of its previous occupant.
+func TestResetGrpcRoutingData_ClearsSubscriptionId(t *testing.T) {
+	initLists()
+	defer initLists()
+	id := getClientId()
+	setGrpcRoutingData(id, make(chan string, 1), true)
+	updateGrpcRoutingData(id, "sub-OLD")
+	resetGrpcRoutingData(id)
+	if gotId, gotCh := getSubscribeRoutingData("sub-OLD"); gotId != -1 || gotCh != nil {
+		t.Errorf("freed slot still found by its old subscriptionId: (%d, %v)", gotId, gotCh)
+	}
+}
 // ---------------------------------------------------------------------------
 // Helper utilities used by updateRoutingList tests
 // ---------------------------------------------------------------------------
