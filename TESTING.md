@@ -150,11 +150,13 @@ corpus entry.
 | `FuzzGetRangeBoundaries`                 | `server/vissv2server/vissv2server_helpers_test.go`     |
 | `validateStructSetValue` / `verifyStruct` (struct-typed SET values, against the real `typedef.binary`) | `server/vissv2server/vissv2server_struct_test.go` |
 
-#### mqttMgr reply-topic list
+#### mqttMgr (reply-topic list, broker side and server loop)
 
 | Helper                                  | Test file                                              |
 |-----------------------------------------|--------------------------------------------------------|
 | `registerRequest` / `routeResponse` (entry released when the request is finished: get/set/discover, error responses, unsubscribe; kept while a subscription runs; no growth over many requests) | `server/vissv2server/mqttMgr/mqttMgr_topiclist_test.go` |
+| `mqttSubscribe` (success, connect error, subscribe error, resubscribe after a reconnect), `handleBrokerMessage`, `handleServerCoreMessage`, `runHub`, `transportPump`, `MqttMgrInit` end to end, with a mock `MQTT.Client` | `server/vissv2server/mqttMgr/mqttMgr_init_test.go` |
+| `MqttMgrInit` wired to a model of `transportDataSession` on one unbuffered channel, as in the server: concurrent requests reach the core and are never echoed back | `server/vissv2server/mqttMgr/mqttMgr_wiring_test.go` |
 
 #### wsMgr (beyond pure helpers covered in PR #122)
 | Helper                                  | Test file                                              |
@@ -214,7 +216,6 @@ Listed here for visibility:
 
 | Function                                                       | Why not testable                                                                            | Refactor approach                                                                       |
 |----------------------------------------------------------------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| `mqttMgr::MqttMgrInit` loop, `mqttSubscribe` (success path)     | `MqttMgrInit` is a for/select loop with the per-message handling (schema validation, forwarding) inline, and it needs a broker. (The reply-topic bookkeeping is extracted into `registerRequest` / `routeResponse` and tested.) `mqttSubscribe` creates its own client with `MQTT.NewClient`. (`publishMessage` takes an `MQTT.Client`, and its nil/empty-topic/disconnected paths and the `mqttSubscribe` connect-failure path are tested.) | Extract the per-message handler, as done for `httpMgr` and `grpcMgr`; pass a client factory so a mock `MQTT.Client` can be injected. |
 | `feederv4::newMongoSink` | Connects to and pings a live MongoDB (`mongo.Connect`, `Ping`). The sink itself (`Write`, `writer`, `store`) works against a one method `updater` interface and is tested with a fake collection; the pure helpers `mongoTypedValue` and `mongoUpdateDoc` are tested. | Pass the connect function in, or cover it with an integration test against a MongoDB container (as CI does for the MQTT broker). |
 | `feeder-evic::statestorageSet`, `initUdsEndpoint`, `initVSSInterfaceMgr`, `writeCanDriverLoop`; `feeder-evic` and `evicSim`: `initVehicleInterfaceMgr`, `initCanDriverInput` / `initCanDriverOutput`, `canDriverClient`, `serverSession`, `reDialer` | Coupled to live network / DB, or long-running loops. `handleUdsConn` (extracted from `initUdsEndpoint`) can be driven with `net.Pipe` but has no test yet. | Same shape: inject interfaces, extract per-message handlers, extract a single-attempt helper from `reDialer`. |
 | `filetransfer_client::initWebSocket*`, `controlClient`, `dataClient`, `downloadFile`, `uploadFile` | Need a running vissv2server.                                         | Already integration-tested via runtest.sh.                                              |

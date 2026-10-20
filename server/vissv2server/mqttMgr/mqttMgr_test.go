@@ -557,32 +557,6 @@ func containsSubstring(s, sub string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// vissV2Receiver — one-shot forwarding test
-// ---------------------------------------------------------------------------
-
-// TestVissV2Receiver_ForwardsOneMessage: vissV2Receiver reads from
-// transportMgrChan and writes to vissv2Channel. Start it in a goroutine,
-// push one message, and verify it comes out on the other side.
-func TestVissV2Receiver_ForwardsOneMessage(t *testing.T) {
-	transport := make(chan string, 1)
-	vissv2 := make(chan string, 1)
-
-	go vissV2Receiver(transport, vissv2)
-
-	transport <- `{"action":"get","value":"55"}`
-	select {
-	case got := <-vissv2:
-		if got != `{"action":"get","value":"55"}` {
-			t.Fatalf("vissV2Receiver forwarded %q; want original", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatalf("vissV2Receiver did not forward message within 1s")
-	}
-	// The goroutine now blocks waiting for more messages; it will be
-	// collected when the channels go out of scope after the test.
-}
-
-// ---------------------------------------------------------------------------
 // mqttSubscribe — connect-failure path
 // ---------------------------------------------------------------------------
 
