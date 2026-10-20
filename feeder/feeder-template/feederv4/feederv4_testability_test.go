@@ -104,7 +104,7 @@ func TestGetRandomVssfMapIndex_NoQualifyingEntryTerminates(t *testing.T) {
 		if got != -1 {
 			t.Errorf("got %d; want -1", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("getRandomVssfMapIndex did not terminate")
 	}
 }
@@ -254,7 +254,7 @@ func TestUdsWriter_WritesEachMessageNewlineTerminated(t *testing.T) {
 	close(udsChan)
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("udsWriter did not return after udsChan was closed")
 	}
 }
@@ -271,10 +271,10 @@ func TestUdsWriter_ClosedChannelStopsWriterAndClosesConn(t *testing.T) {
 	close(udsChan)
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("udsWriter did not return after udsChan was closed")
 	}
-	client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	client.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := make([]byte, 16)
 	n, err := client.Read(buf)
 	if n != 0 {
@@ -297,14 +297,14 @@ func TestUdsWriter_WriteErrorDoesNotStopTheWriter(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		select {
 		case udsChan <- "msg":
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Fatalf("send %d blocked: the writer stopped after a failed write", i)
 		}
 	}
 	close(udsChan)
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("udsWriter did not return after udsChan was closed")
 	}
 }

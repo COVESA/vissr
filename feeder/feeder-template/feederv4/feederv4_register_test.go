@@ -67,7 +67,7 @@ func TestFeederRegister_SendsNameAndReturnsTheSockfile(t *testing.T) {
 		if req != `{"action": "reg", "name": "feeder1"}` {
 			t.Errorf("request = %q; want the reg request for feeder1", req)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("the server did not receive a request")
 	}
 }

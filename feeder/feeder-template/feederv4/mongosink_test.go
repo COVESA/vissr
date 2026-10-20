@@ -84,14 +84,18 @@ type updateCall struct {
 // fakeCollection records the UpdateOne calls. fail makes the call with that (1 based) number
 // return an error; block, if set, is waited on before each call returns.
 type fakeCollection struct {
-	mu    sync.Mutex
-	calls []updateCall
-	fail  map[int]bool
-	block chan struct{}
-	done  chan struct{} // receives one value per finished call, if not nil
+	mu      sync.Mutex
+	calls   []updateCall
+	fail    map[int]bool
+	block   chan struct{}
+	entered chan struct{} // receives one value when a call starts, if not nil
+	done    chan struct{} // receives one value per finished call, if not nil
 }
 
 func (f *fakeCollection) UpdateOne(ctx context.Context, filter any, update any, opts ...options.Lister[options.UpdateOneOptions]) (*mongo.UpdateResult, error) {
+	if f.entered != nil {
+		f.entered <- struct{}{}
+	}
 	if f.block != nil {
 		<-f.block
 	}
@@ -169,7 +173,7 @@ func TestMongoSinkWriter_StoresInOrderAndStopsWhenTheQueueIsClosed(t *testing.T)
 	go func() { sink.writer(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("writer did not return after the queue was closed")
 	}
 	calls := fc.snapshot()
@@ -195,7 +199,7 @@ func TestMongoSinkWriter_FailedWriteDoesNotStopTheWriter(t *testing.T) {
 	go func() { sink.writer(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("writer did not return")
 	}
 	if n := len(fc.snapshot()); n != 4 {
@@ -206,11 +210,23 @@ func TestMongoSinkWriter_FailedWriteDoesNotStopTheWriter(t *testing.T) {
 // Write must never block the feeder: with a full queue (a slow or unreachable database) the
 // item is dropped. The first item is taken by the writer and is stuck in the database call;
 // queueSize more fit in the queue; the rest are dropped.
+//
+// The test waits until the writer is inside the database call before it sends more. Without
+// that the outcome depends on when the writer goroutine first gets to run: if the flood comes
+// first, the queue fills up, the writer then takes one of the queued items, and only 2 items
+// are kept, not 3 (this failed on a loaded CI machine under the race detector).
 func TestMongoSinkWrite_NeverBlocksWhenTheQueueIsFull(t *testing.T) {
-	fc := &fakeCollection{block: make(chan struct{}), done: make(chan struct{}, 16)}
+	fc := &fakeCollection{block: make(chan struct{}), entered: make(chan struct{}, 16), done: make(chan struct{}, 16)}
 	sink := newMongoSinkFor(fc, 2)
 	go sink.writer()
 	defer close(sink.queue)
+
+	sink.Write("P.v", "first", "T")
+	select {
+	case <-fc.entered: // the writer has taken the item and is blocked in the database call
+	case <-time.After(5 * time.Second):
+		t.Fatal("the writer did not start storing the first item")
+	}
 
 	finished := make(chan struct{})
 	go func() {
@@ -221,12 +237,12 @@ func TestMongoSinkWrite_NeverBlocksWhenTheQueueIsFull(t *testing.T) {
 	}()
 	select {
 	case <-finished:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Write blocked on a full queue")
 	}
 	close(fc.block) // let the database answer
 	// at most 1 (in the call) + 2 (queued) items can have been kept
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(10 * time.Second)
 	for got := 0; got < 3; got++ {
 		select {
 		case <-fc.done:

@@ -121,7 +121,7 @@ corpus entry.
 | Area                                                           | Test file                                                            |
 |----------------------------------------------------------------|----------------------------------------------------------------------|
 | `utils.IsNumber`, `IsBoolean` predicates                        | `utils/common_broader_test.go`                                       |
-| `utils.PathToUrl` â‡„ `UrlToPath` round-trip                      | `utils/common_broader_test.go`                                       |
+| `utils.PathToUrl` ⇄ `UrlToPath` round-trip                      | `utils/common_broader_test.go`                                       |
 | `utils.GetMaxValidation`                                        | `utils/common_broader_test.go`                                       |
 | `utils.ExtractRootName`                                         | `utils/common_broader_test.go`                                       |
 | `utils.GenerateHmac` / `VerifyTokenSignature` round-trip + tamper | `utils/common_broader_test.go`                                       |
@@ -221,15 +221,15 @@ Listed here for visibility:
 
 ## Subsystems with genuinely no .go code
 
-- `server/vissv2server/forest/` â€” VSS-tree binary data files only.
-- `server/transport_sec/` â€” TLS certs and `transportSec.json` config only.
-- `client/client-1.0/Javascript/`, `transport_sec/` â€” no Go code (JS client, certs, sample configs).
+- `server/vissv2server/forest/` — VSS-tree binary data files only.
+- `server/transport_sec/` — TLS certs and `transportSec.json` config only.
+- `client/client-1.0/Javascript/`, `transport_sec/` — no Go code (JS client, certs, sample configs).
 
 ## Note on `.gitignore`
 
 The repo's `.gitignore` has unanchored patterns `feeder` and
 `agt_server` (lines 30, 53) that silently swallow any path with those
-names â€” multiple test files in this PR and PR #122 needed
+names — multiple test files in this PR and PR #122 needed
 `git add -f`. The patterns should be anchored
 (`/feeder/feeder-template/feederv4/feeder` for the actual built
 binary, etc.) in a separate cleanup PR.
