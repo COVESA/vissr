@@ -158,6 +158,14 @@ corpus entry.
 | `mqttSubscribe` (success, connect error, subscribe error, resubscribe after a reconnect), `handleBrokerMessage`, `handleServerCoreMessage`, `runHub`, `transportPump`, `MqttMgrInit` end to end, with a mock `MQTT.Client` | `server/vissv2server/mqttMgr/mqttMgr_init_test.go` |
 | `MqttMgrInit` wired to a model of `transportDataSession` on one unbuffered channel, as in the server: concurrent requests reach the core and are never echoed back | `server/vissv2server/mqttMgr/mqttMgr_wiring_test.go` |
 
+#### Routing fields of forwarded requests
+
+| Helper | Test file |
+|--------|-----------|
+| `utils.WithRoutingInfo` / `AddRoutingForwardRequest`: a client cannot set `origin`, `RouterId`, `handle`, `gatingId` or `infoType`; gRPC string injection | `utils/managerhandlers_origin_test.go` |
+| the same through the server core: a protected signal is refused without a token when the client adds `origin` | `server/vissv2server/vissv2server_origin_test.go` |
+| `wsMgr::isKillSubscriptions`: the schema check is skipped by the action, not by text in the request | `server/vissv2server/wsMgr/wsMgr_killcheck_test.go` |
+
 #### wsMgr (beyond pure helpers covered in PR #122)
 | Helper                                  | Test file                                              |
 |-----------------------------------------|--------------------------------------------------------|

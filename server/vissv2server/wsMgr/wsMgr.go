@@ -10,6 +10,7 @@
 package wsMgr
 
 import (
+	"encoding/json"
 	utils "github.com/covesa/vissr/utils"
 	"strings"
 	"strconv"
@@ -414,8 +415,23 @@ func handleWsTransportResponse(respMessage string, transportMgrChan chan string)
 // Extracted from WsMgrInit so the validation / compression /
 // forwarding behaviour can be unit-tested. Matches the shape of
 // handleUdsClientRequest in udsMgr (see PR #124).
+// isKillSubscriptions reports whether reqMessage is the manager's own "internal-killsubscriptions" message,
+// which is forwarded without a schema check. It is decided by the action of the message. Looking for the
+// text of the action anywhere in the message, as was done before, let a client put that text in any field
+// of an otherwise invalid request, and have the request forwarded to the core without being validated.
+// The message is decoded the way the server core decodes it, so both agree on what the action is.
+func isKillSubscriptions(reqMessage string) bool {
+	var msg map[string]interface{}
+	decoder := json.NewDecoder(strings.NewReader(reqMessage))
+	if err := decoder.Decode(&msg); err != nil || decoder.More() {
+		return false
+	}
+	action, ok := msg["action"].(string)
+	return ok && action == "internal-killsubscriptions"
+}
+
 func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
-	if !strings.Contains(reqMessage, `"internal-killsubscriptions"`) {
+	if !isKillSubscriptions(reqMessage) {
 		validationError := utils.JsonSchemaValidate(reqMessage)
 		if len(validationError) > 0 {
 			requestMap := make(map[string]interface{})

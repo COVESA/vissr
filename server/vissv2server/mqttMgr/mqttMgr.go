@@ -419,14 +419,17 @@ func decomposeMqttPayload(mqttPayload string) (string, string) { // {"topic":"X"
 	return topic, string(payload)
 }
 
-// addRoutingInfo returns the request with the RouterId of the manager and the client added.
-func addRoutingInfo(reqMessage string, mgrId int, clientId int) string {
-	newPrefix := "{ \"RouterId\":\"" + strconv.Itoa(mgrId) + "?" + strconv.Itoa(clientId) + "\", "
-	return strings.Replace(reqMessage, "{", newPrefix, 1)
+// addRoutingInfo returns the request with the routing fields that the manager decides (RouterId and
+// origin) set, and every such field the client put in the request removed, see utils.WithRoutingInfo.
+// It returns false if the request is not a JSON object.
+func addRoutingInfo(reqMessage string, mgrId int, clientId int) (string, bool) {
+	return utils.WithRoutingInfo(reqMessage, mgrId, clientId)
 }
 
 func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
-	transportMgrChan <- addRoutingInfo(reqMessage, mgrId, clientId)
+	if request, ok := addRoutingInfo(reqMessage, mgrId, clientId); ok {
+		transportMgrChan <- request
+	}
 }
 
 func MqttMgrInit(mgrId int, transportMgrChan chan string) {
@@ -494,8 +497,13 @@ func handleBrokerMessage(mqttPayload string, mgrId int, topicId int, forward fun
 		publishMessage(client, topic, utils.FinalizeMessage(errorResponseMap))
 		return topicId
 	}
+	request, ok := addRoutingInfo(payload, mgrId, topicId)
+	if !ok {
+		utils.Error.Printf("MQTT: dropping a request that is not a JSON object: %.200s", payload)
+		return topicId
+	}
 	registerRequest(topic, topicId, payload)
-	forward(addRoutingInfo(payload, mgrId, topicId))
+	forward(request)
 	return topicId + 1
 }
 
