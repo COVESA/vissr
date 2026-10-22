@@ -330,7 +330,7 @@ func getVissV2TopicFromEnv() string {
 	return "/" + vin + "/Vehicle"
 }
 
-func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
+func getVissV2Topic(requestChan chan string, responseChan chan string, mgrId int) string {
 	// Fast path: MQTT_VIN env var bypasses the channel round-trip (useful for
 	// local development where state storage has no VIN populated yet).
 	if topic := getVissV2TopicFromEnv(); topic != "" {
@@ -338,16 +338,10 @@ func getVissV2Topic(transportMgrChan chan string, mgrId int) string {
 	}
 
 	vinRequest := "{\"RouterId\":\"" + strconv.Itoa(mgrId) + `?0", "action":"get", "path":"Vehicle.VehicleIdentification.VIN", "requestId":"570415", "origin":"internal"}`
-	transportMgrChan <- vinRequest
+	requestChan <- vinRequest
 
-	// transportMgrChan is bidirectional (requests go server-ward, responses
-	// come back on the same channel via transportDataSession). We rely on the
-	// channel being unbuffered: if it were buffered our own send would sit in
-	// the buffer and we'd echo-read it before transportDataSession consumes it.
-	// vissv2server.initChannels explicitly keeps transportMgrChannel[2] unbuffered
-	// for exactly this reason.
 	select {
-	case response := <-transportMgrChan:
+	case response := <-responseChan:
 		vin := extractVin(string(response))
 		utils.Info.Printf("VIN=%s", vin)
 		if !isValidVin(vin) {
@@ -426,19 +420,19 @@ func addRoutingInfo(reqMessage string, mgrId int, clientId int) (string, bool) {
 	return utils.WithRoutingInfo(reqMessage, mgrId, clientId)
 }
 
-func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
+func AddRoutingInfoAndForward(reqMessage string, mgrId int, clientId int, requestChan chan string) {
 	if request, ok := addRoutingInfo(reqMessage, mgrId, clientId); ok {
-		transportMgrChan <- request
+		requestChan <- request
 	}
 }
 
-func MqttMgrInit(mgrId int, transportMgrChan chan string) {
+func MqttMgrInit(mgrId int, requestChan chan string, responseChan chan string) {
 	mqttChannel = make(chan string)
 
 	brokerSocket := getBrokerSocket(false)
 	// wait to allow the server and feeder to start
 	time.Sleep(startupDelay)
-	topic := getVissV2Topic(transportMgrChan, mgrId)
+	topic := getVissV2Topic(requestChan, responseChan, mgrId)
 	if topic == "" {
 		// Refused by isValidVin in getVissV2Topic Ã¢â‚¬â€ don't even try.
 		utils.Error.Printf("MqttMgrInit: refusing to start; could not derive a valid VISS v2 topic")
@@ -454,7 +448,7 @@ func MqttMgrInit(mgrId int, transportMgrChan chan string) {
 	utils.JsonSchemaInit()
 
 	utils.Info.Println("**** MQTT manager hub entering server loop... ****")
-	runHub(mgrId, transportMgrChan, mqttChannel, serverSubscription, nil)
+	runHub(mgrId, requestChan, responseChan, mqttChannel, serverSubscription, nil)
 }
 
 // isValidReplyTopic reports whether topic can be published to: it is chosen by the client, and a topic
@@ -516,62 +510,13 @@ func handleServerCoreMessage(vissv2Message string, client MQTT.Client) {
 	publishMessage(client, routeResponse(topicHandle, payload), payload)
 }
 
-// transportPump owns the manager's end of transportMgrChan. The channel is shared: the manager sends its
-// requests on it, the server core (transportDataSession) receives them from it, and the core sends its
-// responses back on it, WITHOUT blocking: a response is dropped if nobody is receiving at that moment.
-// Two things follow, and the pump is the one goroutine that handles both:
-//   - there must be no second receiver on the manager's side. It would take part of the manager's own
-//     requests (a receiver that is waiting when the manager sends is as likely to get the request as the
-//     server core is), and they would then be published back to the client as the response.
-//   - the manager must be receiving whenever it is not sending, and also while it waits for the core to
-//     take a request. A select with both a send and a receive on the channel never pairs with itself.
-//
-// transportMgrChan must be unbuffered (vissv2server.initChannels makes it so, for the VIN request as
-// well): with a buffer the pump could receive its own request back from it.
-//
-// Requests to send arrive on outbox. Messages from the core are put on inbox, which is large so that the
-// pump, which must not block, only drops one (and logs it) if the hub has fallen far behind.
-func transportPump(transportMgrChan chan string, outbox <-chan string, inbox chan<- string, stop <-chan struct{}) {
-	deliver := func(msg string) {
-		select {
-		case inbox <- msg:
-		default:
-			utils.Error.Printf("MQTT mgr: hub too slow, message from the server core dropped: %s", msg)
-		}
-	}
-	for {
-		select {
-		case msg := <-transportMgrChan:
-			deliver(msg)
-		case req := <-outbox:
-			for sent := false; !sent; {
-				select {
-				case transportMgrChan <- req:
-					sent = true
-				case msg := <-transportMgrChan:
-					deliver(msg)
-				case <-stop:
-					return
-				}
-			}
-		case <-stop:
-			return
-		}
-	}
-}
-
-// runHub is the server loop of the manager: it takes the messages from the broker (mqttCh) and from the
-// server core (through the pump) one at a time. It returns when stop is closed; a nil stop never fires,
-// which is what MqttMgrInit uses.
-func runHub(mgrId int, transportMgrChan chan string, mqttCh chan string, client MQTT.Client, stop <-chan struct{}) {
-	outbox := make(chan string, 64)
-	inbox := make(chan string, 1024)
-	pumpStop := make(chan struct{})
-	defer close(pumpStop)
-	go transportPump(transportMgrChan, outbox, inbox, pumpStop)
+// runHub is the server loop of the manager: it takes the messages from the broker (mqttCh) and the responses
+// and events from the server core (responseChan) one at a time, and sends the requests to the core on
+// requestChan. It returns when stop is closed; a nil stop never fires, which is what MqttMgrInit uses.
+func runHub(mgrId int, requestChan chan string, responseChan chan string, mqttCh chan string, client MQTT.Client, stop <-chan struct{}) {
 	forward := func(request string) {
 		select {
-		case outbox <- request:
+		case requestChan <- request:
 		case <-stop:
 		}
 	}
@@ -587,7 +532,7 @@ func runHub(mgrId int, transportMgrChan chan string, mqttCh chan string, client 
 		select {
 		case mqttPayload := <-mqttCh:
 			topicId = handleBrokerMessage(mqttPayload, mgrId, topicId, forward, client)
-		case vissv2Message := <-inbox:
+		case vissv2Message := <-responseChan:
 			handleServerCoreMessage(vissv2Message, client)
 		case <-stop:
 			return

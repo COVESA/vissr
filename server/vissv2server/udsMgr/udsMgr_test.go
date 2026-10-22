@@ -674,7 +674,7 @@ func TestRemoveRoutingForwardResponse_OOBClientIdDropped(t *testing.T) {
 	}()
 	done := make(chan struct{})
 	go func() {
-		RemoveRoutingForwardResponse(resp, nil)
+		RemoveRoutingForwardResponse(resp)
 		close(done)
 	}()
 	select {
@@ -706,7 +706,7 @@ func TestRemoveRoutingForwardResponse_SubscriptionRouted(t *testing.T) {
 	// Give the consumer a beat to reach the receive (select-with-default
 	// has no other synchronisation primitive).
 	time.Sleep(50 * time.Millisecond)
-	RemoveRoutingForwardResponse(resp, nil)
+	RemoveRoutingForwardResponse(resp)
 	select {
 	case msg := <-got:
 		if !strings.Contains(msg, `"subscription"`) {
@@ -734,7 +734,7 @@ func TestRemoveRoutingForwardResponse_ResponseRouted(t *testing.T) {
 		case <-time.After(2 * time.Second):
 		}
 	}()
-	RemoveRoutingForwardResponse(resp, nil)
+	RemoveRoutingForwardResponse(resp)
 	select {
 	case msg := <-got:
 		if !strings.Contains(msg, `"action":"get"`) {
@@ -760,7 +760,7 @@ func TestRemoveRoutingForwardResponse_DeadReaderTimesOut(t *testing.T) {
 	resp := `{"action":"get","RouterId":"0?0","data":{}}`
 	done := make(chan struct{})
 	go func() {
-		RemoveRoutingForwardResponse(resp, nil)
+		RemoveRoutingForwardResponse(resp)
 		close(done)
 	}()
 	select {
@@ -1257,7 +1257,7 @@ func TestRemoveRoutingForwardResponse_SubscriptionDropped(t *testing.T) {
 	resp := `{"action":"subscription","RouterId":"0?2","subscriptionId":"s-drop","data":{}}`
 	done := make(chan struct{})
 	go func() {
-		RemoveRoutingForwardResponse(resp, nil)
+		RemoveRoutingForwardResponse(resp)
 		close(done)
 	}()
 	select {

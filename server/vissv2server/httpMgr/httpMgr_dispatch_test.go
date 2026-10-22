@@ -118,14 +118,13 @@ func TestHandleHttpTransportResponse_ForwardsToClient(t *testing.T) {
 	for len(HttpClientChan[0]) > 0 {
 		<-HttpClientChan[0]
 	}
-	transportMgrChan := make(chan string, 4)
 	// Response with internal RouterId so RemoveInternalData can split
 	// out the clientId.
 	resp := `{"action":"get","path":"Vehicle.Speed","value":"100","RouterId":"0?0"}`
 
 	done := make(chan struct{})
 	go func() {
-		handleHttpTransportResponse(resp, transportMgrChan)
+		handleHttpTransportResponse(resp)
 		close(done)
 	}()
 

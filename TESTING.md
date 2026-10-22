@@ -156,8 +156,9 @@ corpus entry.
 | Helper                                  | Test file                                              |
 |-----------------------------------------|--------------------------------------------------------|
 | `registerRequest` / `routeResponse` (entry released when the request is finished: get/set/discover, error responses, unsubscribe; kept while a subscription runs; no growth over many requests) | `server/vissv2server/mqttMgr/mqttMgr_topiclist_test.go` |
-| `mqttSubscribe` (success, connect error, subscribe error, resubscribe after a reconnect), `handleBrokerMessage`, `handleServerCoreMessage`, `runHub`, `transportPump`, `MqttMgrInit` end to end, with a mock `MQTT.Client` | `server/vissv2server/mqttMgr/mqttMgr_init_test.go` |
-| `MqttMgrInit` wired to a model of `transportDataSession` on one unbuffered channel, as in the server: concurrent requests reach the core and are never echoed back | `server/vissv2server/mqttMgr/mqttMgr_wiring_test.go` |
+| `mqttSubscribe` (success, connect error, subscribe error, resubscribe after a reconnect), `handleBrokerMessage`, `handleServerCoreMessage`, `runHub`, `MqttMgrInit` end to end, with a mock `MQTT.Client` | `server/vissv2server/mqttMgr/mqttMgr_init_test.go` |
+| `MqttMgrInit` wired to a model of the server core with separate request and response channels: concurrent requests all reach the core and are answered | `server/vissv2server/mqttMgr/mqttMgr_wiring_test.go` |
+| `transportDataSession` (the real one): a response or event handed to a manager is never read back by the core as a request, however busy the manager is; requests still reach the core | `server/vissv2server/vissv2server_transport_test.go` |
 
 #### Routing fields of forwarded requests
 
