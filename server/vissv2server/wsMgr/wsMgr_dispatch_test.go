@@ -77,12 +77,11 @@ func TestHandleWsClientRequest_DoesNotBlock(t *testing.T) {
 // well-formed response with a RouterId reaches wsClientChan[0] via
 // checkCompressionResponse + RemoveRoutingForwardResponse.
 func TestHandleWsTransportResponse_ForwardsToClient(t *testing.T) {
-	transportMgrChan := make(chan string, 4)
 	resp := `{"action":"get","path":"Vehicle.Speed","value":"100","RouterId":"0?0"}`
 
 	done := make(chan struct{})
 	go func() {
-		handleWsTransportResponse(resp, transportMgrChan)
+		handleWsTransportResponse(resp)
 		close(done)
 	}()
 
@@ -100,12 +99,11 @@ func TestHandleWsTransportResponse_ForwardsToClient(t *testing.T) {
 // TestHandleWsTransportResponse_ErrorPassesThrough exercises the
 // short-circuit branch of checkCompressionResponse.
 func TestHandleWsTransportResponse_ErrorPassesThrough(t *testing.T) {
-	transportMgrChan := make(chan string, 4)
 	resp := `{"action":"get","error":{"number":"401"},"RouterId":"0?0"}`
 
 	done := make(chan struct{})
 	go func() {
-		handleWsTransportResponse(resp, transportMgrChan)
+		handleWsTransportResponse(resp)
 		close(done)
 	}()
 

@@ -56,7 +56,7 @@ func initChannels() {
 	clientBackendChan[i] = make(chan string)
 	}
 }
-func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
+func RemoveRoutingForwardResponse(response string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
 	if strings.Contains(trimmedResponse, "\"subscription\"") {
 		select {
@@ -405,10 +405,10 @@ func compressPaths(respMessage string, sortedList []string) string {
 // from WsMgrInit's for/select loop so the response path can be unit-
 // tested independently of the goroutine machinery - see
 // wsMgr_dispatch_test.go.
-func handleWsTransportResponse(respMessage string, transportMgrChan chan string) {
+func handleWsTransportResponse(respMessage string) {
 	utils.Info.Printf("WS mgr hub: Response from server core:%s", respMessage)
 	respMessage = checkCompressionResponse(respMessage)
-	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+	RemoveRoutingForwardResponse(respMessage)
 }
 
 // handleWsClientRequest processes a single inbound WS-client request.
@@ -430,7 +430,7 @@ func isKillSubscriptions(reqMessage string) bool {
 	return ok && action == "internal-killsubscriptions"
 }
 
-func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transportMgrChan chan string) {
+func handleWsClientRequest(reqMessage string, mgrId int, clientId int, requestChan chan string) {
 	if !isKillSubscriptions(reqMessage) {
 		validationError := utils.JsonSchemaValidate(reqMessage)
 		if len(validationError) > 0 {
@@ -443,10 +443,10 @@ func handleWsClientRequest(reqMessage string, mgrId int, clientId int, transport
 		}
 		checkCompressionRequest(reqMessage)
 	}
-	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, transportMgrChan)
+	utils.AddRoutingForwardRequest(reqMessage, mgrId, clientId, requestChan)
 }
 
-func WsMgrInit(mgrId int, transportMgrChan chan string) {
+func WsMgrInit(mgrId int, requestChan chan string, responseChan chan string) {
 	var reqMessage string
 	var clientId int
 	utils.ReadTransportSecConfig()
@@ -458,8 +458,8 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
-			handleWsTransportResponse(respMessage, transportMgrChan)
+		case respMessage := <-responseChan:
+			handleWsTransportResponse(respMessage)
 			continue
 		case reqMessage = <-wsClientChan[0]: clientId = 0
 		case reqMessage = <-wsClientChan[1]: clientId = 1
@@ -482,6 +482,6 @@ func WsMgrInit(mgrId int, transportMgrChan chan string) {
 		case reqMessage = <-wsClientChan[18]: clientId = 18
 		case reqMessage = <-wsClientChan[19]: clientId = 19
 		}
-		handleWsClientRequest(reqMessage, mgrId, clientId, transportMgrChan)
+		handleWsClientRequest(reqMessage, mgrId, clientId, requestChan)
 	}
 }

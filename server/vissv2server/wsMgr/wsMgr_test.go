@@ -128,7 +128,7 @@ func TestRemoveRoutingForwardResponse_SubscriptionForwardedToBackend(t *testing.
 
 	done := make(chan struct{})
 	go func() {
-		RemoveRoutingForwardResponse(resp, nil)
+		RemoveRoutingForwardResponse(resp)
 		close(done)
 	}()
 	select {
@@ -152,7 +152,7 @@ func TestRemoveRoutingForwardResponse_SubscriptionDroppedWhenBackendFull(t *test
 	resp := `{"action":"subscription","subscriptionId":"sub-drop","RouterId":"0?1"}`
 	// Must not panic or block. Call synchronously (no goroutine needed
 	// because the select has a default).
-	RemoveRoutingForwardResponse(resp, nil)
+	RemoveRoutingForwardResponse(resp)
 }
 
 // ---------------------------------------------------------------------------

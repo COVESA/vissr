@@ -19,7 +19,7 @@ var HttpClientChan = []chan string{
 	make(chan string),
 }
 
-func RemoveRoutingForwardResponse(response string, transportMgrChan chan string) {
+func RemoveRoutingForwardResponse(response string) {
 	trimmedResponse, clientId := utils.RemoveInternalData(response)
 	HttpClientChan[clientId] <- trimmedResponse
 }
@@ -32,7 +32,7 @@ func RemoveRoutingForwardResponse(response string, transportMgrChan chan string)
 // loop so the validation + forwarding behaviour can be unit-tested
 // independently of the goroutine machinery — see
 // httpMgr_dispatch_test.go.
-func handleHttpClientRequest(reqMessage string, mgrId int, transportMgrChan chan string) {
+func handleHttpClientRequest(reqMessage string, mgrId int, requestChan chan string) {
 	utils.Info.Printf("HTTP mgr hub: Request from client:%s", reqMessage)
 	validationError := utils.JsonSchemaValidate(reqMessage)
 	if len(validationError) > 0 {
@@ -42,18 +42,18 @@ func handleHttpClientRequest(reqMessage string, mgrId int, transportMgrChan chan
 		HttpClientChan[0] <- utils.FinalizeMessage(errorResponseMap)
 		return
 	}
-	utils.AddRoutingForwardRequest(reqMessage, mgrId, 0, transportMgrChan)
+	utils.AddRoutingForwardRequest(reqMessage, mgrId, 0, requestChan)
 }
 
 // handleHttpTransportResponse processes a single response from the
 // server core. Extracted from HttpMgrInit so the response path can be
 // unit-tested.
-func handleHttpTransportResponse(respMessage string, transportMgrChan chan string) {
+func handleHttpTransportResponse(respMessage string) {
 	utils.Info.Printf("HTTP mgr hub: Response from server core:%s", respMessage)
-	RemoveRoutingForwardResponse(respMessage, transportMgrChan)
+	RemoveRoutingForwardResponse(respMessage)
 }
 
-func HttpMgrInit(mgrId int, transportMgrChan chan string) {
+func HttpMgrInit(mgrId int, requestChan chan string, responseChan chan string) {
 	utils.ReadTransportSecConfig()
 	utils.JsonSchemaInit()
 
@@ -64,9 +64,9 @@ func HttpMgrInit(mgrId int, transportMgrChan chan string) {
 	for {
 		select {
 		case reqMessage := <-HttpClientChan[0]:
-			handleHttpClientRequest(reqMessage, mgrId, transportMgrChan)
-		case respMessage := <-transportMgrChan:
-			handleHttpTransportResponse(respMessage, transportMgrChan)
+			handleHttpClientRequest(reqMessage, mgrId, requestChan)
+		case respMessage := <-responseChan:
+			handleHttpTransportResponse(respMessage)
 		}
 	}
 }

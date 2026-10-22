@@ -101,14 +101,13 @@ func TestHandleUdsClientRequest_NilSchemaPath(t *testing.T) {
 // response branch passes through checkCompressionResponse and ends up
 // on the connected UDS client's channel.
 func TestHandleUdsTransportResponse_ForwardsToClient(t *testing.T) {
-	transportMgrChan := make(chan string, 4)
 	// Construct a response with an internal RouterId so
 	// RemoveInternalData can split out the clientId.
 	resp := `{"action":"get","path":"Vehicle.Speed","value":"100","RouterId":"0?0"}`
 
 	done := make(chan struct{})
 	go func() {
-		handleUdsTransportResponse(resp, transportMgrChan)
+		handleUdsTransportResponse(resp)
 		close(done)
 	}()
 
@@ -127,12 +126,11 @@ func TestHandleUdsTransportResponse_ForwardsToClient(t *testing.T) {
 // short-circuit for error responses: checkCompressionResponse returns
 // them unchanged.
 func TestHandleUdsTransportResponse_ErrorPassesThrough(t *testing.T) {
-	transportMgrChan := make(chan string, 4)
 	resp := `{"action":"get","error":{"number":"401"},"RouterId":"0?0"}`
 
 	done := make(chan struct{})
 	go func() {
-		handleUdsTransportResponse(resp, transportMgrChan)
+		handleUdsTransportResponse(resp)
 		close(done)
 	}()
 

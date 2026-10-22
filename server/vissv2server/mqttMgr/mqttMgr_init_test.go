@@ -421,10 +421,11 @@ func TestRunHub_RoutesRequestsAndResponses(t *testing.T) {
 	defer resetTopicList()
 	mc := &mockClient{pubSignal: make(chan published, 8)}
 	mqttCh := make(chan string)
-	transport := make(chan string) // unbuffered, as transportMgrChannel[2] must be (see transportPump)
+	transport := make(chan string, 8) // requests to the core
+	responses := make(chan string, 8) // responses from the core
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() { runHub(2, transport, mqttCh, mc, stop); close(done) }()
+	go func() { runHub(2, transport, responses, mqttCh, mc, stop); close(done) }()
 
 	mqttCh <- `{"topic":"VISS/c1","request":{"action":"get","path":"Vehicle.Speed","requestId":"1"}}`
 	mqttCh <- `{"topic":"VISS/c2","request":{"action":"get","path":"Vehicle.Speed","requestId":"2"}}`
@@ -442,7 +443,7 @@ func TestRunHub_RoutesRequestsAndResponses(t *testing.T) {
 	}
 
 	// the server core answers on the same channel
-	transport <- `{"RouterId":"2?1", "action":"get","requestId":"2","ts":"t"}`
+	responses <- `{"RouterId":"2?1", "action":"get","requestId":"2","ts":"t"}`
 	select {
 	case p := <-mc.pubSignal:
 		if p.topic != "VISS/c2" {
@@ -566,138 +567,6 @@ func jsonString(s string) string {
 }
 
 // ---------------------------------------------------------------------------
-// transportPump
-// ---------------------------------------------------------------------------
-
-func startPump(t *testing.T, transport chan string) (outbox chan string, inbox chan string, stop chan struct{}) {
-	t.Helper()
-	outbox = make(chan string, 128)
-	inbox = make(chan string, 64)
-	stop = make(chan struct{})
-	go transportPump(transport, outbox, inbox, stop)
-	t.Cleanup(func() { close(stop) })
-	return
-}
-
-func TestTransportPump_SendsARequestOnTheChannel(t *testing.T) {
-	transport := make(chan string)
-	outbox, _, _ := startPump(t, transport)
-	outbox <- "request-1"
-	select {
-	case got := <-transport:
-		if got != "request-1" {
-			t.Errorf("got %q", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the request was not sent")
-	}
-}
-
-func TestTransportPump_PassesMessagesFromTheCoreToTheInbox(t *testing.T) {
-	transport := make(chan string)
-	_, inbox, _ := startPump(t, transport)
-	transport <- "response-1"
-	select {
-	case got := <-inbox:
-		if got != "response-1" {
-			t.Errorf("got %q", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the message from the core did not reach the inbox")
-	}
-}
-
-// The pump must never take its own request back: with a request waiting to be sent and nobody
-// receiving, it must not deliver that request to its own inbox.
-func TestTransportPump_NeverReceivesItsOwnRequest(t *testing.T) {
-	transport := make(chan string)
-	outbox, inbox, _ := startPump(t, transport)
-	for i := 0; i < 50; i++ {
-		outbox <- "req"
-	}
-	time.Sleep(100 * time.Millisecond) // nobody receives on transport, so nothing can have been sent
-	select {
-	case got := <-inbox:
-		t.Fatalf("the pump received its own request: %q", got)
-	default:
-	}
-	// now the core starts receiving: every request arrives there, none in the inbox
-	got := 0
-	deadline := time.After(5 * time.Second)
-	for got < 50 {
-		select {
-		case <-transport:
-			got++
-		case m := <-inbox:
-			t.Fatalf("the pump received its own request: %q", m)
-		case <-deadline:
-			t.Fatalf("only %d of 50 requests reached the receiver", got)
-		}
-	}
-}
-
-// While a request waits for the core to take it, a response from the core must still be received
-// (the core sends responses on the same channel and drops them if nobody is receiving).
-func TestTransportPump_ReceivesResponsesWhileWaitingToSend(t *testing.T) {
-	transport := make(chan string)
-	outbox, inbox, _ := startPump(t, transport)
-	outbox <- "req-that-nobody-takes-yet"
-	time.Sleep(50 * time.Millisecond)
-	transport <- "response-while-sending" // blocks until the pump receives it
-	select {
-	case got := <-inbox:
-		if got != "response-while-sending" {
-			t.Errorf("got %q", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a response was not received while a request was waiting to be sent")
-	}
-}
-
-func TestTransportPump_StopEndsIt(t *testing.T) {
-	transport := make(chan string)
-	outbox := make(chan string, 1)
-	inbox := make(chan string, 1)
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	go func() { transportPump(transport, outbox, inbox, stop); close(done) }()
-	outbox <- "never-taken" // the pump is now blocked trying to send
-	time.Sleep(20 * time.Millisecond)
-	close(stop)
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the pump did not stop while waiting to send")
-	}
-}
-
-// When the hub is far behind, the pump drops a message instead of blocking: a blocked pump would stop
-// the core's non blocking sends from being received at all.
-func TestTransportPump_FullInboxDropsInsteadOfBlocking(t *testing.T) {
-	transport := make(chan string)
-	outbox := make(chan string, 1)
-	inbox := make(chan string, 2)
-	stop := make(chan struct{})
-	defer close(stop)
-	go transportPump(transport, outbox, inbox, stop)
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < 10; i++ {
-			transport <- "m"
-		}
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the pump blocked on a full inbox")
-	}
-	if len(inbox) != 2 {
-		t.Errorf("inbox has %d messages; want 2 (its capacity)", len(inbox))
-	}
-}
-
-// ---------------------------------------------------------------------------
 // MqttMgrInit
 // ---------------------------------------------------------------------------
 
@@ -714,15 +583,16 @@ func TestMqttMgrInit_WithoutAValidTopicItDoesNotConnect(t *testing.T) {
 	made := useMockClient(t, nil)
 	// the VIN is invalid, so the manager must not try the server core either: the env var path
 	// returns "" and the code then asks the core, which nobody answers here
-	transport := make(chan string)
+	transport := make(chan string, 4)
+	responses := make(chan string, 4)
 	done := make(chan struct{})
-	go func() { MqttMgrInit(2, transport); close(done) }()
+	go func() { MqttMgrInit(2, transport, responses); close(done) }()
 	select {
 	case req := <-transport: // the VIN request to the core; answer with something unusable
 		if !strings.Contains(req, "Vehicle.VehicleIdentification.VIN") {
 			t.Errorf("unexpected request to the core: %q", req)
 		}
-		transport <- `{"RouterId":"2?0","action":"get","data":{"path":"Vehicle.VehicleIdentification.VIN","dp":{"value":"a/b+c","ts":"t"}}}`
+		responses <- `{"RouterId":"2?0","action":"get","data":{"path":"Vehicle.VehicleIdentification.VIN","dp":{"value":"a/b+c","ts":"t"}}}`
 	case <-time.After(10 * time.Second):
 		t.Fatal("MqttMgrInit did not ask the server core for the VIN")
 	}
@@ -741,7 +611,7 @@ func TestMqttMgrInit_SubscribeFailureReturnsInsteadOfRunning(t *testing.T) {
 	t.Setenv("MQTT_VIN", "TESTVIN001")
 	useMockClient(t, func(m *mockClient) { m.connectErr = errors.New("refused") })
 	done := make(chan struct{})
-	go func() { MqttMgrInit(2, make(chan string, 4)); close(done) }()
+	go func() { MqttMgrInit(2, make(chan string, 4), make(chan string, 4)); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
@@ -758,17 +628,11 @@ func TestMqttMgrInit_EndToEnd(t *testing.T) {
 	resetTopicList()
 	defer resetTopicList()
 	made := useMockClient(t, func(m *mockClient) { m.pubSignal = make(chan published, 8) })
-	// transport is shared the way it is in the server: the manager sends requests on it, the server
-	// core (transportDataSession) receives them from it, and the core sends its responses back on it.
-	transport := make(chan string)
+	// the manager sends its requests to the core on one channel and receives the responses on another,
+	// as in the server
 	core := make(chan string, 8)
-	go func() {
-		for req := range transport {
-			core <- req
-		}
-	}()
-	time.Sleep(50 * time.Millisecond) // let the core's receiver start waiting
-	go MqttMgrInit(2, transport)
+	responses := make(chan string, 8)
+	go MqttMgrInit(2, core, responses)
 
 	deadline := time.After(10 * time.Second)
 	m := made.waitSubscribed(t, 10*time.Second)
@@ -789,8 +653,8 @@ func TestMqttMgrInit_EndToEnd(t *testing.T) {
 	if !strings.Contains(req, `"RouterId":"2?0"`) {
 		t.Fatalf("request to the core = %q", req)
 	}
-	// ... and the core answers on the same channel
-	transport <- `{"RouterId":"2?0", "action":"get","requestId":"7","ts":"t"}`
+	// ... and the core answers on the response channel
+	responses <- `{"RouterId":"2?0", "action":"get","requestId":"7","ts":"t"}`
 	select {
 	case p := <-m.pubSignal:
 		if p.topic != "VISS/c1" {

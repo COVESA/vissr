@@ -29,7 +29,7 @@ const grpcChannelSendTimeout = 5 * time.Second
 
 var grpcCompression utils.Encoding
 var grpcMgrId int
-var grpcMgrChan chan string
+var grpcMgrChan chan string // the channel the manager sends its requests to the core on
 
 type GrpcRequestMessage struct {
 	VssReq       string
@@ -445,23 +445,23 @@ func handleGrpcTransportResponse(respMessage string) {
 // manager or short-circuits with a max-clients error response.
 // Extracted from GrpcMgrInit's for/select loop in PR #127 so the
 // allocation/short-circuit behaviour can be unit-tested.
-func handleGrpcNewClientSession(reqMessage GrpcRequestMessage, mgrId int, transportMgrChan chan string) {
+func handleGrpcNewClientSession(reqMessage GrpcRequestMessage, mgrId int, requestChan chan string) {
 	clientId := getClientId()
 	utils.Info.Print("****************** New gRPC client session ************************: " + reqMessage.VssReq + " clientId=" + strconv.Itoa(clientId))
 	if clientId != -1 {
 		isMultipleEvents := isMultipleEventsRequest(reqMessage.VssReq)
 		setGrpcRoutingData(clientId, reqMessage.GrpcRespChan, isMultipleEvents)
-		utils.AddRoutingForwardRequest(reqMessage.VssReq, mgrId, clientId, transportMgrChan)
+		utils.AddRoutingForwardRequest(reqMessage.VssReq, mgrId, clientId, requestChan)
 		return
 	}
 	utils.Warning.Printf("Max no of gRPC clients reached.")
 	reqMessage.GrpcRespChan <- `{"action": "get","requestId": "9999","error": {"number": "404", "reason": "max_client_sessions", "description": "Max no of gRPC client sessions reached."},"ts": "2000-01-01T13:37:00Z"}` // requestId and ts values incorrect
 }
 
-func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
+func GrpcMgrInit(mgrId int, requestChan chan string, responseChan chan string) {
 	utils.ReadTransportSecConfig()
 	grpcMgrId = mgrId
-	grpcMgrChan = transportMgrChan
+	grpcMgrChan = requestChan
 	grpcClientIndexList = make([]bool, MAXGRPCCLIENTS)
 	grpcRoutingDataList = make([]GrpcRoutingData, MAXGRPCCLIENTS)
 	grpcCompression = utils.PROTOBUF // set via viss2server command line param?
@@ -472,10 +472,10 @@ func GrpcMgrInit(mgrId int, transportMgrChan chan string) {
 
 	for {
 		select {
-		case respMessage := <-transportMgrChan:
+		case respMessage := <-responseChan:
 			handleGrpcTransportResponse(respMessage)
 		case reqMessage := <-grpcClientChan[0]:
-			handleGrpcNewClientSession(reqMessage, mgrId, transportMgrChan)
+			handleGrpcNewClientSession(reqMessage, mgrId, requestChan)
 		}
 	}
 }
