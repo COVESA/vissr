@@ -107,6 +107,7 @@ corpus entry.
 | `processHistoryCtrl` panic + index + bufSize cap                | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
 | `processHistoryGet` panic + index                               | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
 | `activate/deactivateInterval` ticker-leak                       | `server/vissv2server/serviceMgr/serviceMgr_test.go`                                        |
+| service manager handlers (`handleServiceSet/Get/Subscribe/Unsubscribe`, internal kill and cancel): a malformed request is an error response, not a panic | `server/vissv2server/serviceMgr/serviceMgr_assertions_test.go` |
 | `getBrokerSocket` env-var / fallback / TLS (mqttMgr)             | `server/vissv2server/mqttMgr/mqttMgr_test.go`                                              |
 | `JsonSchemaValidate` nil-deref guard                            | `utils/common_fixes_test.go`                                                               |
 | `WsClientIndexMu` race                                          | `utils/managerhandlers_test.go`                                                            |
