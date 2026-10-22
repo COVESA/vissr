@@ -991,6 +991,10 @@ func TestTickerAllocate_HappyPath(t *testing.T) {
 
 func TestTickerAllocate_NoFreeSlots(t *testing.T) {
 	resetTickerGlobals()
+	// The table is filled with ids 1..MAXTICKERS, none of which has a ticker. It must be emptied again,
+	// or a later test that uses one of those ids (TestActivateDeactivateInterval_NoGoroutineLeak uses 42)
+	// finds a slot without a ticker and panics on a nil ticker, depending on the order the tests run in.
+	defer resetTickerGlobals()
 	for i := 0; i < MAXTICKERS; i++ {
 		tickerIndexList[i] = i + 1
 	}
@@ -2659,6 +2663,10 @@ func TestHandleServiceSubscribe_ChangeFilterSendsToFeeder(t *testing.T) {
 
 func TestHandleServiceSubscribe_GatingIdSet(t *testing.T) {
 	resetErrorResponseMap()
+	// The subscription is timebased, so a real ticker (and its goroutine) is started for subscription id 1.
+	// Stop it when the test ends: a ticker left running makes the goroutine count of
+	// TestActivateDeactivateInterval_NoGoroutineLeak one too high when that test runs after this one.
+	t.Cleanup(func() { deactivateInterval(1) })
 	dataChan := make(chan map[string]interface{}, 1)
 	subscriptionChan := make(chan int, 4)
 	toFeederChan := make(chan string, 1)
