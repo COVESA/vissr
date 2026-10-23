@@ -196,7 +196,9 @@ corpus entry.
 | `filetransfer_client`    | `client/client-1.0/filetransfer_client/filetransfer_client_helpers_test.go` |
 | `grpc_client`            | `client/client-1.0/grpc_client/grpc_client_test.go`                        |
 | `mqtt_client`            | `client/client-1.0/mqtt_client/mqtt_client_test.go`                        |
+| `mqtt_client` (broker functions against a mock `MQTT.Client`, line reading, broker down in a child process) | `client/client-1.0/mqtt_client/mqtt_client_mock_test.go`, `mqtt_client_exit_test.go` |
 | `testClient`             | `client/client-1.0/testClient/testClient_test.go`                          |
+| `testClient` MQTT part (`mqttSubscribe`, `publishMessage`, `mqttTesterRun` against a mock `MQTT.Client`, message classification, broker down in a child process) | `client/client-1.0/testClient/testClient_mqtt_mock_test.go`, `testClient_mqtt_exit_test.go` |
 
 Each covers the pure helpers in that client (path conversion, JSON
 parsing, request marshalling, file reading). Network-driven entry
@@ -229,7 +231,6 @@ Listed here for visibility:
 | `feederv4::newMongoSink` | Connects to and pings a live MongoDB (`mongo.Connect`, `Ping`). The sink itself (`Write`, `writer`, `store`) works against a one method `updater` interface and is tested with a fake collection; the pure helpers `mongoTypedValue` and `mongoUpdateDoc` are tested. | Pass the connect function in, or cover it with an integration test against a MongoDB container (as CI does for the MQTT broker). |
 | `feeder-evic::statestorageSet`, `initUdsEndpoint`, `initVSSInterfaceMgr`, `writeCanDriverLoop`; `feeder-evic` and `evicSim`: `initVehicleInterfaceMgr`, `initCanDriverInput` / `initCanDriverOutput`, `canDriverClient`, `serverSession`, `reDialer` | Coupled to live network / DB, or long-running loops. `handleUdsConn` (extracted from `initUdsEndpoint`) can be driven with `net.Pipe` but has no test yet. | Same shape: inject interfaces, extract per-message handlers, extract a single-attempt helper from `reDialer`. |
 | `filetransfer_client::initWebSocket*`, `controlClient`, `dataClient`, `downloadFile`, `uploadFile` | Need a running vissv2server.                                         | Already integration-tested via runtest.sh.                                              |
-| `testClient` and `mqtt_client`: `mqttSubscribe`, `publishMessage` (`testClient` also `mqttTesterRun`) | Connect to a real broker (`MQTT_BROKER_ADDR`, default `127.0.0.1`) and call `os.Exit(1)` or `panic` on connect/subscribe/publish failure, which would kill the test process. | Return errors instead of exiting, and take an `MQTT.Client` (or factory) so a mock can be injected. Already integration-tested via runtest.sh with the local broker. |
 
 ## Subsystems with genuinely no .go code
 
