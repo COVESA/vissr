@@ -4,9 +4,7 @@ title: "VISSR Xtra Information"
 
 Extra information about assorted to/vissr/images.
 
-### Using Docker-Compose to launch a vissr instance
-
-# 1. server
+## Contribution process
 
 A simple process is followed where work packages are create as issues labeled as an implementation issue. The name of the issue is also the name of the branch which is used for implementation. A pull request is created when the task is finished to push the changes to the main branch.
 
