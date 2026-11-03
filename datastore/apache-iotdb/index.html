@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="generator" content="Hugo 0.103.1" />
+    <meta name="generator" content="Hugo 0.154.0">
     <meta name="description" content="">
 
 
@@ -12,22 +12,22 @@
     <title>VISSR Apache IoTDB :: COVESA VISSv2 Reference Implementation (vissr)</title>
 
     
-    <link href="/vissr/css/nucleus.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/fontawesome-all.min.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/hybrid.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/featherlight.min.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/perfect-scrollbar.min.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/auto-complete.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/atom-one-dark-reasonable.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/theme.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/tabs.css?1793006429" rel="stylesheet">
-    <link href="/vissr/css/hugo-theme.css?1793006429" rel="stylesheet">
+    <link href="/vissr/css/nucleus.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/fontawesome-all.min.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/hybrid.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/featherlight.min.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/perfect-scrollbar.min.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/auto-complete.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/atom-one-dark-reasonable.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/theme.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/tabs.css?1793714769" rel="stylesheet">
+    <link href="/vissr/css/hugo-theme.css?1793714769" rel="stylesheet">
     
-    <link href="/vissr/css/theme-blue.css?1793006429" rel="stylesheet">
+    <link href="/vissr/css/theme-blue.css?1793714769" rel="stylesheet">
     
     
 
-    <script src="/vissr/js/jquery-3.3.1.min.js?1793006429"></script>
+    <script src="/vissr/js/jquery-3.3.1.min.js?1793714769"></script>
 
     <style>
       :root #header + #content > #left > #rlblock_left{
@@ -60,14 +60,14 @@
     <span data-search-clear=""><i class="fas fa-times"></i></span>
 </div>
 
-<script type="text/javascript" src="/vissr/js/lunr.min.js?1793006429"></script>
-<script type="text/javascript" src="/vissr/js/auto-complete.js?1793006429"></script>
+<script type="text/javascript" src="/vissr/js/lunr.min.js?1793714769"></script>
+<script type="text/javascript" src="/vissr/js/auto-complete.js?1793714769"></script>
 <script type="text/javascript">
     
         var baseurl = "https:\/\/covesa.github.io\/vissr\/";
     
 </script>
-<script type="text/javascript" src="/vissr/js/search.js?1793006429"></script>
+<script type="text/javascript" src="/vissr/js/search.js?1793714769"></script>
 
     
   </div>
@@ -763,6 +763,44 @@
       </a>
       
       
+        <ul>
+          
+          
+            
+          
+          
+
+        
+          
+            
+            
+
+
+
+
+ 
+  
+    
+    <li data-nav-id="/vissr/xtra/references/" title="References" class="dd-item
+        
+        
+        
+        ">
+      <a href="/vissr/xtra/references/">
+          References
+          
+      </a>
+      
+      
+    </li>
+  
+ 
+
+            
+          
+        
+        </ul>
+      
     </li>
   
  
@@ -933,45 +971,45 @@
 <p>The connection code reads its runtime configuration from the JSON formatted file <code>iotdb-config.json</code> located in the vissv2server directory. All values should be specified.</p>
 <h4 id="configuration-file-format">Configuration file format</h4>
 <table>
-<thead>
-<tr>
-<th>Key name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>host</code></td>
-<td>String</td>
-<td>Hostname or IP address of the IoTDB server</td>
-</tr>
-<tr>
-<td><code>port</code></td>
-<td>String</td>
-<td>RPC port of the server. Default is 6667</td>
-</tr>
-<tr>
-<td><code>username</code></td>
-<td>String</td>
-<td>Username to access the server. Default is root</td>
-</tr>
-<tr>
-<td><code>password</code></td>
-<td>String</td>
-<td>Password to access the server. Default is root</td>
-</tr>
-<tr>
-<td><code>queryPrefixPath</code></td>
-<td>String</td>
-<td>Timeseries prefix path of VSS data in the database</td>
-</tr>
-<tr>
-<td><code>queryTimeout(ms)</code></td>
-<td>Int</td>
-<td>Query timeout in milliseconds</td>
-</tr>
-</tbody>
+  <thead>
+      <tr>
+          <th>Key name</th>
+          <th>Type</th>
+          <th>Description</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>host</code></td>
+          <td>String</td>
+          <td>Hostname or IP address of the IoTDB server</td>
+      </tr>
+      <tr>
+          <td><code>port</code></td>
+          <td>String</td>
+          <td>RPC port of the server. Default is 6667</td>
+      </tr>
+      <tr>
+          <td><code>username</code></td>
+          <td>String</td>
+          <td>Username to access the server. Default is root</td>
+      </tr>
+      <tr>
+          <td><code>password</code></td>
+          <td>String</td>
+          <td>Password to access the server. Default is root</td>
+      </tr>
+      <tr>
+          <td><code>queryPrefixPath</code></td>
+          <td>String</td>
+          <td>Timeseries prefix path of VSS data in the database</td>
+      </tr>
+      <tr>
+          <td><code>queryTimeout(ms)</code></td>
+          <td>Int</td>
+          <td>Query timeout in milliseconds</td>
+      </tr>
+  </tbody>
 </table>
 <p>Example <code>iotdb-config.json</code>:</p>
 <pre tabindex="0"><code>{
@@ -1491,8 +1529,26 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
 
                     
                     
+                        
+                    
                     
 
+                    
+                        
+            
+            
+                
+                    
+                
+                
+
+                    
+                    
+                    
+
+                    
+            
+        
                     
             
         
@@ -1519,19 +1575,19 @@ bash ./sbin/start-cli.sh -h ${host} -p ${rpcPort} -u ${user} -pw ${pass} -e &#34
     <div style="left: -1000px; overflow: scroll; position: absolute; top: -1000px; border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;">
       <div style="border: none; box-sizing: content-box; height: 200px; margin: 0px; padding: 0px; width: 200px;"></div>
     </div>
-    <script src="/vissr/js/clipboard.min.js?1793006429"></script>
-    <script src="/vissr/js/perfect-scrollbar.min.js?1793006429"></script>
-    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1793006429"></script>
-    <script src="/vissr/js/jquery.sticky.js?1793006429"></script>
-    <script src="/vissr/js/featherlight.min.js?1793006429"></script>
-    <script src="/vissr/js/highlight.pack.js?1793006429"></script>
+    <script src="/vissr/js/clipboard.min.js?1793714769"></script>
+    <script src="/vissr/js/perfect-scrollbar.min.js?1793714769"></script>
+    <script src="/vissr/js/perfect-scrollbar.jquery.min.js?1793714769"></script>
+    <script src="/vissr/js/jquery.sticky.js?1793714769"></script>
+    <script src="/vissr/js/featherlight.min.js?1793714769"></script>
+    <script src="/vissr/js/highlight.pack.js?1793714769"></script>
     <script>hljs.initHighlightingOnLoad();</script>
-    <script src="/vissr/js/modernizr.custom-3.6.0.js?1793006429"></script>
-    <script src="/vissr/js/learn.js?1793006429"></script>
-    <script src="/vissr/js/hugo-learn.js?1793006429"></script>
+    <script src="/vissr/js/modernizr.custom-3.6.0.js?1793714769"></script>
+    <script src="/vissr/js/learn.js?1793714769"></script>
+    <script src="/vissr/js/hugo-learn.js?1793714769"></script>
     
         
-            <script src="/vissr/mermaid/mermaid.js?1793006429"></script>
+            <script src="/vissr/mermaid/mermaid.js?1793714769"></script>
         
         <script>
             mermaid.initialize({ startOnLoad: true });

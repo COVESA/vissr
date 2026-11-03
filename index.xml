@@ -4,7 +4,8 @@
     <title>COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</title>
     <link>https://covesa.github.io/vissr/</link>
     <description>Recent content in COVESA Vehicle Information Service Specification version 3.1 Reference Implementation Tutorial on COVESA VISSv2 Reference Implementation (vissr)</description>
-    <generator>Hugo -- gohugo.io</generator>
-    <language>en-us</language><atom:link href="https://covesa.github.io/vissr/index.xml" rel="self" type="application/rss+xml" />
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <atom:link href="https://covesa.github.io/vissr/index.xml" rel="self" type="application/rss+xml" />
   </channel>
 </rss>
