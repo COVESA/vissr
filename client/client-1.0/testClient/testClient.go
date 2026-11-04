@@ -352,30 +352,56 @@ func getBrokerSocket(isSecure bool) string {
 	return "tcp://" + FVTAddr + ":1883"
 }
 
-func mqttSubscribe(brokerSocket string, topic string) {
+// newMqttClient creates the MQTT client. It is a variable so that tests can supply a client that does not
+// need a broker.
+var newMqttClient = MQTT.NewClient
+
+// mqttSubscribe connects to the broker and subscribes to topic. It returns the connected client, which the
+// caller disconnects when the test is done, or an error if the broker cannot be reached or the subscription
+// fails (the client is then disconnected). The process is not ended: testClient runs the tests of all
+// protocols in one process, and a broker that is down must only fail the MQTT test.
+func mqttSubscribe(brokerSocket string, topic string) (MQTT.Client, error) {
 	fmt.Printf("mqttSubscribe:Topic=%s\n", topic)
 	opts := MQTT.NewClientOptions().AddBroker(brokerSocket)
 	opts.SetDefaultPublishHandler(publishHandler)
 
-	c := MQTT.NewClient(opts)
+	c := newMqttClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		return nil, token.Error()
 	}
 	if token := c.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+		c.Disconnect(250)
+		return nil, token.Error()
 	}
+	return c, nil
 }
 
 var events int = 0
 var brokerSocket, clientTopic, serverTopic string
+// messageKind tells what a message from the server is, from its action: "subscribe" (the response to a
+// subscribe request), "subscription" (an event of a subscription), or "" (any other response). It looks at
+// the action field and not at the text of the message: a response to a get that has the word "subscribe" in
+// a value was counted as a subscribe response before, which put the count of events out.
+func messageKind(payload []byte) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal(payload, &m); err != nil {
+		return ""
+	}
+	switch action, _ := m["action"].(string); action {
+	case "subscribe", "subscription":
+		return action
+	}
+	return ""
+}
+
 var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Message) {
 //	fmt.Printf("Topic=%s\n", msg.Topic())
-	if strings.Contains(string(msg.Payload()), `"subscribe"`) {
+	kind := messageKind(msg.Payload())
+	if kind == "subscribe" {
 		fmt.Printf("Response=%s\n", string(msg.Payload()))
 		events++
 	} else 
-	if strings.Contains(string(msg.Payload()), `subscription"`) {
+	if kind == "subscription" {
 		if events == 1 {
 			fmt.Printf("\n")
 		}
@@ -385,7 +411,9 @@ var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 				subscriptionId := utils.ExtractSubscriptionId(string(msg.Payload()))
 				unsubReq := `{"action":"unsubscribe", "subscriptionId":"` + subscriptionId + `", "requestId":"123"}`
 				fmt.Printf(strconv.Itoa(maxEvents)+" events received. Unsubscribing to subscription session\n")
-				publishVissV2Request(brokerSocket, unsubReq, clientTopic, serverTopic)
+				if err := publishVissV2Request(brokerSocket, unsubReq, clientTopic, serverTopic); err != nil {
+					fmt.Printf("Unsubscribe request not sent: %v\n", err)
+				}
 				events = 0
 		}
 	} else {
@@ -393,34 +421,48 @@ var publishHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 	}
 }
 
-func publishVissV2Request(brokerSocket string, request string, clientTopic string, serverTopic string) {
+func publishVissV2Request(brokerSocket string, request string, clientTopic string, serverTopic string) error {
 	payload := `{"topic":"` + clientTopic + `", "request":` + request + `}`
-	publishMessage(brokerSocket, serverTopic, payload) // serverTopic already has the form /<VIN>/Vehicle
+	return publishMessage(brokerSocket, serverTopic, payload) // serverTopic already has the form /<VIN>/Vehicle
 }
 
-func publishMessage(brokerSocket string, topic string, payload string) {
+// publishMessage connects to the broker, publishes the payload on topic and disconnects. It returns an error
+// if the broker cannot be reached or the publish fails.
+func publishMessage(brokerSocket string, topic string, payload string) error {
 	fmt.Printf("publishMessage:Topic=%s, Request=%s\n", topic, payload)
 	opts := MQTT.NewClientOptions().AddBroker(brokerSocket)
 
-	c := MQTT.NewClient(opts)
+	c := newMqttClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+		return token.Error()
 	}
+	defer c.Disconnect(250)
 	token := c.Publish(topic, 0, false, payload)
 	token.Wait()
-	c.Disconnect(250)
+	return token.Error()
 }
 
+// mqttTesterRun runs the MQTT requests and then signals doneChannel. If the broker cannot be reached the
+// MQTT test fails with a message and still signals, so that the tests of the other protocols are not held up
+// or ended.
 func mqttTesterRun(mqttCommandList []string, doneChannel chan bool) {
 	ok := true
 	fmt.Printf("\n********** MQTT testing **************\n")
 	brokerSocket = getBrokerSocket(false)
 	clientTopic = "VISS/testClient"
-	mqttSubscribe(brokerSocket, clientTopic)
+	subscriber, err := mqttSubscribe(brokerSocket, clientTopic)
+	if err != nil {
+		fmt.Printf("MQTT testing skipped: cannot subscribe to %s on %s: %v\n", clientTopic, brokerSocket, err)
+		doneChannel <- false
+		return
+	}
+	defer subscriber.Disconnect(250)
 	serverTopic = getVissV2Topic()
 	for i := 0; i < len(mqttCommandList); i++ {
-		publishVissV2Request(brokerSocket, mqttCommandList[i], clientTopic, serverTopic)
+		if err := publishVissV2Request(brokerSocket, mqttCommandList[i], clientTopic, serverTopic); err != nil {
+			fmt.Printf("Request not sent: %v\n", err)
+			ok = false
+		}
 		time.Sleep(2 * time.Second)
 	}
 	doneChannel <- ok
