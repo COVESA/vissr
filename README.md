@@ -29,7 +29,7 @@ A tutorial can be found <a href="https://covesa.github.io/vissr/">here</a>.
 
 ## VISSv3.1 new features
 * Support for the HIM Vehicle data profile.
-* This enables VISS to support not only the VSS tree but also other trees that are defined using the vspec syntax.
+  * This enables VISS to support not only the VSS tree but also other trees that are defined using the vspec syntax.
   * It also enables a set of trees to be exposed to clients.
 * Support for the Unix Domain Socket transport protocol.
 * Support for Set request out-of-order evaluation (Issue#100). //Not yet implemented on VISSR
