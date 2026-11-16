@@ -178,3 +178,13 @@ func TestVerifyStruct_DepthLimit(t *testing.T) {
 		t.Errorf("depth 5: got %q; want ok", got)
 	}
 }
+// An object given for a member that is not a struct must be rejected, also when its keys happen to
+// be names that exist somewhere in the type definition tree.
+func TestValidateStructSetValue_ObjectForScalarMemberWithTypeTreeNames(t *testing.T) {
+	loadTypesForest(t)
+	got := validateStructSetValue("Vehicle.X", inlineStructType,
+		map[string]interface{}{"Name": map[string]interface{}{"InlineStructMember": "y"}})
+	if got != structErrMsg {
+		t.Errorf("got %q; want %q", got, structErrMsg)
+	}
+}

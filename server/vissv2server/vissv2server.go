@@ -998,6 +998,7 @@ func verifyStruct(value map[string]interface{}, typeDefRoot *utils.Node_t, typeP
 	}
 	return "ok"
 }
+
 func verifyStructMembers(value map[string]interface{}, typeDefRoot *utils.Node_t, typeSearch []utils.SearchData_t, matches int, depth int) bool {  // {"memName1": "data1", ..., "memNameN": "dataN"}
 	for memName, memValue := range value {
 		if !verifyStructMember(memName, typeSearch, matches) {
@@ -1005,8 +1006,9 @@ func verifyStructMembers(value map[string]interface{}, typeDefRoot *utils.Node_t
 		}
 		memDatatype := utils.VSSgetDatatype(typeSearch[getIndex(typeSearch, matches, memName)].NodeHandle)
 		memValueMap, isObject := memValue.(map[string]interface{})
-		if isObject {  // inline struct
-			if verifyStruct(memValueMap, typeDefRoot, typeRootRebase(typeDefRoot, memDatatype), depth+1) != "ok" {
+		if isObject {  // inline struct, which only a member declared with a struct type can have
+			if !isStructMemberType(memDatatype) ||
+				verifyStruct(memValueMap, typeDefRoot, typeRootRebase(typeDefRoot, memDatatype), depth+1) != "ok" {
 				return false
 			}
 		} else if isStructMemberType(memDatatype) {  // a struct member must be given an object
