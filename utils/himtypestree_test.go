@@ -273,3 +273,28 @@ func TestInitForest_NonTypesRootNameStillResolves(t *testing.T) {
 		t.Errorf("TypeRootName = %q; want Defs", got)
 	}
 }
+
+func TestGetTypesRootName(t *testing.T) {
+	f := newHimFixture(t)
+	him := himHeader +
+		mainBlock("Vehicle", "Vehicle.Car.TypeDefinition+0.1") +
+		mainBlock("Vehicle2", "Vehicle.Car.TypeDefinition+0.2") +
+		mainBlock("Vehicle3", "") +
+		typesBlock("Types", "0.1") + typesBlock("Types2", "0.2") + typesBlock("Types3", "0.3")
+	if !f.initForest(t, him) {
+		t.Fatal("InitForest failed")
+	}
+	cases := map[string]string{
+		"Vehicle.Speed":  "Types", // a tree that references a type tree
+		"Vehicle2":       "Types2",
+		"Types2.Struct":  "Types2", // a type tree that is referenced
+		"Vehicle3.Speed": "",       // no typestree
+		"Types3.Struct":  "",       // a type tree that nothing references
+		"Unknown.X":      "",
+	}
+	for path, want := range cases {
+		if got := GetTypesRootName(path); got != want {
+			t.Errorf("GetTypesRootName(%q) = %q; want %q", path, got, want)
+		}
+	}
+}

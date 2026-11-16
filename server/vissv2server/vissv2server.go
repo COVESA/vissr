@@ -257,7 +257,10 @@ func verifyToken(token string, action string, paths string, validation int) (int
 	return atsValidation, handle, gatingId
 }
 
-func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, maxDepth int) string {
+// jsonifyTreeNode adds the metadata of nodeHandle, and of its descendants down to maxDepth,
+// to jsonBuffer. typesRoot is the root name that a datatype with the root segment "Types" shall
+// be presented with, see utils.GetTypesRootName; "" means as it is.
+func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, maxDepth int, typesRoot string) string {
 	if depth >= maxDepth {
 		return jsonBuffer
 	}
@@ -281,7 +284,7 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 	// TODO Look for other metadata: unit, enum, ...
 	nodeDatatype := utils.VSSgetDatatype(nodeHandle)
 	if nodeDatatype != "" {
-		newJsonBuffer += `"datatype":"` + nodeDatatype + `",`
+		newJsonBuffer += `"datatype":"` + utils.MapTypesDatatype(nodeDatatype, typesRoot) + `",`
 	}
 	if depth < maxDepth {
 		if nodeNumofChildren > 0 {
@@ -289,7 +292,7 @@ func jsonifyTreeNode(nodeHandle *utils.Node_t, jsonBuffer string, depth int, max
 		}
 		for i := 0; i < nodeNumofChildren; i++ {
 			childNode := utils.VSSgetChild(nodeHandle, i)
-			newJsonBuffer += jsonifyTreeNode(childNode, jsonBuffer, depth, maxDepth)
+			newJsonBuffer += jsonifyTreeNode(childNode, jsonBuffer, depth, maxDepth, typesRoot)
 		}
 		if nodeNumofChildren > 0 {
 			newJsonBuffer = newJsonBuffer[:len(newJsonBuffer)-1] // remove comma after curly bracket
@@ -387,7 +390,7 @@ func synthesizeJsonTree(path string, depth int, tokenContext string, VSSTreeRoot
 	if depth == 0 {
 		depth = 100
 	}
-	jsonBuffer = jsonifyTreeNode(subTreeRoot, jsonBuffer, 0, depth)
+	jsonBuffer = jsonifyTreeNode(subTreeRoot, jsonBuffer, 0, depth, utils.GetTypesRootName(path))
 	if len(jsonBuffer) > 0 {
 		return "{" + jsonBuffer[:len(jsonBuffer)-1] + "}" // remove comma
 	}

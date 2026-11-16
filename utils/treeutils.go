@@ -354,6 +354,37 @@ func GetTypeRootName(path string) string {
 	return ""
 }
 
+// GetTypesRootName returns the root name that the "Types" root segment of a datatype in
+// the tree which path belongs to is mapped to when the datatype is presented to a client,
+// or "" if it shall be presented as it is. A datatype in a tree that has a typestree
+// metadata is mapped to the root name of the type definition tree it references. A
+// datatype in a type definition tree that is referenced by a typestree, e.g. the type of a
+// struct member, is mapped to the root name of that tree itself.
+func GetTypesRootName(path string) string {
+	rootName := path[:GetFirstDotIndex(path)]
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName && himForest[i].TypeRootName != "" {
+			return himForest[i].TypeRootName
+		}
+	}
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].TypeRootName == rootName {
+			return rootName
+		}
+	}
+	return ""
+}
+
+// MapTypesDatatype returns datatype with its root segment, if that is "Types", replaced
+// by typesRoot (see GetTypesRootName). Other datatypes, e.g. "uint8" or "Types2.X", and the
+// case typesRoot == "" are returned unchanged.
+func MapTypesDatatype(datatype string, typesRoot string) string {
+	dotIndex := GetFirstDotIndex(datatype)
+	if typesRoot == "" || datatype[:dotIndex] != "Types" {
+		return datatype
+	}
+	return typesRoot + datatype[dotIndex:]
+}
 // ResolveTypePath finds the type definition tree that applies to typePath, a path
 // such as "Types.Struct.X" found in the datatype of a node in the tree that
 // mainPath belongs to. A main tree can reference any type definition tree in the
