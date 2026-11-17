@@ -71,7 +71,7 @@ func loadTypesForest(t *testing.T) {
 
 func TestValidateStructSetValue_NotAStructTypeIsIgnored(t *testing.T) {
 	for _, dt := range []string{"string", "uint8", "float", "boolean", "string[]", ""} {
-		if got := validateStructSetValue(dt, "anything"); got != "" {
+		if got := validateStructSetValue("Vehicle.X", dt, "anything"); got != "" {
 			t.Errorf("datatype %q: got %q; want no error", dt, got)
 		}
 	}
@@ -80,7 +80,7 @@ func TestValidateStructSetValue_NotAStructTypeIsIgnored(t *testing.T) {
 func TestValidateStructSetValue_StructValueMustBeAnObject(t *testing.T) {
 	loadTypesForest(t)
 	for _, v := range []interface{}{"text", float64(3), true, nil, []interface{}{"a"}} {
-		if got := validateStructSetValue(inlineStructType, v); got != "struct value must be an object" {
+		if got := validateStructSetValue("Vehicle.X", inlineStructType, v); got != "struct value must be an object" {
 			t.Errorf("value %#v: got %q; want the object error", v, got)
 		}
 	}
@@ -95,7 +95,7 @@ func TestValidateStructSetValue_ValidStructs(t *testing.T) {
 		{},
 	}
 	for _, v := range cases {
-		if got := validateStructSetValue(inlineStructType, v); got != "" {
+		if got := validateStructSetValue("Vehicle.X", inlineStructType, v); got != "" {
 			t.Errorf("value %v: got %q; want valid", v, got)
 		}
 	}
@@ -109,7 +109,7 @@ func TestValidateStructSetValue_UnknownMemberRejected(t *testing.T) {
 		{"NewStruct": map[string]interface{}{"Bogus": "b"}},
 	}
 	for _, v := range cases {
-		if got := validateStructSetValue(inlineStructType, v); got != structErrMsg {
+		if got := validateStructSetValue("Vehicle.X", inlineStructType, v); got != structErrMsg {
 			t.Errorf("value %v: got %q; want %q", v, got, structErrMsg)
 		}
 	}
@@ -120,11 +120,11 @@ func TestValidateStructSetValue_UnknownMemberRejected(t *testing.T) {
 // definition, not against whatever happens to be first in the search result.
 func TestValidateStructSetValue_MemberCaseDoesNotChangeValidation(t *testing.T) {
 	loadTypesForest(t)
-	if got := validateStructSetValue(inlineStructType,
+	if got := validateStructSetValue("Vehicle.X", inlineStructType,
 		map[string]interface{}{"newstruct": map[string]interface{}{"Name": "b"}}); got != "" {
 		t.Errorf("valid nested struct with lowercase member name rejected: %q", got)
 	}
-	if got := validateStructSetValue(inlineStructType,
+	if got := validateStructSetValue("Vehicle.X", inlineStructType,
 		map[string]interface{}{"newstruct": map[string]interface{}{"Bogus": "b"}}); got != structErrMsg {
 		t.Errorf("invalid nested struct with lowercase member name: got %q; want %q", got, structErrMsg)
 	}
@@ -135,7 +135,7 @@ func TestValidateStructSetValue_MemberCaseDoesNotChangeValidation(t *testing.T) 
 func TestValidateStructSetValue_StructMemberMustBeAnObject(t *testing.T) {
 	loadTypesForest(t)
 	for _, v := range []interface{}{"text", float64(3), true, []interface{}{"a"}} {
-		got := validateStructSetValue(inlineStructType, map[string]interface{}{"NewStruct": v})
+		got := validateStructSetValue("Vehicle.X", inlineStructType, map[string]interface{}{"NewStruct": v})
 		if got != structErrMsg {
 			t.Errorf("NewStruct=%#v: got %q; want %q", v, got, structErrMsg)
 		}
@@ -146,23 +146,23 @@ func TestValidateStructSetValue_StructMemberMustBeAnObject(t *testing.T) {
 // be rejected.
 func TestValidateStructSetValue_ObjectForScalarMemberRejected(t *testing.T) {
 	loadTypesForest(t)
-	got := validateStructSetValue(inlineStructType,
+	got := validateStructSetValue("Vehicle.X", inlineStructType,
 		map[string]interface{}{"Name": map[string]interface{}{"x": "y"}})
 	if got != structErrMsg {
 		t.Errorf("got %q; want %q", got, structErrMsg)
 	}
 }
 
-func TestVerifyStruct_UnknownTypeRoot(t *testing.T) {
+func TestValidateStructSetValue_UnknownTypeRoot(t *testing.T) {
 	loadTypesForest(t)
-	if got := verifyStruct(map[string]interface{}{"a": "b"}, "NoSuchRoot.Struct.X", 0); got != "Struct cannot be verified" {
+	if got := validateStructSetValue("Vehicle.X", "TypesNoSuchRoot.Struct.X", map[string]interface{}{"a": "b"}); got != "Struct cannot be verified" {
 		t.Errorf("got %q; want %q", got, "Struct cannot be verified")
 	}
 }
 
-func TestVerifyStruct_UnknownTypeInKnownRoot(t *testing.T) {
+func TestValidateStructSetValue_UnknownTypeInKnownRoot(t *testing.T) {
 	loadTypesForest(t)
-	if got := verifyStruct(map[string]interface{}{"a": "b"}, "Types.Struct.NoSuchStruct", 0); got != structErrMsg {
+	if got := validateStructSetValue("Vehicle.X", "Types.Struct.NoSuchStruct", map[string]interface{}{"a": "b"}); got != structErrMsg {
 		t.Errorf("got %q; want %q", got, structErrMsg)
 	}
 }
@@ -170,10 +170,21 @@ func TestVerifyStruct_UnknownTypeInKnownRoot(t *testing.T) {
 // Too deep a nesting must be rejected without descending any further.
 func TestVerifyStruct_DepthLimit(t *testing.T) {
 	loadTypesForest(t)
-	if got := verifyStruct(map[string]interface{}{"Name": "a"}, inlineStructType, 6); got != structErrMsg {
+	root := utils.SetRootNodePointer("Types")
+	if got := verifyStruct(map[string]interface{}{"Name": "a"}, root, inlineStructType, 6); got != structErrMsg {
 		t.Errorf("depth 6: got %q; want %q", got, structErrMsg)
 	}
-	if got := verifyStruct(map[string]interface{}{"Name": "a"}, inlineStructType, 5); got != "ok" {
+	if got := verifyStruct(map[string]interface{}{"Name": "a"}, root, inlineStructType, 5); got != "ok" {
 		t.Errorf("depth 5: got %q; want ok", got)
+	}
+}
+// An object given for a member that is not a struct must be rejected, also when its keys happen to
+// be names that exist somewhere in the type definition tree.
+func TestValidateStructSetValue_ObjectForScalarMemberWithTypeTreeNames(t *testing.T) {
+	loadTypesForest(t)
+	got := validateStructSetValue("Vehicle.X", inlineStructType,
+		map[string]interface{}{"Name": map[string]interface{}{"InlineStructMember": "y"}})
+	if got != structErrMsg {
+		t.Errorf("got %q; want %q", got, structErrMsg)
 	}
 }

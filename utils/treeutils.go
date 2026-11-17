@@ -50,6 +50,8 @@ type HimTree struct {
 	Version string
 	FileName string
 	Description string
+	TypesTree string    // the 'typestree' metadata: 'domain'+'version' of the type definition tree that this tree references
+	TypeRootName string // root name of that type definition tree in the forest, set when TypesTree is set
 }
 
 var himForest []HimTree
@@ -169,51 +171,164 @@ func getMaxValidation(newValidation int, currentMaxValidation int) int {
 	return 0
 }*/
 
+// InitForest reads the HIM configuration file himPath, loads the trees that it
+// defines (the "local" metadata) and binds every tree that has a "typestree"
+// metadata to the type definition tree that it references. The forest is
+// replaced as a whole, so the function can be called again; if it fails
+// (returns false) the forest is left as it was before the call.
 func InitForest(himPath string) bool {
 	file, err := os.Open(himPath)
 	if err != nil {
 		Error.Printf("Error reading %s: %s", himPath, err)
 		return false
 	}
+	defer file.Close()
+	forest, ok := parseHimFile(file)
+	if !ok {
+		return false
+	}
+	if err := resolveTypesTrees(forest); err != nil {
+		Error.Printf("Error in %s: %s", himPath, err)
+		return false
+	}
+	himForest = forest
+	return true
+}
+
+// parseHimFile parses the HIM configuration file format, a flat list of blocks:
+//
+//	HIM.<RootName>:
+//	key: value
+//	...
+//
+// Lines starting with '#' are comments. The first block ("HIM:") describes the
+// forest itself and does not define a tree. Keys are matched exactly, and a
+// value is everything after the first colon of the line, so a value may itself
+// contain colons (URLs, drive letters) or text that looks like another key.
+func parseHimFile(file *os.File) ([]HimTree, bool) {
+	var forest []HimTree
+	var current *HimTree // nil until the first tree block is found
 	scanner := bufio.NewScanner(file)
-	scanner.Split(bufio.ScanLines)
-	var text string
-	continueScan := true
-	i := -1
-	for continueScan {
-		continueScan = scanner.Scan()
-		text = scanner.Text()
-		if len(text) == 0 {
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 || line[0] == '#' {
 			continue
 		}
-		rootIndex := strings.Index(text, "HIM.") + 4
-		if rootIndex != 3 && text[len(text)-1] == ':' {
-			i++
-			himForest = append(himForest, HimTree{})
-			himForest[i].RootName = text[rootIndex:len(text)-1]
-		} else if text[0] != '#' && strings.Contains(text, "type:") && i != -1 {
-			typeIndex := strings.Index(text, "type:") + 5
-			himForest[i].TreeType = strings.TrimSpace(text[typeIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "domain:") {
-			domainIndex := strings.Index(text, "domain:") + 7
-			himForest[i].Domain = strings.TrimSpace(text[domainIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "version:") {
-			versionIndex := strings.Index(text, "version:") + 8
-			himForest[i].Version = strings.TrimSpace(text[versionIndex:len(text)])
-		} else if text[0] != '#' && strings.Contains(text, "local:") {
-			localIndex := strings.Index(text, "local:") + 6
-			localPath := strings.TrimSpace(text[localIndex:len(text)])
-			himForest[i].Handle = VSSReadTree(localPath)
-			if himForest[i].Handle == nil {
-				Error.Printf("Error parsing %s", localPath)
-				return false
-			}
-			himForest[i].Handle.Name = himForest[i].RootName
+		colon := strings.Index(line, ":")
+		if colon == -1 {
+			continue
 		}
-		
+		key := strings.TrimSpace(line[:colon])
+		value := strings.TrimSpace(line[colon+1:])
+		if value == "" && (key == "HIM" || strings.HasPrefix(key, "HIM.")) { // block header
+			current = nil
+			if key == "HIM" {
+				continue
+			}
+			rootName := key[len("HIM."):]
+			if rootName == "" || himRootNameExists(forest, rootName) {
+				Error.Printf("Invalid or duplicate root name in HIM block header %q", line)
+				return nil, false
+			}
+			forest = append(forest, HimTree{RootName: rootName})
+			current = &forest[len(forest)-1]
+			continue
+		}
+		if current == nil {
+			continue
+		}
+		switch strings.ToLower(key) {
+		case "type":
+			current.TreeType = value
+		case "domain":
+			current.Domain = value
+		case "version":
+			current.Version = value
+		case "description":
+			current.Description = value
+		case "typestree":
+			current.TypesTree = value
+		case "typesdef":
+			Warning.Printf("HIM.%s: unknown metadata 'typesdef' ignored, the name is 'typestree'", current.RootName)
+		case "local":
+			current.FileName = value
+			current.Handle = VSSReadTree(value)
+			if current.Handle == nil {
+				Error.Printf("Error parsing %s", value)
+				return nil, false
+			}
+			current.Handle.Name = current.RootName
+		}
 	}
-	file.Close()
-	return true
+	if err := scanner.Err(); err != nil {
+		Error.Printf("Error scanning HIM file: %s", err)
+		return nil, false
+	}
+	return forest, true
+}
+
+func himRootNameExists(forest []HimTree, rootName string) bool {
+	for i := range forest {
+		if forest[i].RootName == rootName {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeHimVersion pads a version to major.minor.patch so that e.g. "0.1" and
+// "0.1.0" compare equal.
+func normalizeHimVersion(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	return strings.Join(parts, ".")
+}
+
+// splitTypesTree splits a typestree value, 'domain'+'version', at the plus sign.
+func splitTypesTree(typesTree string) (domain string, version string, ok bool) {
+	plus := strings.Index(typesTree, "+")
+	if plus == -1 {
+		return "", "", false
+	}
+	domain = strings.TrimSpace(typesTree[:plus])
+	version = strings.TrimSpace(typesTree[plus+1:])
+	return domain, version, domain != "" && version != ""
+}
+
+// resolveTypesTrees sets TypeRootName of every tree that has a typestree
+// metadata, to the (mapped) root name of the type definition tree with the
+// matching domain and version. It is a second pass as a tree may be defined
+// before the type definition tree that it references.
+func resolveTypesTrees(forest []HimTree) error {
+	for i := range forest {
+		if forest[i].TypesTree == "" {
+			continue
+		}
+		domain, version, ok := splitTypesTree(forest[i].TypesTree)
+		if !ok {
+			return fmt.Errorf("HIM.%s: invalid typestree %q, expected 'domain'+'version'", forest[i].RootName, forest[i].TypesTree)
+		}
+		match := -1
+		for j := range forest {
+			if j == i || forest[j].Handle == nil || forest[j].Domain != domain || normalizeHimVersion(forest[j].Version) != normalizeHimVersion(version) {
+				continue
+			}
+			if match != -1 {
+				return fmt.Errorf("HIM.%s: typestree %q matches both HIM.%s and HIM.%s", forest[i].RootName, forest[i].TypesTree, forest[match].RootName, forest[j].RootName)
+			}
+			match = j
+		}
+		if match == -1 {
+			return fmt.Errorf("HIM.%s: typestree %q does not match any tree in the forest", forest[i].RootName, forest[i].TypesTree)
+		}
+		forest[i].TypeRootName = forest[match].RootName
+		if !strings.HasPrefix(forest[i].TypeRootName, "Types") {
+			Warning.Printf("HIM.%s: the type definition tree root name %q should be 'Types' or 'TypesX'", forest[i].RootName, forest[i].TypeRootName)
+		}
+	}
+	return nil
 }
 
 func SetRootNodePointer(rootPath string) *Node_t {
@@ -227,6 +342,43 @@ func SetRootNodePointer(rootPath string) *Node_t {
 	return nil
 }
 
+// GetTypeRootName returns the root name of the type definition tree that the
+// tree which path belongs to references, or "" if the tree does not reference one.
+func GetTypeRootName(path string) string {
+	rootName := path[:GetFirstDotIndex(path)]
+	for i := 0; i < len(himForest); i++ {
+		if himForest[i].RootName == rootName {
+			return himForest[i].TypeRootName
+		}
+	}
+	return ""
+}
+
+// ResolveTypePath finds the type definition tree that applies to typePath, a path
+// such as "Types.Struct.X" found in the datatype of a node in the tree that
+// mainPath belongs to. A main tree can reference any type definition tree in the
+// forest, but its datatypes always begin with "Types", so the root segment of
+// typePath is replaced with the root name that the main tree's typestree metadata
+// maps to. It returns the root node of that tree and the typePath to search it
+// with, or (nil, "") if there is none.
+//
+// If the main tree has no typestree metadata then typePath is looked up as it is,
+// i.e. by its own root segment.
+func ResolveTypePath(mainPath string, typePath string) (*Node_t, string) {
+	typeRootName := GetTypeRootName(mainPath)
+	if typeRootName == "" {
+		root := SetRootNodePointer(typePath)
+		if root == nil {
+			return nil, ""
+		}
+		return root, typePath
+	}
+	root := SetRootNodePointer(typeRootName)
+	if root == nil {
+		return nil, ""
+	}
+	return root, typeRootName + typePath[GetFirstDotIndex(typePath):]
+}
 func GetInfoType(treeHandle *Node_t) string {
 	for i:=0; i < len(himForest); i++ {
 		if himForest[i].Handle == treeHandle {

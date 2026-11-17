@@ -31,6 +31,7 @@ description: The server capabilities tree.
 #domain: Vehicle.Car.Data
 #version: 5.0.1
 #local: forest/vss-core2.binary
+#typestree: Vehicle.Car.TypeDefinition+0.1
 #public: https://himrepo.oem.com?instance=Vehicle.Car.Data.X.Y.Z
 #description: A VSS tree augmented with a struct example.
 
