@@ -12,6 +12,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,5 +118,98 @@ func TestVerifyStruct_NestedTypeResolvedInSameTypeTree(t *testing.T) {
 	v := map[string]interface{}{"Hinge": map[string]interface{}{"Side": "left"}}
 	if got := verifyStruct(v, root, "Types2.Struct.Door", 0); got != "ok" {
 		t.Errorf("got %q; want ok", got)
+	}
+}
+
+// Discovery presents a datatype that refers to a type definition tree with the root name
+// that the tree is mapped to in the forest, so that a client can look the type up.
+func discoverDatatype(t *testing.T, path string, node string) string {
+	t.Helper()
+	root := utils.SetRootNodePointer(path)
+	if root == nil {
+		t.Fatalf("no tree for %s", path)
+	}
+	meta := jsonifyTreeNode(root, "", 0, 100, utils.GetTypesRootName(path))
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte("{"+meta[:len(meta)-1]+"}"), &m); err != nil {
+		t.Fatalf("metadata is not JSON: %v\n%s", err, meta)
+	}
+	found := findDatatype(m, node)
+	if found == "" {
+		t.Fatalf("no datatype for node %s in %s", node, meta)
+	}
+	return found
+}
+
+// findDatatype returns the datatype of the node called name anywhere in the metadata tree.
+func findDatatype(m map[string]interface{}, name string) string {
+	for k, v := range m {
+		n, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if k == name {
+			if dt, ok := n["datatype"].(string); ok {
+				return dt
+			}
+		}
+		if children, ok := n["children"].(map[string]interface{}); ok {
+			if dt := findDatatype(children, name); dt != "" {
+				return dt
+			}
+		}
+	}
+	return ""
+}
+
+func TestDiscovery_DatatypeMappedToReferencedTypeTree(t *testing.T) {
+	loadTwoTypeTrees(t)
+	cases := []struct{ path, node, want string }{
+		{"Vehicle", "Door", "Types.Struct.Door"},   // bound to Types, which is the root name
+		{"Truck", "Door", "Types2.Struct.Door"},    // bound to Types2
+		{"Plain", "Door", "Types.Struct.Door"},     // no typestree, presented as it is
+		{"Types2", "Hinge", "Types2.Struct.Hinge"}, // a struct member in the type tree itself
+		{"Types", "Open", "boolean"},               // not a type reference, never changed
+		{"Types2", "Width", "uint8"},
+	}
+	for _, c := range cases {
+		if got := discoverDatatype(t, c.path, c.node); got != c.want {
+			t.Errorf("%s %s: datatype %q; want %q", c.path, c.node, got, c.want)
+		}
+	}
+}
+
+// What discovery presents must be usable as it is: the type it names is found in the forest, and
+// what the server verifies a SET value against is the same type.
+func TestDiscovery_PresentedTypeIsInTheForest(t *testing.T) {
+	loadTwoTypeTrees(t)
+	for _, path := range []string{"Vehicle", "Truck"} {
+		dt := discoverDatatype(t, path, "Door")
+		root := utils.SetRootNodePointer(dt)
+		if root == nil {
+			t.Fatalf("%s: presented datatype %q names no tree in the forest", path, dt)
+		}
+		if n, _ := searchTree(root, dt, true, false, 0, nil, nil); n == 0 {
+			t.Errorf("%s: presented datatype %q is not found in tree %s", path, dt, root.Name)
+		}
+	}
+}
+
+func TestMapTypesDatatype(t *testing.T) {
+	cases := []struct{ datatype, root, want string }{
+		{"Types.Struct.X", "Types2", "Types2.Struct.X"},
+		{"Types.Struct.X[]", "Types2", "Types2.Struct.X[]"},
+		{"Types", "Types2", "Types2"},
+		{"Types.Struct.X", "", "Types.Struct.X"},
+		{"Types2.Struct.X", "Types3", "Types2.Struct.X"},
+		{"TypesFoo.X", "Types2", "TypesFoo.X"},
+		{"uint8", "Types2", "uint8"},
+		{"string[]", "Types2", "string[]"},
+		{"", "Types2", ""},
+	}
+	for _, c := range cases {
+		if got := utils.MapTypesDatatype(c.datatype, c.root); got != c.want {
+			t.Errorf("MapTypesDatatype(%q, %q) = %q; want %q", c.datatype, c.root, got, c.want)
+		}
 	}
 }
