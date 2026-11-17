@@ -151,6 +151,7 @@ corpus entry.
 | `FuzzGetRangeBoundaries`                 | `server/vissv2server/vissv2server_helpers_test.go`     |
 | `validateStructSetValue` / `verifyStruct` (struct-typed SET values, against the real `typedef.binary`) | `server/vissv2server/vissv2server_struct_test.go` |
 | HIM `typestree` binding (`InitForest`, `ResolveTypePath`), and struct validation against the referenced type definition tree when the forest has several | `utils/himtypestree_test.go`, `server/vissv2server/vissv2server_typestree_test.go` |
+| Validation of arrays of structs (`Types.X[]`) in SET requests, and that only struct types are verified | `server/vissv2server/vissv2server_structarray_test.go` |
 
 #### mqttMgr (reply-topic list, broker side and server loop)
 

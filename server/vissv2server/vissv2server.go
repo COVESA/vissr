@@ -963,28 +963,99 @@ func resolvedPathOf(searchData utils.SearchData_t) string {
 	return string(searchData.NodePath[:getPathLen(string(searchData.NodePath[:]))])
 }
 
+// maxStructArrayLen is the longest array of structs that is accepted in a SET request.
+const maxStructArrayLen = 255
+
+// structArrayTooLongMsg is the error description for an array that is too long.
+const structArrayTooLongMsg = "struct array too long"
+
+// typeKind tells what a datatype that refers to a type definition tree is.
+type typeKind int
+
+const (
+	typeNotFound typeKind = iota // the type definition tree has no such node
+	typeStruct                   // a struct, its value is an object
+	typeOther                    // anything else that a type definition tree may define, e.g. an enum
+)
+
+// getTypeKind returns the kind of the node that typePath addresses in the type definition
+// tree typeDefRoot.
+func getTypeKind(typeDefRoot *utils.Node_t, typePath string) typeKind {
+	matches, typeSearch := searchTree(typeDefRoot, typePath, true, false, 0, nil, nil)
+	for i := 0; i < matches; i++ { // the search also returns the nodes that lead to the match
+		if resolvedPathOf(typeSearch[i]) == typePath {
+			if utils.VSSgetType(typeSearch[i].NodeHandle) == utils.STRUCT {
+				return typeStruct
+			}
+			return typeOther
+		}
+	}
+	return typeNotFound
+}
+
+// isTypesDatatype reports whether datatype refers to a type definition tree, as opposed to
+// being a basic type such as "uint8" or "string[]". Note that "Types.X[]" is an array.
+func isTypesDatatype(datatype string) bool {
+	return strings.HasPrefix(datatype, "Types")
+}
+
 // validateStructSetValue checks the value of a SET request against the
-// signal's datatype. Datatypes that are not struct types (those living in
-// a type definition tree) are not checked here. signalPath is the path of the
-// signal that is set; the tree that it belongs to decides which type definition
-// tree the datatype refers to (see utils.ResolveTypePath). It returns "" if the
-// value is acceptable, otherwise the error description for the client.
+// signal's datatype. Only values of struct types, or arrays of them ("Types.X[]"),
+// are checked here. A datatype that is not defined in a type definition tree, or
+// that is defined as something else than a struct, e.g. an enum, is not checked.
+// signalPath is the path of the signal that is set; the tree that it belongs to decides
+// which type definition tree the datatype refers to (see utils.ResolveTypePath). It
+// returns "" if the value is acceptable, otherwise the error description for the client.
 func validateStructSetValue(signalPath string, datatype string, value interface{}) string {
-	if !strings.HasPrefix(datatype, "Types") {
+	if !isTypesDatatype(datatype) {
+		return ""
+	}
+	isArray := strings.HasSuffix(datatype, "[]")
+	typeDefRoot, typePath := utils.ResolveTypePath(signalPath, strings.TrimSuffix(datatype, "[]"))
+	if typeDefRoot == nil {
+		return "Struct cannot be verified"
+	}
+	if getTypeKind(typeDefRoot, typePath) == typeOther {
+		return ""
+	}
+	if isArray {
+		if res := verifyStructArray(value, typeDefRoot, typePath, 0); res != "ok" {
+			return res
+		}
 		return ""
 	}
 	val, ok := value.(map[string]interface{})
 	if !ok {
 		return "struct value must be an object"
 	}
-	typeDefRoot, typePath := utils.ResolveTypePath(signalPath, datatype)
-	if typeDefRoot == nil {
-		return "Struct cannot be verified"
-	}
 	if res := verifyStruct(val, typeDefRoot, typePath, 0); res != "ok" {
 		return res
 	}
 	return ""
+}
+
+// verifyStructArray verifies that value is an array, with at most maxStructArrayLen
+// elements, of objects that each are verified against the struct that typePath
+// addresses in the type definition tree typeDefRoot. The error does not tell which
+// element failed.
+func verifyStructArray(value interface{}, typeDefRoot *utils.Node_t, typePath string, depth int) string {
+	array, ok := value.([]interface{})
+	if !ok {
+		return "struct array value must be an array"
+	}
+	if len(array) > maxStructArrayLen {
+		return structArrayTooLongMsg
+	}
+	for _, element := range array {
+		object, ok := element.(map[string]interface{})
+		if !ok {
+			return "Incorrect struct data"
+		}
+		if res := verifyStruct(object, typeDefRoot, typePath, depth); res != "ok" {
+			return res
+		}
+	}
+	return "ok"
 }
 
 // verifyStruct verifies value against the struct that typePath addresses in the
@@ -1008,17 +1079,30 @@ func verifyStructMembers(value map[string]interface{}, typeDefRoot *utils.Node_t
 			return false
 		}
 		memDatatype := utils.VSSgetDatatype(typeSearch[getIndex(typeSearch, matches, memName)].NodeHandle)
-		memValueMap, isObject := memValue.(map[string]interface{})
-		if isObject {  // inline struct, which only a member declared with a struct type can have
-			if !isStructMemberType(memDatatype) ||
-				verifyStruct(memValueMap, typeDefRoot, typeRootRebase(typeDefRoot, memDatatype), depth+1) != "ok" {
-				return false
-			}
-		} else if isStructMemberType(memDatatype) {  // a struct member must be given an object
+		if !verifyStructMemberValue(memValue, memDatatype, typeDefRoot, depth) {
 			return false
 		}
 	}
 	return true
+}
+
+// verifyStructMemberValue verifies the value of a struct member that is declared with
+// the datatype memDatatype. A member that is a struct must be given an object, and a member
+// that is an array of structs an array of objects, which are verified in turn. A member of
+// any other type must not be given an object; its value is not checked further.
+func verifyStructMemberValue(memValue interface{}, memDatatype string, typeDefRoot *utils.Node_t, depth int) bool {
+	if isTypesDatatype(memDatatype) {
+		memPath := typeRootRebase(typeDefRoot, strings.TrimSuffix(memDatatype, "[]"))
+		if getTypeKind(typeDefRoot, memPath) != typeOther {
+			if strings.HasSuffix(memDatatype, "[]") {
+				return verifyStructArray(memValue, typeDefRoot, memPath, depth+1) == "ok"
+			}
+			memValueMap, isObject := memValue.(map[string]interface{})
+			return isObject && verifyStruct(memValueMap, typeDefRoot, memPath, depth+1) == "ok"
+		}
+	}
+	_, isObject := memValue.(map[string]interface{})
+	return !isObject
 }
 
 // typeRootRebase returns typePath, a type reference such as "Types.Struct.X" as it
@@ -1028,13 +1112,6 @@ func verifyStructMembers(value map[string]interface{}, typeDefRoot *utils.Node_t
 func typeRootRebase(typeDefRoot *utils.Node_t, typePath string) string {
 	return typeDefRoot.Name + typePath[utils.GetFirstDotIndex(typePath):]
 }
-
-// isStructMemberType reports whether datatype is a single struct type, i.e. one
-// that is defined in the Types tree, as opposed to a basic type or an array.
-func isStructMemberType(datatype string) bool {
-	return strings.HasPrefix(datatype, "Types") && !strings.HasSuffix(datatype, "[]")
-}
-
 // getIndex returns the index in typeSearch of the member named memName. The
 // name is matched case-insensitively, as in verifyStructMember. Returns 0 if
 // there is no such member.
