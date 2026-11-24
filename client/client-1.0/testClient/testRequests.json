@@ -23,6 +23,22 @@
             "action": "set",
             "path": "Vehicle.TripMeterReading",
             "value": "true"
+        },
+        {
+            "action": "get",
+            "data": [
+                "Vehicle.Speed",
+                "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"
+            ]
+        },
+        {
+            "action": "set",
+            "data": [
+                {
+                    "path": "Vehicle.TripMeterReading",
+                    "value": "true"
+                }
+            ]
         }
     ],
     "ws": [

@@ -229,6 +229,33 @@ func AddRoutingForwardRequest(reqMessage string, mgrId int, clientId int, transp
 	transportMgrChan <- request
 }
 
+// httpStatusFromResponse returns the HTTP status code for a response message from the server core:
+// 200 for a success response, and for an error response the status code that is the error "number",
+// see the Status Codes section of the VISS TRANSPORT specification.
+// The number may be represented as a string or as a number. If it is not a valid HTTP status code in the
+// range 400-599 the status is 500, as an error response must never be returned as a success.
+func httpStatusFromResponse(responseMap map[string]interface{}) int {
+	errorValue, isError := responseMap["error"]
+	if !isError || errorValue == nil {
+		return http.StatusOK
+	}
+	number := 0
+	if errorMap, ok := errorValue.(map[string]interface{}); ok {
+		switch n := errorMap["number"].(type) {
+		case string:
+			number, _ = strconv.Atoi(n)
+		case float64:
+			number = int(n)
+		}
+	} else if s, ok := errorValue.(string); ok { // the short error form used by the managers, "error": "413"
+		number, _ = strconv.Atoi(s)
+	}
+	if number < 400 || number > 599 {
+		return http.StatusInternalServerError
+	}
+	return number
+}
+
 func backendHttpAppSession(message string, w *http.ResponseWriter) {
 	Info.Printf("backendHttpAppSession(): Message received=%s", message)
 
@@ -245,7 +272,13 @@ func backendHttpAppSession(message string, w *http.ResponseWriter) {
 	resp := []byte(response)
 	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 	(*w).Header().Set("Access-Control-Allow-Headers", "*")
+	(*w).Header().Set("Content-Type", "application/json; charset=utf-8")
 	(*w).Header().Set("Content-Length", strconv.Itoa(len(resp)))
+	status := httpStatusFromResponse(responseMap)
+	if status == http.StatusUnauthorized {
+		(*w).Header().Set("WWW-Authenticate", "Bearer")
+	}
+	(*w).WriteHeader(status)
 	written, err := (*w).Write(resp)
 	if err != nil {
 		Error.Printf("HTTP manager error on response write.Written bytes=%d. Error=%s", written, err.Error())
@@ -267,6 +300,47 @@ func splitToPathQueryKeyValue(path string) (string, string, string) {
 		}
 	}
 	return path, "", ""
+}
+
+// classifyHttpDataRequest decides which multi-signal request a POST to the root path ("/") is, from the
+// request body, see the HTTPS section of the VISS TRANSPORT specification.
+// The body must be a JSON object with a non-empty "data" array. If every element of the array is a string
+// (a path) the request is a Multiple Tree Addressability Read ("get"), if every element is an object
+// (path/value) it is a Multiple Data Update ("set"). The decision is made on the type of the elements,
+// and never on the text of the body, as a path may contain any characters allowed in a node name,
+// e.g. "value".
+// On failure action is empty, reasonIndex is the index in ErrorInfoList of the error to return, and
+// errMsg describes the problem. The elements are only classified here, the server core validates their content.
+func classifyHttpDataRequest(body []byte) (action string, data []interface{}, reasonIndex int, errMsg string) {
+	const badRequest, invalidData = 0, 1 // indexes in ErrorInfoList
+	var bodyMap map[string]interface{}
+	if err := json.Unmarshal(body, &bodyMap); err != nil || bodyMap == nil {
+		return "", nil, badRequest, "The request body is not a JSON object"
+	}
+	rawData, found := bodyMap["data"]
+	if !found {
+		return "", nil, badRequest, `The request body has no "data" array`
+	}
+	data, ok := rawData.([]interface{})
+	if !ok || len(data) == 0 {
+		return "", nil, invalidData, `"data" must be a non-empty array`
+	}
+	switch data[0].(type) {
+	case string:
+		action = "get"
+	case map[string]interface{}:
+		action = "set"
+	default:
+		return "", nil, invalidData, `"data" elements must be paths (strings) or path/value objects`
+	}
+	for _, element := range data {
+		_, isPath := element.(string)
+		_, isObject := element.(map[string]interface{})
+		if (action == "get" && !isPath) || (action == "set" && !isObject) {
+			return "", nil, invalidData, `"data" elements must be either all paths (read) or all path/value objects (update)`
+		}
+	}
+	return action, data, 0, ""
 }
 
 // Manages first communication with Client
@@ -316,12 +390,16 @@ func frontendHttpAppSession(w http.ResponseWriter, req *http.Request, clientChan
 		MapRequest(string(body), &bodyMap)
 		if path == "" || path == "/" { // multi-set/get
 			delete(requestMap, "path")
-			if strings.Contains(string(body), "value") {
-				requestMap["action"] = "set"
-			} else {
-				requestMap["action"] = "get"
+			action, data, reasonIndex, errMsg := classifyHttpDataRequest(body)
+			if len(errMsg) > 0 {
+				Warning.Printf("frontendHttpAppSession: multi-signal request rejected: %s", errMsg)
+				errorMap := map[string]interface{}{}
+				SetErrorResponse(requestMap, errorMap, reasonIndex, errMsg)
+				backendHttpAppSession(FinalizeMessage(errorMap), &w)
+				return
 			}
-			requestMap["data"] = bodyMap["data"]
+			requestMap["action"] = action
+			requestMap["data"] = data
 		} else { // set
 			requestMap["action"] = "set"
 			requestMap["value"] = bodyMap["value"]
