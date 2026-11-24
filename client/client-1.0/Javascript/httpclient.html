@@ -30,6 +30,11 @@
 <pre id="post-output"></pre>
 </div>
 <div>
+<input id="multi-body" type="text" size="80" placeholder='{"data":["Vehicle.Speed","Vehicle.Cabin.Door.Row1.DriverSide.IsOpen"]}' />
+<button onclick="sendMulti()">POST to root path (multiple Read / Update)</button>
+<pre id="multi-output"></pre>
+</div>
+<div>
 <input id="get-path" type="text" placeholder="url path" />
 <button onclick="sendGet()">GET</button>
 <pre id="get-output"></pre>
@@ -43,6 +48,8 @@
     var getPath = document.getElementById("get-path");
     var postOutput = document.getElementById("post-output");
     var getOutput = document.getElementById("get-output");
+    var multiBody = document.getElementById("multi-body");
+    var multiOutput = document.getElementById("multi-output");
     var accessToken = document.getElementById("token");
     var isToken = document.getElementById("insertToken");
 
@@ -54,16 +61,14 @@
           }
           var xhttp = new XMLHttpRequest();
           xhttp.onreadystatechange = function() {
-              if (this.readyState == 4 && this.status == 200) {
-                  postOutput.innerHTML += "Server: " + this.responseText + "\n";
-              } else {
-                  postOutput.innerHTML += "Server: readyState=" + this.readyState + ", status=" + this.status + "\n";
+              if (this.readyState == 4) {
+                  postOutput.innerHTML += "Server: status=" + this.status + ", " + this.responseText + "\n";
               }
           };
           var params = postValue.value;
           xhttp.open("POST", "http://" + hostIP + ":8888/" + postPath.value, true);
           if (isToken.checked == true) {
-              xhttp2.setRequestHeader("Authorization", accessToken.value);
+              xhttp.setRequestHeader("Authorization", accessToken.value);
           }
           xhttp.send(params);
           postPath.value = "";
@@ -81,10 +86,8 @@
           }
           var xhttp2 = new XMLHttpRequest();
           xhttp2.onreadystatechange = function() {
-              if (this.readyState == 4 && this.status == 200) {
-                  getOutput.innerHTML += "Server: " + this.responseText + "\n";
-              } else {
-                  getOutput.innerHTML += "Server: readyState=" + this.readyState + ", status=" + this.status + "\n";
+              if (this.readyState == 4) {
+                  getOutput.innerHTML += "Server: status=" + this.status + ", " + this.responseText + "\n";
               }
           };
           xhttp2.open("GET", "http://" + hostIP + ":8888/" + getPath.value, true);
@@ -96,6 +99,33 @@
         }
     } catch(err) {
         getOutput.innerHTML += "Error. " + err.message + "\n";
+    }
+
+    try {
+        // Multiple tree addressability Read: {"data":["path1","path2"]}
+        // Multiple data Update: {"data":[{"path":"path1","value":"v1"},{"path":"path2","value":"v2"}]}
+        // Both are POST requests to the root path, the paths use dot as delimiter.
+        function sendMulti() {
+          if (hostIP == "Host unknown") {
+              multiOutput.innerHTML += "Host unknown. Please specify.";
+              return;
+          }
+          var xhttp3 = new XMLHttpRequest();
+          xhttp3.onreadystatechange = function() {
+              if (this.readyState == 4) {
+                  multiOutput.innerHTML += "Server: status=" + this.status + ", " + this.responseText + "\n";
+              }
+          };
+          xhttp3.open("POST", "http://" + hostIP + ":8888/", true);
+          xhttp3.setRequestHeader("Content-Type", "application/json");
+          if (isToken.checked == true) {
+              xhttp3.setRequestHeader("Authorization", accessToken.value);
+          }
+          xhttp3.send(multiBody.value);
+          multiBody.value = "";
+        }
+    } catch(err) {
+        multiOutput.innerHTML += "Error. " + err.message + "\n";
     }
 
     try {

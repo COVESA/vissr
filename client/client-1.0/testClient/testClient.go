@@ -247,25 +247,54 @@ func performUdsCommand(command string, conn net.Conn, buf *[]byte) {
 	}
 }
 
+// buildHttpRequest returns the HTTP method, URL and body for a request in the VISS JSON format.
+// A request with a "data" array (multiple tree addressability Read, or multiple data Update) is sent as
+// a POST to the root path with the data array in the body, see the HTTPS section of the VISS TRANSPORT specification.
+// A request with a "path" is sent as before, a GET with the optional filter as a query, or a POST with the value as body.
+func buildHttpRequest(reqMap map[string]interface{}) (method string, url string, body string, err error) {
+	if data, isMulti := reqMap["data"]; isMulti {
+		dataBody, marshalErr := json.Marshal(map[string]interface{}{"data": data})
+		if marshalErr != nil {
+			return "", "", "", marshalErr
+		}
+		return "POST", http_url + "/", string(dataBody), nil
+	}
+	path, ok := reqMap["path"].(string)
+	if !ok {
+		return "", "", "", fmt.Errorf("the request has neither a path nor a data array")
+	}
+	url = http_url + "/" + path
+	if reqMap["action"] == "set" {
+		value, ok := reqMap["value"].(string)
+		if !ok {
+			return "", "", "", fmt.Errorf("the set request has no string value")
+		}
+		return "POST", url, `{"value":"` + value + `"}`, nil
+	}
+	if reqMap["filter"] != nil {
+		filter, filterErr := json.Marshal(reqMap["filter"])
+		if filterErr != nil {
+			return "", "", "", fmt.Errorf("filter syntax error: %s", filterErr)
+		}
+		url += `?filter=` + string(filter)
+	}
+	return "GET", url, "", nil
+}
+
 func performHttpCommand(command string) {
 	var err error
 	var req *http.Request
 	var reqMap map[string]interface{}
 	utils.MapRequest(command, &reqMap)
-	url := http_url + "/" + reqMap["path"].(string)
-	if reqMap["action"] == "set" {
-		body := `{"value":"` + reqMap["value"].(string) + `"}`
+	method, url, body, buildErr := buildHttpRequest(reqMap)
+	if buildErr != nil {
+		fmt.Printf("HTTP request error: %s\n", buildErr)
+		return
+	}
+	if method == "POST" {
 		fmt.Printf("Request: POST: %s %s\n", url, body)
 		req, err = http.NewRequest("POST", url, bytes.NewBuffer([]byte(body)))
 	} else {
-		if reqMap["filter"] != nil {
-			filter, err2 := json.Marshal(reqMap["filter"])
-			if err2 != nil {
-				fmt.Printf("Filter syntax error: %s\n", err2)
-				return
-			}
-			url += `?filter=`+ string(filter)
-		}
 		fmt.Printf("Request: GET: %s\n", url)
 		req, err = http.NewRequest("GET", url, nil)
 	}

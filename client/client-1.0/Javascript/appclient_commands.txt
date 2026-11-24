@@ -54,7 +54,7 @@ Unsubscribe request:
 Multiple Tree Addressability Read request (get, data is an array of paths, may span multiple trees):
 {"action":"get","data":["Vehicle.Powertrain.CombustionEngine.RPM","Vehicle.Speed"],"requestId":"248"}
 
-Multiple Data Update request (set, data is an array of path/value objects, may span multiple trees, not supported over HTTP):
+Multiple Data Update request (set, data is an array of path/value objects, may span multiple trees):
 {"action":"set","data":[{"path":"Vehicle.Powertrain.Transmission.PerformanceMode","value":"sport"}],"requestId":"249"}
 
 Discovery requests (replaces/supplements the "metadata" filter variant above):
@@ -88,6 +88,16 @@ Payload: 0.123
 Service discovery request:
 HTTP GET 
 URL: Vehicle/ADAS/ABS?filter={"variant":"metadata", "parameter":"0"}
+
+Multiple Tree Addressability Read request (VISS v3.3, paths use dot as delimiter, may span multiple trees):
+HTTP POST 
+URL: / (the root path)
+Payload: {"data":["Vehicle.Powertrain.CombustionEngine.RPM","Vehicle.Speed"]}
+
+Multiple Data Update request (VISS v3.3, paths use dot as delimiter, may span multiple trees):
+HTTP POST 
+URL: / (the root path)
+Payload: {"data":[{"path":"Vehicle.Powertrain.Transmission.PerformanceMode","value":"sport"}]}
 
 // ********* Access control testing *************
 // requires that a binary VSS file has been generated with "validate" tags added into vspec file(s) for the requested signals.
